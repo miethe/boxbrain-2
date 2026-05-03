@@ -7,6 +7,7 @@ from app.domain.models import (
     AuditEvent,
     Comment,
     ContentBlockVersion,
+    EmbeddingRecord,
     ContentUnitFamily,
     ContentUnitVariant,
     ContentUnitVersion,
@@ -40,6 +41,7 @@ class BoxBrainRepository(Protocol):
     similarity_edges: dict[UUID, SimilarityEdge]
     audit_events: list[AuditEvent]
     stored_objects: dict[UUID, StoredObject]
+    embeddings: dict[UUID, EmbeddingRecord]
 
     def record_audit(
         self,
