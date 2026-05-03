@@ -6,6 +6,27 @@ export type IngestionJobStatus = "queued" | "running" | "failed" | "complete";
 
 export type ArtifactType = "deck" | "brief" | "document" | "one_pager" | "whitepaper" | "proposal" | "other";
 
+export type IngestionUploadMetadata = {
+  createdContentUnitVersionIds?: string[];
+  contentUnitVersionIds?: string[];
+  slideCount?: number;
+  warnings?: string[];
+  stageTelemetry?: Record<string, unknown>;
+  stageTimestamps?: Record<string, unknown>;
+  outputSummary?: unknown;
+  workProductVersionId?: string;
+  [key: string]: unknown;
+};
+
+export type IngestionOutputSummary = {
+  slideCount?: number;
+  renderCount?: number;
+  embeddingCount?: number;
+  createdContentUnitVersionIds?: string[];
+  workProductVersionId?: string | null;
+  warnings?: string[];
+};
+
 export type IngestionJob = {
   id: string;
   status: IngestionJobStatus;
@@ -14,7 +35,9 @@ export type IngestionJob = {
   title?: string | null;
   originalObjectId?: string | null;
   workProductVersionId?: string | null;
-  uploadMetadata: Record<string, unknown>;
+  uploadMetadata: IngestionUploadMetadata;
+  outputSummary?: IngestionOutputSummary | null;
+  stageTelemetry?: Record<string, unknown>;
   errorCode?: string | null;
   errorMessage?: string | null;
   retryCount: number;
@@ -28,6 +51,46 @@ export type UploadArtifactInput = {
   artifactType?: ArtifactType;
   title?: string;
   taxonomy?: Record<string, unknown>;
+};
+
+export type ApprovalState = "draft" | "review" | "approved" | "deprecated" | "archived";
+export type FreshnessState = "fresh" | "aging" | "stale";
+
+export type ContentUnitVersion = {
+  id: string;
+  variantId: string;
+  versionNumber: string;
+  renderUri?: string | null;
+  thumbnailUri?: string | null;
+  summary?: string | null;
+  approvalState: ApprovalState;
+  freshnessState?: FreshnessState;
+  qualityScore?: number | null;
+  usageScore?: number | null;
+  sourceOrderIndex?: number | null;
+  createdAt?: string;
+};
+
+export type ProvenanceRecord = {
+  id: string;
+  originType: string;
+  sourceSystem?: string | null;
+  parentRefs?: Array<Record<string, unknown>>;
+  sourceRefs?: string[];
+  modelInfo?: string | null;
+  pipelineVersion?: string | null;
+  createdAt?: string;
+};
+
+export type WorkProductVersionDetail = {
+  id: string;
+  title: string;
+  artifactType: string;
+  versionNumber: string;
+  approvalState: ApprovalState;
+  previewUri?: string | null;
+  filmstrip: ContentUnitVersion[];
+  provenance: ProvenanceRecord;
 };
 
 type RequestJsonOptions = RequestInit & {
@@ -126,6 +189,10 @@ export async function retryIngestionJob(id: string): Promise<IngestionJob> {
   });
 }
 
+export async function getWorkProductVersion(id: string): Promise<WorkProductVersionDetail> {
+  return requestJson<WorkProductVersionDetail>(`/api/work-products/versions/${encodeURIComponent(id)}`);
+}
+
 export type IngestionJobsResult = {
   items: IngestionJob[];
 };
@@ -148,5 +215,6 @@ export const boxbrainApi = {
   uploadArtifact,
   listIngestionJobs,
   getIngestionJob,
-  retryIngestionJob
+  retryIngestionJob,
+  getWorkProductVersion
 };

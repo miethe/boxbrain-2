@@ -69,4 +69,32 @@ describe("ingestion api", () => {
       expect.objectContaining({ method: "POST", cache: "no-store" })
     );
   });
+
+  it("fetches work product version detail from the API-backed endpoint", async () => {
+    const detail = {
+      id: "00000000-0000-4000-8000-000000000402",
+      title: "Executive Cloud Modernization Overview",
+      artifactType: "deck",
+      versionNumber: "v1.0",
+      approvalState: "review",
+      previewUri: "/seed/work-products/executive-overview.png",
+      filmstrip: [],
+      provenance: {
+        id: "00000000-0000-4000-8000-000000000301",
+        originType: "imported",
+        sourceRefs: ["Executive Overview Deck"]
+      }
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => detail
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.getWorkProductVersion(detail.id)).resolves.toEqual(detail);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/work-products/versions/00000000-0000-4000-8000-000000000402",
+      expect.objectContaining({ cache: "no-store" })
+    );
+  });
 });
