@@ -6,6 +6,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.config import Settings, get_settings
+
 
 @dataclass(frozen=True, slots=True)
 class RenderedSlideAsset:
@@ -130,7 +132,10 @@ class LibreOfficeSlideRenderer(SlideRenderer):
             return assets
 
 
-def build_slide_renderer() -> SlideRenderer:
+def build_slide_renderer(settings: Settings | None = None) -> SlideRenderer:
+    resolved = settings or get_settings()
+    if resolved.renderer_mode == "fake":
+        return FakeSlideRenderer()
     return LibreOfficeSlideRenderer()
 
 

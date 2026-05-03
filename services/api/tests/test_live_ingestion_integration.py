@@ -47,6 +47,7 @@ def test_live_database_s3_rq_ingestion_round_trip(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("BOXBRAIN_REPOSITORY", "database")
     monkeypatch.setenv("BOXBRAIN_STORAGE", "s3")
     monkeypatch.setenv("BOXBRAIN_ENQUEUE_INGESTION", "true")
+    monkeypatch.setenv("BOXBRAIN_RENDERER", "fake")
 
     settings = get_settings()
     redis = Redis.from_url(settings.redis_url)

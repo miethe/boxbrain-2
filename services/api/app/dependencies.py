@@ -24,7 +24,7 @@ else:
 
 object_storage = build_object_storage(settings)
 ingestion_queue = build_ingestion_queue(settings)
-slide_renderer = build_slide_renderer()
+slide_renderer = build_slide_renderer(settings)
 
 
 def get_repository():

@@ -15,6 +15,7 @@ class Settings:
     s3_bucket: str = "boxbrain-artifacts"
     redis_url: str = "redis://localhost:6379/0"
     enqueue_ingestion_jobs: bool = False
+    renderer_mode: str = "libreoffice"
 
 
 def get_settings() -> Settings:
@@ -35,4 +36,5 @@ def get_settings() -> Settings:
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
         enqueue_ingestion_jobs=os.getenv("BOXBRAIN_ENQUEUE_INGESTION", "false").casefold()
         in {"1", "true", "yes"},
+        renderer_mode=os.getenv("BOXBRAIN_RENDERER", "libreoffice").casefold(),
     )
