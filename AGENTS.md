@@ -4,6 +4,18 @@
 
 BoxBrain v2 is a governed enterprise slide/content catalog and composition platform. It ingests decks and business artifacts, decomposes them into atomic ContentUnits, organizes them into families/variants/versions, supports ContentBlocks and Storyboards, and exposes provenance, trust, comments, notes, review queues, and hybrid search.
 
+## Current implementation state
+
+As of 2026-05-03, this repo is a production-shaped MVP foundation, not a completed production pilot.
+
+- `apps/web` contains a Next.js App Router frontend with the main BoxBrain shell, MVP routes, preview-only Plays/Opportunities routes, and an API-backed ingestion upload/job monitor.
+- `services/api` contains a FastAPI backend with domain/application/API layers, seeded in-memory mode, SQLAlchemy/Alembic persistence scaffolding, S3-compatible storage adapters, Redis/RQ queue scaffolding, multipart PPTX upload, deterministic PPTX validation/extraction, and invariant tests.
+- `services/worker` contains deterministic ingestion/search helpers plus an RQ-compatible ingestion job entrypoint.
+- `contracts/openapi/boxbrain.v2.yaml` is the active local OpenAPI contract aligned with implemented routes.
+- `infra/docker-compose.local.yml` defines local PostgreSQL/pgvector, Redis, and MinIO. Database schema initialization is via Alembic, not Docker init SQL.
+- Memory repository/storage/queue modes remain the default for fast local tests. Database/S3/RQ paths are available behind environment settings and need live Docker/PostgreSQL/MinIO verification.
+- Real PPTX visual rendering is not implemented yet; render/thumbnail URIs are placeholders. Search is still mostly deterministic/in-memory rather than PostgreSQL FTS + pgvector.
+
 ## Critical domain invariants
 
 - ContentUnit is atomic. Never model a multi-slide bundle as one ContentUnit.
@@ -24,14 +36,20 @@ Read only the relevant docs before changing code.
 
 ```text
 [BoxBrain Docs Index]
-|product: docs/01_BoxBrain_v2_Final_PRD.md
-|implementation: docs/02_Initial_Implementation_Plan.md
-|architecture: docs/03_Architecture_Data_API_Guide.md
-|research: docs/04_Product_Research_and_Design_Patterns.md
-|agent_playbook: docs/05_AI_Agent_Development_Playbook.md
-|risks: docs/07_Risks_Decisions_Open_Questions.md
-|openapi: implementation_assets/openapi.boxbrain.v2.yaml
-|schema: implementation_assets/initial_db_schema.sql
+|current_report: docs/project_plans/implementation_reports/boxbrain-v2-mvp-initial-implementation.md
+|product: docs/project_plans/init/01_BoxBrain_v2_Final_PRD.md
+|implementation: docs/project_plans/init/02_Initial_Implementation_Plan.md
+|architecture: docs/project_plans/init/03_Architecture_Data_API_Guide.md
+|research: docs/project_plans/init/04_Product_Research_and_Design_Patterns.md
+|agent_playbook: docs/project_plans/init/05_AI_Agent_Development_Playbook.md
+|backlog: docs/project_plans/init/06_Roadmap_Backlog.csv
+|risks: docs/project_plans/init/07_Risks_Decisions_Open_Questions.md
+|source_research: docs/project_plans/init/08_Source_Research_Registry.md
+|handoff_spec: docs/project_plans/init/boxbrain-v2-project-handoff/boxbrain-v2-spec.md
+|active_openapi: contracts/openapi/boxbrain.v2.yaml
+|starter_openapi: docs/project_plans/init/implementation_assets/openapi.boxbrain.v2.yaml
+|starter_schema: docs/project_plans/init/implementation_assets/initial_db_schema.sql
+|runtime_schema: infra/initial_db_schema.sql
 |IMPORTANT: Prefer these docs and repo code over model memory.
 ```
 
@@ -42,32 +60,71 @@ Read only the relevant docs before changing code.
 - Database: PostgreSQL with pgvector.
 - Search: PostgreSQL full-text + pgvector initially.
 - Storage: S3-compatible object storage.
-- Queue: Redis-backed worker framework.
+- Queue: Redis-backed worker framework; RQ is the current MVP queue scaffold.
 
 ## Common commands
 
-Update these once the repo is initialized.
-
 ```bash
-# Frontend
-pnpm lint
-pnpm typecheck
-pnpm test
+# Root
+pnpm verify
 pnpm e2e
-
-# Backend
-ruff check .
-pytest
-mypy app
-alembic upgrade head
-
-# Contracts
 pnpm openapi:check
 pnpm types:generate
 
-# All
-pnpm verify
+# Frontend
+pnpm --filter @boxbrain/web lint
+pnpm --filter @boxbrain/web typecheck
+pnpm --filter @boxbrain/web test
+pnpm --filter @boxbrain/web build
+
+# Backend
+pnpm backend:lint
+pnpm backend:typecheck
+pnpm backend:test
+cd services/api && uv run ruff check .
+cd services/api && uv run mypy --explicit-package-bases app
+cd services/api && uv run pytest -q
+cd services/api && uv run alembic upgrade head --sql
+
+# Local infra and migrations
+make infra-up
+make db-migrate
+make infra-down
+make infra-logs
 ```
+
+If Docker is unavailable, `make infra-up` cannot run. In that case, verify Alembic syntax with `cd services/api && uv run alembic upgrade head --sql` and clearly report that live PostgreSQL migration verification was not performed.
+
+## Runtime mode knobs
+
+```bash
+# Defaults: fast in-memory local/test behavior
+BOXBRAIN_REPOSITORY=memory
+BOXBRAIN_STORAGE=memory
+BOXBRAIN_ENQUEUE_INGESTION=false
+
+# Database/storage/queue integration mode
+BOXBRAIN_REPOSITORY=database
+BOXBRAIN_STORAGE=s3
+BOXBRAIN_ENQUEUE_INGESTION=true
+DATABASE_URL=postgresql+psycopg://boxbrain:boxbrain@localhost:5432/boxbrain
+S3_ENDPOINT_URL=http://localhost:9000
+S3_BUCKET=boxbrain-artifacts
+REDIS_URL=redis://localhost:6379/0
+```
+
+Use `make infra-up && make db-migrate` before exercising database mode locally.
+
+## Implementation guidance
+
+- Keep routes thin. Route modules should call `BoxBrainUseCases` and return Pydantic schemas.
+- Keep persistence behind repository/storage/queue adapters. Do not wire SQL, S3, or Redis directly into route handlers.
+- Keep memory mode working unless a task explicitly removes it.
+- For ingestion changes, follow `.codex/skills/slide-ingest/SKILL.md`: validate synchronously, preserve source binaries, create provenance, make jobs retryable/idempotent, and keep heavy parsing/rendering asynchronous.
+- Real renderer integration should wrap a proven renderer such as LibreOffice headless behind an adapter; do not bury renderer calls in core transactions.
+- AI enrichment must create candidate/review records and audit trails. Do not auto-apply AI recommendations.
+- API changes must update `contracts/openapi/boxbrain.v2.yaml`.
+- User-facing frontend changes must include loading, empty, error, and restricted states where relevant.
 
 ## Workflow
 
@@ -78,6 +135,7 @@ pnpm verify
 - After changes, summarize changed files, tests run, and any residual risks.
 - Do not add new production dependencies without a clear reason.
 - Do not commit secrets or real confidential content.
+- This workspace path may not be a Git repository. If `git status` fails, do not assume no changes exist; use file inspection and command verification instead.
 
 ## Definition of done
 
@@ -89,4 +147,3 @@ pnpm verify
 - Permissions/audit/provenance are considered.
 - Loading/empty/error/restricted UI states are handled for user-facing changes.
 - AI-generated metadata remains traceable and reviewable.
-

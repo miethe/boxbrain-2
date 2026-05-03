@@ -5,6 +5,10 @@ const queuedJob: IngestionJob = {
   id: "job-1",
   status: "queued",
   stage: "queued",
+  artifactType: "deck",
+  title: "Board update",
+  uploadMetadata: {},
+  retryCount: 0,
   createdAt: "2026-05-03T10:00:00.000Z",
   updatedAt: "2026-05-03T10:00:00.000Z"
 };
@@ -50,5 +54,19 @@ describe("ingestion api", () => {
     expect(init.body).toBeInstanceOf(FormData);
     expect(new Headers(init.headers).get("x-boxbrain-user")).toBe("admin");
     expect(new Headers(init.headers).has("content-type")).toBe(false);
+  });
+
+  it("retries ingestion jobs through the API-backed endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ...queuedJob, retryCount: 1 })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.retryIngestionJob("job-1")).resolves.toEqual({ ...queuedJob, retryCount: 1 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/ingestion-jobs/job-1/retry",
+      expect.objectContaining({ method: "POST", cache: "no-store" })
+    );
   });
 });

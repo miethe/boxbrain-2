@@ -10,10 +10,14 @@ export type IngestionJob = {
   id: string;
   status: IngestionJobStatus;
   stage: string;
+  artifactType: ArtifactType;
+  title?: string | null;
   originalObjectId?: string | null;
   workProductVersionId?: string | null;
+  uploadMetadata: Record<string, unknown>;
   errorCode?: string | null;
   errorMessage?: string | null;
+  retryCount: number;
   createdAt: string;
   updatedAt: string;
   completedAt?: string | null;
@@ -116,6 +120,12 @@ export async function getIngestionJob(id: string): Promise<IngestionJob> {
   return requestJson<IngestionJob>(`/api/ingestion-jobs/${encodeURIComponent(id)}`);
 }
 
+export async function retryIngestionJob(id: string): Promise<IngestionJob> {
+  return requestJson<IngestionJob>(`/api/ingestion-jobs/${encodeURIComponent(id)}/retry`, {
+    method: "POST"
+  });
+}
+
 export type IngestionJobsResult = {
   items: IngestionJob[];
 };
@@ -137,5 +147,6 @@ export const boxbrainApi = {
     }),
   uploadArtifact,
   listIngestionJobs,
-  getIngestionJob
+  getIngestionJob,
+  retryIngestionJob
 };

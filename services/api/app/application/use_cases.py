@@ -269,14 +269,17 @@ class BoxBrainUseCases:
         return p.ingestion_job_model(job)
 
     def list_ingestion_jobs(self) -> list[s.IngestionJob]:
+        self._refresh_repository()
         jobs = sorted(self.repository.ingestion_jobs.values(), key=lambda item: item.created_at)
         return [p.ingestion_job_model(job) for job in jobs]
 
     def get_ingestion_job(self, job_id: UUID) -> s.IngestionJob:
+        self._refresh_repository()
         return p.ingestion_job_model(self._get_job(job_id))
 
     def retry_ingestion_job(self, job_id: UUID, actor: Actor) -> s.IngestionJob:
         require_role(actor, "contributor")
+        self._refresh_repository()
         job = self._get_job(job_id)
         prior = {"status": job.status, "stage": job.stage, "retryCount": job.retry_count}
         job.status = "queued"
@@ -298,6 +301,7 @@ class BoxBrainUseCases:
         return p.ingestion_job_model(job)
 
     def process_ingestion_job(self, job_id: UUID, content: bytes | None = None) -> s.IngestionJob:
+        self._refresh_repository()
         job = self._get_job(job_id)
         if job.status == "complete":
             return p.ingestion_job_model(job)
@@ -1367,6 +1371,11 @@ class BoxBrainUseCases:
             if str(job_id) in parent_ids and f"slide {source_order_index}" in source_refs:
                 return version
         return None
+
+    def _refresh_repository(self) -> None:
+        reload_repository = getattr(self.repository, "reload", None)
+        if callable(reload_repository):
+            reload_repository()
 
     def _save_stored_object(self, stored_object: StoredObject) -> None:
         save = getattr(self.repository, "save_stored_object", None)

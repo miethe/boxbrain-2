@@ -58,7 +58,8 @@ paths:
                 checksum:
                   type: string
                 taxonomy:
-                  $ref: '#/components/schemas/Taxonomy'
+                  type: string
+                  description: JSON-encoded Taxonomy object submitted as a multipart form field.
       responses:
         '201':
           description: Upload accepted
