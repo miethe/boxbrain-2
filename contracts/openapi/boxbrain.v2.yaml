@@ -1,0 +1,1407 @@
+openapi: 3.1.0
+info:
+  title: BoxBrain v2 API
+  version: 0.1.0
+  description: Starter API contract for BoxBrain v2 MVP implementation.
+servers:
+  - url: http://localhost:8000
+    description: Local development
+security:
+  - bearerAuth: []
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: boxbrain-api
+  /api/uploads:
+    post:
+      summary: Upload a source artifact for ingestion
+      operationId: uploadArtifact
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                artifactType:
+                  type: string
+                  enum: [deck, brief, document, one_pager, whitepaper, proposal, other]
+                  default: deck
+                title:
+                  type: string
+                filename:
+                  type: string
+                contentType:
+                  type: string
+                byteSize:
+                  type: integer
+                checksum:
+                  type: string
+                taxonomy:
+                  $ref: '#/components/schemas/Taxonomy'
+      responses:
+        '201':
+          description: Upload accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionJob'
+        '202':
+          description: Upload accepted with ingestion failure recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionJob'
+  /api/ingestion-jobs:
+    get:
+      summary: List ingestion jobs
+      operationId: listIngestionJobs
+      responses:
+        '200':
+          description: Ingestion jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IngestionJob'
+  /api/ingestion-jobs/{job_id}:
+    get:
+      summary: Get ingestion job status
+      operationId: getIngestionJob
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionJob'
+  /api/ingestion-jobs/{job_id}/retry:
+    post:
+      summary: Retry a failed ingestion job
+      operationId: retryIngestionJob
+      parameters:
+        - $ref: '#/components/parameters/jobId'
+      responses:
+        '202':
+          description: Retry queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionJob'
+  /api/search:
+    post:
+      summary: Hybrid search across BoxBrain objects
+      operationId: search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+  /api/ask:
+    post:
+      summary: Ask BoxBrain natural-language retrieval
+      operationId: askBoxBrain
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskRequest'
+      responses:
+        '200':
+          description: Mixed grouped results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+  /api/content-units/families:
+    get:
+      summary: List ContentUnit families
+      operationId: listContentUnitFamilies
+      parameters:
+        - $ref: '#/components/parameters/pageCursor'
+        - $ref: '#/components/parameters/pageLimit'
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [families, variants]
+            default: families
+        - name: approvalState
+          in: query
+          schema:
+            type: string
+        - name: freshnessState
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Family list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContentUnitFamilyCard'
+                  nextCursor:
+                    type: string
+                    nullable: true
+  /api/content-units/families/{family_id}:
+    get:
+      summary: Get ContentUnit family detail
+      operationId: getContentUnitFamily
+      parameters:
+        - $ref: '#/components/parameters/familyId'
+      responses:
+        '200':
+          description: Family detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentUnitFamilyDetail'
+  /api/content-units/families/{family_id}/variants:
+    get:
+      summary: List variants for a ContentUnit family
+      operationId: listContentUnitVariants
+      parameters:
+        - $ref: '#/components/parameters/familyId'
+      responses:
+        '200':
+          description: Variants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContentUnitVariant'
+  /api/content-units/variants/{variant_id}/versions:
+    get:
+      summary: List versions for a ContentUnit variant
+      operationId: listContentUnitVersions
+      parameters:
+        - $ref: '#/components/parameters/variantId'
+      responses:
+        '200':
+          description: Versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContentUnitVersion'
+  /api/content-units/versions/{version_id}:
+    get:
+      summary: Get ContentUnit version detail
+      operationId: getContentUnitVersion
+      parameters:
+        - $ref: '#/components/parameters/versionId'
+      responses:
+        '200':
+          description: Version detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentUnitVersionDetail'
+  /api/content-units/variants/{variant_id}/canonical:
+    post:
+      summary: Set ContentUnit variant as canonical for its family
+      operationId: setContentUnitCanonicalVariant
+      parameters:
+        - $ref: '#/components/parameters/variantId'
+      requestBody:
+        $ref: '#/components/requestBodies/ReviewAction'
+      responses:
+        '200':
+          description: Updated variant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentUnitVariant'
+  /api/content-units/versions/{version_id}/approval:
+    patch:
+      summary: Update ContentUnit version approval state
+      operationId: updateContentUnitApproval
+      parameters:
+        - $ref: '#/components/parameters/versionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approvalState]
+              properties:
+                approvalState:
+                  $ref: '#/components/schemas/ApprovalState'
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Updated version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentUnitVersion'
+  /api/content-units/{version_id}/similar:
+    get:
+      summary: Find similar ContentUnit versions
+      operationId: listSimilarContentUnits
+      parameters:
+        - $ref: '#/components/parameters/versionId'
+      responses:
+        '200':
+          description: Similar content units
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchResultItem'
+  /api/content-units/{version_id}/where-used:
+    get:
+      summary: List where a ContentUnit version is used
+      operationId: listContentUnitWhereUsed
+      parameters:
+        - $ref: '#/components/parameters/versionId'
+      responses:
+        '200':
+          description: Usage references
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+  /api/work-products/families:
+    get:
+      summary: List WorkProduct families
+      operationId: listWorkProductFamilies
+      parameters:
+        - $ref: '#/components/parameters/pageCursor'
+        - $ref: '#/components/parameters/pageLimit'
+      responses:
+        '200':
+          description: WorkProduct families
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkProductFamilyCard'
+                  nextCursor:
+                    type: string
+                    nullable: true
+  /api/work-products/versions/{version_id}:
+    get:
+      summary: Get WorkProduct version detail
+      operationId: getWorkProductVersion
+      parameters:
+        - $ref: '#/components/parameters/versionId'
+      responses:
+        '200':
+          description: WorkProduct version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkProductVersionDetail'
+  /api/content-blocks:
+    get:
+      summary: List ContentBlocks
+      operationId: listContentBlocks
+      responses:
+        '200':
+          description: ContentBlocks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContentBlockVersionDetail'
+                  nextCursor:
+                    type: string
+                    nullable: true
+    post:
+      summary: Create ContentBlock from selected ContentUnits
+      operationId: createContentBlock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContentBlockRequest'
+      responses:
+        '201':
+          description: ContentBlock created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentBlockVersionDetail'
+  /api/content-blocks/{block_id}:
+    get:
+      summary: Get ContentBlock version detail
+      operationId: getContentBlock
+      parameters:
+        - $ref: '#/components/parameters/blockId'
+      responses:
+        '200':
+          description: ContentBlock detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentBlockVersionDetail'
+  /api/storyboards:
+    get:
+      summary: List storyboards
+      operationId: listStoryboards
+      responses:
+        '200':
+          description: Storyboards
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Storyboard'
+                  nextCursor:
+                    type: string
+                    nullable: true
+    post:
+      summary: Create storyboard
+      operationId: createStoryboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStoryboardRequest'
+      responses:
+        '201':
+          description: Storyboard created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Storyboard'
+  /api/storyboards/{storyboard_id}:
+    get:
+      summary: Get storyboard with current snapshot
+      operationId: getStoryboard
+      parameters:
+        - $ref: '#/components/parameters/storyboardId'
+      responses:
+        '200':
+          description: Storyboard detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryboardDetail'
+  /api/storyboards/{storyboard_id}/snapshots:
+    get:
+      summary: List storyboard snapshots
+      operationId: listStoryboardSnapshots
+      parameters:
+        - $ref: '#/components/parameters/storyboardId'
+      responses:
+        '200':
+          description: Storyboard snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StoryboardSnapshot'
+    post:
+      summary: Create storyboard snapshot
+      operationId: createStoryboardSnapshot
+      parameters:
+        - $ref: '#/components/parameters/storyboardId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                versionLabel:
+                  type: string
+      responses:
+        '200':
+          description: Snapshot created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryboardSnapshot'
+  /api/storyboard-snapshots/{snapshot_id}:
+    get:
+      summary: Get storyboard snapshot
+      operationId: getStoryboardSnapshot
+      parameters:
+        - $ref: '#/components/parameters/snapshotId'
+      responses:
+        '200':
+          description: Storyboard snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryboardSnapshot'
+  /api/storyboards/{storyboard_id}/sections:
+    post:
+      summary: Add section to current storyboard snapshot
+      operationId: createStoryboardSection
+      parameters:
+        - $ref: '#/components/parameters/storyboardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStoryboardSectionRequest'
+      responses:
+        '201':
+          description: Section created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryboardSection'
+  /api/storyboard-sections/{section_id}:
+    patch:
+      summary: Update storyboard section
+      operationId: updateStoryboardSection
+      parameters:
+        - $ref: '#/components/parameters/sectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStoryboardSectionRequest'
+      responses:
+        '200':
+          description: Section updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryboardSection'
+  /api/storyboard-sections/{section_id}/slots:
+    post:
+      summary: Add slot to storyboard section
+      operationId: createStoryboardSlot
+      parameters:
+        - $ref: '#/components/parameters/sectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStoryboardSlotRequest'
+      responses:
+        '201':
+          description: Slot created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryboardSlot'
+  /api/storyboard-slots/{slot_id}:
+    patch:
+      summary: Update storyboard slot selection or metadata
+      operationId: updateStoryboardSlot
+      parameters:
+        - $ref: '#/components/parameters/slotId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStoryboardSlotRequest'
+      responses:
+        '200':
+          description: Slot updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryboardSlot'
+  /api/storyboards/{storyboard_id}/analyze:
+    post:
+      summary: Analyze storyboard diagnostics
+      operationId: analyzeStoryboard
+      parameters:
+        - $ref: '#/components/parameters/storyboardId'
+      responses:
+        '200':
+          description: Diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryboardDiagnostics'
+  /api/comments:
+    get:
+      summary: List comments
+      operationId: listComments
+      parameters:
+        - name: targetType
+          in: query
+          schema:
+            type: string
+        - name: targetId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Comments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+    post:
+      summary: Create comment
+      operationId: createComment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentRequest'
+      responses:
+        '201':
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+  /api/notes:
+    get:
+      summary: List notes
+      operationId: listNotes
+      parameters:
+        - name: targetType
+          in: query
+          schema:
+            type: string
+        - name: targetId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Note'
+    post:
+      summary: Create curated note
+      operationId: createNote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNoteRequest'
+      responses:
+        '201':
+          description: Note created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+  /api/reviews/queues:
+    get:
+      summary: List review queue summaries
+      operationId: listReviewQueues
+      responses:
+        '200':
+          description: Review queue summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReviewQueueSummary'
+  /api/reviews/items:
+    get:
+      summary: List review items
+      operationId: listReviewItems
+      parameters:
+        - name: queueType
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            default: open
+        - $ref: '#/components/parameters/pageCursor'
+        - $ref: '#/components/parameters/pageLimit'
+      responses:
+        '200':
+          description: Review items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReviewItem'
+                  nextCursor:
+                    type: string
+                    nullable: true
+  /api/reviews/items/{review_item_id}:
+    get:
+      summary: Get review item detail
+      operationId: getReviewItem
+      parameters:
+        - $ref: '#/components/parameters/reviewItemId'
+      responses:
+        '200':
+          description: Review item detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewItemDetail'
+  /api/reviews/items/{review_item_id}/mark-variant:
+    post:
+      summary: Accept review item as variant relationship
+      operationId: reviewMarkVariant
+      parameters:
+        - $ref: '#/components/parameters/reviewItemId'
+      requestBody:
+        $ref: '#/components/requestBodies/ReviewAction'
+      responses:
+        '200':
+          description: Review resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/reviews/items/{review_item_id}/mark-similar:
+    post:
+      summary: Accept review item as similarity edge
+      operationId: reviewMarkSimilar
+      parameters:
+        - $ref: '#/components/parameters/reviewItemId'
+      requestBody:
+        $ref: '#/components/requestBodies/ReviewAction'
+      responses:
+        '200':
+          description: Review resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/reviews/items/{review_item_id}/merge-versions:
+    post:
+      summary: Merge review item versions
+      operationId: reviewMergeVersions
+      parameters:
+        - $ref: '#/components/parameters/reviewItemId'
+      requestBody:
+        $ref: '#/components/requestBodies/ReviewAction'
+      responses:
+        '200':
+          description: Review action applied
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/reviews/items/{review_item_id}/set-canonical:
+    post:
+      summary: Set canonical variant from review item
+      operationId: reviewSetCanonical
+      parameters:
+        - $ref: '#/components/parameters/reviewItemId'
+      requestBody:
+        $ref: '#/components/requestBodies/ReviewAction'
+      responses:
+        '200':
+          description: Review action applied
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/reviews/items/{review_item_id}/approve:
+    post:
+      summary: Approve review item
+      operationId: approveReviewItem
+      parameters:
+        - $ref: '#/components/parameters/reviewItemId'
+      requestBody:
+        $ref: '#/components/requestBodies/ReviewAction'
+      responses:
+        '200':
+          description: Review approved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/reviews/items/{review_item_id}/reject:
+    post:
+      summary: Reject review item
+      operationId: rejectReviewItem
+      parameters:
+        - $ref: '#/components/parameters/reviewItemId'
+      requestBody:
+        $ref: '#/components/requestBodies/ReviewAction'
+      responses:
+        '200':
+          description: Review rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/reviews/items/{review_item_id}/request-changes:
+    post:
+      summary: Request changes for review item
+      operationId: requestReviewItemChanges
+      parameters:
+        - $ref: '#/components/parameters/reviewItemId'
+      requestBody:
+        $ref: '#/components/requestBodies/ReviewAction'
+      responses:
+        '200':
+          description: Changes requested
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/admin/health:
+    get:
+      summary: Get admin health summary
+      operationId: getAdminHealth
+      responses:
+        '200':
+          description: Admin health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminHealth'
+  /api/admin/audit-events:
+    get:
+      summary: List audit events
+      operationId: listAuditEvents
+      responses:
+        '200':
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEvent'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  requestBodies:
+    ReviewAction:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReviewActionRequest'
+  parameters:
+    pageCursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    pageLimit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    jobId:
+      name: job_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    familyId:
+      name: family_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    variantId:
+      name: variant_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    versionId:
+      name: version_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    blockId:
+      name: block_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    storyboardId:
+      name: storyboard_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    snapshotId:
+      name: snapshot_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    sectionId:
+      name: section_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    slotId:
+      name: slot_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    reviewItemId:
+      name: review_item_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    ApprovalState:
+      type: string
+      enum: [draft, review, approved, deprecated, archived]
+    FreshnessState:
+      type: string
+      enum: [fresh, aging, stale]
+    Taxonomy:
+      type: object
+      additionalProperties: false
+      properties:
+        offerings: { type: array, items: { type: string } }
+        technologies: { type: array, items: { type: string } }
+        sectors: { type: array, items: { type: string } }
+        geos: { type: array, items: { type: string } }
+        stages: { type: array, items: { type: string } }
+        audiences: { type: array, items: { type: string } }
+        purposes: { type: array, items: { type: string } }
+        useCases: { type: array, items: { type: string } }
+        tags: { type: array, items: { type: string } }
+        locales: { type: array, items: { type: string } }
+        visualStyles: { type: array, items: { type: string } }
+    StatusChips:
+      type: object
+      properties:
+        approvalState: { $ref: '#/components/schemas/ApprovalState' }
+        freshnessState: { $ref: '#/components/schemas/FreshnessState' }
+        isCanonical: { type: boolean }
+        isRestricted: { type: boolean }
+        linkSource:
+          type: string
+          enum: [manual, ai, hybrid]
+    IngestionJob:
+      type: object
+      required: [id, status, stage, artifactType, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, failed, complete] }
+        stage: { type: string }
+        artifactType: { type: string }
+        title: { type: string, nullable: true }
+        originalObjectId: { type: string, format: uuid, nullable: true }
+        workProductVersionId: { type: string, format: uuid, nullable: true }
+        uploadMetadata:
+          type: object
+          additionalProperties: true
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+        retryCount: { type: integer, default: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+    ContentUnitFamilyCard:
+      type: object
+      required: [id, familyTitle, unitType]
+      properties:
+        id: { type: string, format: uuid }
+        familyTitle: { type: string }
+        conceptualSummary: { type: string, nullable: true }
+        unitType: { type: string }
+        canonicalPreviewUri: { type: string, nullable: true }
+        variantCount: { type: integer }
+        versionCount: { type: integer }
+        taxonomy: { $ref: '#/components/schemas/Taxonomy' }
+        statusChips: { $ref: '#/components/schemas/StatusChips' }
+    ContentUnitFamilyDetail:
+      allOf:
+        - $ref: '#/components/schemas/ContentUnitFamilyCard'
+        - type: object
+          properties:
+            variants:
+              type: array
+              items: { $ref: '#/components/schemas/ContentUnitVariant' }
+            notes:
+              type: array
+              items: { $ref: '#/components/schemas/Note' }
+    ContentUnitVariant:
+      type: object
+      required: [id, familyId, variantLabel, isCanonical]
+      properties:
+        id: { type: string, format: uuid }
+        familyId: { type: string, format: uuid }
+        variantLabel: { type: string }
+        variantType: { type: string }
+        variantDimensions: { type: object, additionalProperties: true }
+        isCanonical: { type: boolean }
+        linkedBy: { type: string, enum: [manual, ai, hybrid] }
+        linkedConfidence: { type: number, nullable: true }
+        latestVersionId: { type: string, format: uuid, nullable: true }
+        latestVersion:
+          anyOf:
+            - $ref: '#/components/schemas/ContentUnitVersion'
+            - type: 'null'
+    ContentUnitVersion:
+      type: object
+      required: [id, variantId, versionNumber, approvalState]
+      properties:
+        id: { type: string, format: uuid }
+        variantId: { type: string, format: uuid }
+        versionNumber: { type: string }
+        renderUri: { type: string, nullable: true }
+        thumbnailUri: { type: string, nullable: true }
+        summary: { type: string, nullable: true }
+        approvalState: { $ref: '#/components/schemas/ApprovalState' }
+        freshnessState: { $ref: '#/components/schemas/FreshnessState' }
+        qualityScore: { type: number, nullable: true }
+        usageScore: { type: number, nullable: true }
+        createdAt: { type: string, format: date-time }
+    ContentUnitVersionDetail:
+      allOf:
+        - $ref: '#/components/schemas/ContentUnitVersion'
+        - type: object
+          properties:
+            extractedText: { type: string, nullable: true }
+            speakerNotes: { type: string, nullable: true }
+            provenance: { $ref: '#/components/schemas/ProvenanceRecord' }
+            comments:
+              type: array
+              items: { $ref: '#/components/schemas/Comment' }
+            notes:
+              type: array
+              items: { $ref: '#/components/schemas/Note' }
+    WorkProductFamilyCard:
+      type: object
+      required: [id, title, artifactType]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        artifactType: { type: string }
+        summary: { type: string, nullable: true }
+        previewUri: { type: string, nullable: true }
+        variantCount: { type: integer }
+        versionCount: { type: integer }
+        statusChips: { $ref: '#/components/schemas/StatusChips' }
+    WorkProductVersionDetail:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        artifactType: { type: string }
+        versionNumber: { type: string }
+        approvalState: { $ref: '#/components/schemas/ApprovalState' }
+        previewUri: { type: string, nullable: true }
+        filmstrip:
+          type: array
+          items: { $ref: '#/components/schemas/ContentUnitVersion' }
+        provenance: { $ref: '#/components/schemas/ProvenanceRecord' }
+    ProvenanceRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        originType: { type: string }
+        sourceSystem: { type: string, nullable: true }
+        parentRefs: { type: array, items: { type: object } }
+        sourceRefs: { type: array, items: { type: string } }
+        modelInfo: { type: string, nullable: true }
+        pipelineVersion: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    SearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string }
+        profile:
+          type: string
+          enum: [general, executive, technical, opportunity, duplicate_review, similarity_review, approved_only]
+          default: general
+        objectTypes:
+          type: array
+          items: { type: string }
+        filters:
+          type: object
+          additionalProperties: true
+        resultMode:
+          type: string
+          enum: [auto, families, variants, versions]
+          default: auto
+        limit:
+          type: integer
+          default: 20
+    AskRequest:
+      allOf:
+        - $ref: '#/components/schemas/SearchRequest'
+        - type: object
+          properties:
+            context:
+              type: object
+              additionalProperties: true
+    SearchResponse:
+      type: object
+      required: [query, items]
+      properties:
+        query: { type: string }
+        interpretedIntent: { type: string, nullable: true }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SearchResultItem' }
+        debug:
+          type: object
+          additionalProperties: true
+          nullable: true
+    SearchResultItem:
+      type: object
+      properties:
+        objectType: { type: string }
+        objectId: { type: string, format: uuid }
+        resultGrain:
+          type: string
+          enum: [family, variant, version, block, work_product, play]
+        title: { type: string }
+        summary: { type: string, nullable: true }
+        previewUri: { type: string, nullable: true }
+        score: { type: number }
+        explanationChips:
+          type: array
+          items: { type: string }
+        statusChips: { $ref: '#/components/schemas/StatusChips' }
+    CreateContentBlockRequest:
+      type: object
+      required: [title, members]
+      properties:
+        title: { type: string }
+        summary: { type: string }
+        blockType: { type: string, default: sequence }
+        members:
+          type: array
+          items:
+            type: object
+            required: [memberType, memberId, orderIndex]
+            properties:
+              memberType: { type: string, enum: [content_unit_variant, content_unit_version] }
+              memberId: { type: string, format: uuid }
+              orderIndex: { type: integer }
+              role: { type: string }
+              isRequired: { type: boolean, default: true }
+              notes: { type: string }
+    ContentBlockVersionDetail:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        familyId: { type: string, format: uuid }
+        title: { type: string }
+        summary: { type: string, nullable: true }
+        blockType: { type: string }
+        approvalState: { $ref: '#/components/schemas/ApprovalState' }
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              memberType: { type: string }
+              memberId: { type: string, format: uuid }
+              orderIndex: { type: integer }
+              role: { type: string, nullable: true }
+              isRequired: { type: boolean }
+              notes: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    CreateStoryboardRequest:
+      type: object
+      required: [title, mode]
+      properties:
+        title: { type: string }
+        mode: { type: string, enum: [work_product, play, opportunity], default: work_product }
+        parentType: { type: string, nullable: true }
+        parentId: { type: string, format: uuid, nullable: true }
+    Storyboard:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        mode: { type: string }
+        title: { type: string }
+        currentSnapshotId: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    StoryboardDetail:
+      allOf:
+        - $ref: '#/components/schemas/Storyboard'
+        - type: object
+          properties:
+            draftSections:
+              type: array
+              items: { $ref: '#/components/schemas/StoryboardSection' }
+            currentSnapshot:
+              anyOf:
+                - $ref: '#/components/schemas/StoryboardSnapshot'
+                - type: 'null'
+    StoryboardSnapshot:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        storyboardId: { type: string, format: uuid }
+        versionLabel: { type: string, nullable: true }
+        approvalState: { $ref: '#/components/schemas/ApprovalState' }
+        narrativeScore: { type: number, nullable: true }
+        sections:
+          type: array
+          items: { $ref: '#/components/schemas/StoryboardSection' }
+        createdAt: { type: string, format: date-time }
+    StoryboardSection:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        snapshotId: { type: string, format: uuid, nullable: true }
+        storyboardId: { type: string, format: uuid }
+        title: { type: string }
+        summary: { type: string, nullable: true }
+        orderIndex: { type: integer }
+        slots:
+          type: array
+          items: { $ref: '#/components/schemas/StoryboardSlot' }
+    StoryboardSlot:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        sectionId: { type: string, format: uuid }
+        slotType: { type: string, enum: [content_unit, content_block, work_product_ref, gap] }
+        selectedObjectType: { type: string, nullable: true }
+        selectedObjectId: { type: string, format: uuid, nullable: true }
+        orderIndex: { type: integer }
+        purpose: { type: string, nullable: true }
+        isRequired: { type: boolean }
+        aiRecommended: { type: boolean }
+    CreateStoryboardSectionRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        summary: { type: string }
+        orderIndex: { type: integer }
+    CreateStoryboardSlotRequest:
+      type: object
+      required: [slotType]
+      properties:
+        slotType: { type: string, enum: [content_unit, content_block, work_product_ref, gap] }
+        selectedObjectType: { type: string, nullable: true }
+        selectedObjectId: { type: string, format: uuid, nullable: true }
+        orderIndex: { type: integer }
+        purpose: { type: string }
+        isRequired: { type: boolean, default: true }
+    UpdateStoryboardSlotRequest:
+      type: object
+      properties:
+        slotType: { type: string, enum: [content_unit, content_block, work_product_ref, gap] }
+        selectedObjectType: { type: string, nullable: true }
+        selectedObjectId: { type: string, format: uuid, nullable: true }
+        orderIndex: { type: integer }
+        purpose: { type: string }
+        isRequired: { type: boolean }
+    StoryboardDiagnostics:
+      type: object
+      properties:
+        narrativeScore: { type: number, nullable: true }
+        warnings:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              severity: { type: string, enum: [info, warning, critical] }
+              message: { type: string }
+              targetType: { type: string }
+              targetId: { type: string, format: uuid, nullable: true }
+    CreateCommentRequest:
+      type: object
+      required: [kind, targetType, targetId, body]
+      properties:
+        kind: { type: string, enum: [review_comment, persistent_comment, note_discussion] }
+        targetType: { type: string }
+        targetId: { type: string, format: uuid }
+        anchor: { type: object, additionalProperties: true }
+        parentCommentId: { type: string, format: uuid, nullable: true }
+        body: { type: string }
+    Comment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string }
+        targetType: { type: string }
+        targetId: { type: string, format: uuid }
+        anchor: { type: object, additionalProperties: true }
+        parentCommentId: { type: string, format: uuid, nullable: true }
+        body: { type: string }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+    CreateNoteRequest:
+      type: object
+      required: [targetType, targetId, body]
+      properties:
+        targetType: { type: string }
+        targetId: { type: string, format: uuid }
+        title: { type: string }
+        body: { type: string }
+        noteType: { type: string, default: usage_guidance }
+        isPinned: { type: boolean, default: false }
+    Note:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        targetType: { type: string }
+        targetId: { type: string, format: uuid }
+        title: { type: string, nullable: true }
+        body: { type: string }
+        noteType: { type: string }
+        isPinned: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ReviewItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        queueType: { type: string }
+        status: { type: string, enum: [open, accepted, rejected, snoozed, resolved] }
+        confidence: { type: number, nullable: true }
+        rationale: { type: string, nullable: true }
+        suggestedAction: { type: string, nullable: true }
+        targetRefs:
+          type: array
+          items: { type: object, additionalProperties: true }
+        source: { type: string }
+        createdAt: { type: string, format: date-time }
+    ReviewItemDetail:
+      allOf:
+        - $ref: '#/components/schemas/ReviewItem'
+        - type: object
+          properties:
+            compareObjects:
+              type: array
+              items: { type: object, additionalProperties: true }
+            auditPreview:
+              type: object
+              additionalProperties: true
+    ReviewActionRequest:
+      type: object
+      properties:
+        reason: { type: string, nullable: true }
+        targetVariantId: { type: string, format: uuid, nullable: true }
+        targetVersionId: { type: string, format: uuid, nullable: true }
+    ReviewQueueSummary:
+      type: object
+      properties:
+        queueType: { type: string }
+        openCount: { type: integer }
+        oldestCreatedAt: { type: string, format: date-time, nullable: true }
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        action: { type: string }
+        actorId: { type: string }
+        targetType: { type: string }
+        targetId: { type: string, format: uuid }
+        priorState:
+          type: object
+          additionalProperties: true
+        newState:
+          type: object
+          additionalProperties: true
+        reason: { type: string, nullable: true }
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time }
+    AdminHealth:
+      type: object
+      properties:
+        status: { type: string }
+        contentUnitFamilies: { type: integer }
+        contentUnitVersions: { type: integer }
+        workProductVersions: { type: integer }
+        contentBlocks: { type: integer }
+        storyboards: { type: integer }
+        ingestionJobs: { type: integer }
+        auditEvents: { type: integer }

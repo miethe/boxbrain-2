@@ -1,0 +1,37 @@
+[project]
+name = "boxbrain-api"
+version = "0.1.0"
+description = "FastAPI scaffold for the BoxBrain v2 backend MVP."
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.13,<2.0",
+  "boto3>=1.34,<2.0",
+  "fastapi>=0.111,<1.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "python-multipart>=0.0.9,<1.0",
+  "redis>=5.0,<6.0",
+  "rq>=2.0,<3.0",
+  "sqlalchemy>=2.0,<3.0",
+  "uvicorn[standard]>=0.30,<1.0",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.27",
+  "mypy>=1.13",
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "../.."]
+
+[tool.ruff]
+line-length = 100

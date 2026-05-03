@@ -1,0 +1,22 @@
+{
+  "name": "boxbrain-v2",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Governed enterprise slide and content catalog for BoxBrain v2.",
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "e2e": "pnpm -r --if-present e2e",
+    "backend:lint": "cd services/api && uv run ruff check .",
+    "backend:typecheck": "cd services/api && uv run mypy --explicit-package-bases app",
+    "backend:test": "cd services/api && uv run pytest -q",
+    "verify": "pnpm openapi:check && pnpm lint && pnpm typecheck && pnpm test && pnpm backend:lint && pnpm backend:typecheck && pnpm backend:test",
+    "openapi:check": "node -e \"const fs=require('fs');const p='contracts/openapi/boxbrain.v2.yaml';const s=fs.readFileSync(p,'utf8');if(!/^openapi: 3\\\\.1\\\\.0/m.test(s)){throw new Error('Expected OpenAPI 3.1 contract at '+p)}\"",
+    "types:generate": "pnpm -r --if-present types:generate",
+    "infra:up": "make infra-up",
+    "infra:down": "make infra-down",
+    "infra:logs": "make infra-logs"
+  }
+}

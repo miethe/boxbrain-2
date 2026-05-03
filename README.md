@@ -1,0 +1,68 @@
+# BoxBrain v2
+
+BoxBrain v2 is a governed enterprise slide and content catalog for decomposing business artifacts into atomic ContentUnits, organizing them by family, variant, and version, and composing reusable Storyboards with provenance, review, and search controls.
+
+## Repository Layout
+
+- `apps/`: frontend applications, including the future Next.js web app.
+- `services/`: backend services, including the future FastAPI API and workers.
+- `contracts/`: shared API contracts.
+- `infra/`: local development infrastructure.
+- `docs/project_plans/init/`: product, architecture, implementation, schema, and contract planning assets.
+
+## Local Quickstart
+
+1. Install the workspace package manager if needed:
+
+   ```bash
+   corepack enable
+   ```
+
+2. Install dependencies:
+
+   ```bash
+   pnpm install
+   ```
+
+3. Create a local environment file:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+4. Start local infrastructure:
+
+   ```bash
+   make infra-up
+   ```
+
+5. Run scaffold verification:
+
+   ```bash
+   pnpm verify
+   ```
+
+Local infrastructure starts PostgreSQL with pgvector, Redis, and MinIO. The Postgres container initializes from `infra/initial_db_schema.sql`, copied from the planning asset bundle.
+
+## Useful Commands
+
+```bash
+pnpm openapi:check
+pnpm types:generate
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm verify
+make infra-up
+make infra-down
+make infra-logs
+```
+
+## Domain Guardrails
+
+- ContentUnit is atomic.
+- Family, Variant, Version, Similarity, and Composition are distinct.
+- Similarity edges do not imply shared family identity.
+- Storyboard snapshots are immutable once saved.
+- AI suggestions must be traceable, reviewable, and governed by audit events.
+- Restricted content must not leak through search, thumbnails, snippets, where-used, or similarity output.

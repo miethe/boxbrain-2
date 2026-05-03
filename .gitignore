@@ -1,0 +1,41 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# JavaScript/TypeScript
+node_modules/
+.next/
+out/
+dist/
+build/
+coverage/
+.turbo/
+.cache/
+*.tsbuildinfo
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local service data and artifacts
+minio-data/
+postgres-data/
+redis-data/
+tmp/
+*.log

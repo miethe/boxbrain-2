@@ -1,0 +1,2 @@
+"""BoxBrain worker package."""
+

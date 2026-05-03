@@ -1,0 +1,72 @@
+Epic,Feature,Phase,Priority,Owner Role,Acceptance Criteria,Dependencies
+Repo & Dev Foundation,Initialize monorepo/repo structure,0,P0,Full-stack lead,"Repo contains frontend, backend, docs, migrations, fixtures, agent instruction templates",None
+Repo & Dev Foundation,Configure local Docker Compose services,0,P0,Backend,"Postgres+pgvector, Redis, MinIO start locally; health checks pass",Repo initialized
+Repo & Dev Foundation,Add AGENTS.md and CLAUDE.md,0,P0,Full-stack lead,"Instructions include commands, invariants, docs index, DoD; no bloated PRD paste",Repo initialized
+Repo & Dev Foundation,Set up CI verification commands,0,P0,Full-stack lead,CI runs lint/typecheck/tests/migrations/API contract checks,Frontend/backend scaffolds
+Repo & Dev Foundation,Create seed fixture strategy,0,P0,Product/QA,Fixture folder and seed plan support library/search/storyboard demos,Repo initialized
+Core Data Model,Create family/variant/version tables for ContentUnits,0,P0,Backend,"Migration creates families, variants, versions with constraints and timestamps",Database initialized
+Core Data Model,Create WorkProduct family/variant/version tables,0,P0,Backend,"WorkProduct records support artifact type, versions, preview URI, provenance",Database initialized
+Core Data Model,Create provenance and stored object tables,0,P0,Backend,Major versions can link to provenance and stored objects,Database initialized
+Core Data Model,Create comments and notes tables,0,P0,Backend,"Review comments, persistent comments, and notes are distinguishable",Database initialized
+Core Data Model,Create audit events table,0,P0,Backend,Governance actions can be recorded with actor/target/prior/new state,Database initialized
+Core Data Model,Create relationship/edge tables,0,P0,Backend,Similarity and composition relationships are typed and not conflated,Database initialized
+Ingestion,Implement upload API,1,P0,Backend,User can upload supported file; stored object and ingestion job are created,Storage configured
+Ingestion,Build upload UI,1,P0,Frontend,"User can choose file, submit upload, and see job status link",Upload API
+Ingestion,Implement job status API,1,P0,Backend,"Job status exposes stage, percent/status, errors, and timestamps",Job table
+Ingestion,Implement object storage integration,1,P0,Backend,Original files and generated renders persist to S3-compatible storage,MinIO/S3 configured
+Ingestion,Spike PPTX rendering,1,P0,Backend/AI,Sample PPTX renders to slide images; output quality documented,Upload/storage
+Ingestion,Spike PDF rendering,1,P1,Backend,Sample PDF renders to page images; output quality documented,Upload/storage
+Ingestion,Extract text and speaker notes from PPTX,1,P0,Backend,Each slide has extracted text and notes where available,PPTX parser selected
+Ingestion,Create ContentUnit records from rendered slides,1,P0,Backend,Each source slide creates atomic ContentUnit version with source order/provenance,Rendering/extraction
+Ingestion,Compute content hashes,1,P0,Backend,Text and visual/content hashes stored for dedupe candidates,Content units created
+Ingestion,Implement retryable ingestion stages,1,P1,Backend,Failed stages can retry without duplicate unit creation,Job stages
+WorkProduct,Build WorkProduct detail page,1,P0,Frontend,"Detail page shows overview, preview filmstrip, versions, provenance",WorkProduct APIs
+ContentUnit,Build ContentUnit detail page,2,P0,Frontend,"Detail page shows preview, summary, variants, versions, comments, notes, provenance, where-used",ContentUnit APIs
+Library,Build family-first Library grid,2,P0,Frontend,"ContentUnit family cards show canonical preview, status chips, counts, summary, filters",ContentUnit data
+Library,Add variant expansion UI,2,P0,Frontend,Family card expands to variants with latest version and link source,Family/variant APIs
+Library,Add variant-first toggle,2,P1,Frontend,User can switch between family and variant browsing,Library grid
+Library,Implement taxonomy filters,2,P1,Full-stack,Filters apply to family and variant lists with shareable/query-state support,Taxonomy metadata
+Comments/Notes,Implement persistent comments API/UI,2,P0,Full-stack,Users can create/read/update persistent entity-level comments,Comment table
+Comments/Notes,Implement curated notes API/UI,2,P0,Full-stack,Curators can create/update pinned notes; notes are visibly distinct from comments,Notes table; roles
+Governance,Implement approval/freshness state controls,2,P0,Full-stack,Authorized users can update state; cards/details update; audit event written,Roles/audit
+Governance,Implement canonical variant control,2,P0,Full-stack,Curator can set canonical variant; previous canonical is cleared; audit event written,Variant model
+Search,Add PostgreSQL full-text indexes,3,P0,Backend/Search,"Titles, summaries, extracted text, notes, taxonomy searchable",Catalog data
+Search,Implement text search API,3,P0,Backend/Search,Search returns grouped results with pagination and filters,Full-text indexes
+Search,Generate embeddings for units/work products,3,P0,AI/Search,Embedding rows are model-versioned and queryable,Ingestion records
+Search,Implement pgvector semantic search,3,P0,Backend/Search,Semantic search returns relevant units and families,Embeddings
+Search,Implement hybrid ranking,3,P0,Backend/Search,"Composite score combines lexical, semantic, metadata, trust/freshness, usage",Text/vector search
+Search,Build Ask BoxBrain UI,3,P0,Frontend,Natural language search entry returns grouped results and explanations,Search API
+Search,Add explanation chips,3,P1,Full-stack,Result cards show reason chips and trust/freshness signals,Hybrid scoring
+Search,Create search eval set,3,P0,Product/Search,Curated query set with expected results and failure notes exists,Seed corpus
+AI Enrichment,Summarize WorkProducts and ContentUnits,3,P1,AI/Search,AI-generated summaries are stored with pipeline/model metadata,Extraction
+AI Enrichment,Suggest taxonomy,3,P1,AI/Search,Taxonomy suggestions are stored as suggestions or editable metadata with provenance,Summaries/extraction
+Reviews,Create review_items model,4,P0,Backend,"Review items support type, confidence, rationale, status, targets, assignee",Database
+Reviews,Generate duplicate candidates,4,P0,AI/Search,High-confidence duplicate candidates created from hashes/embeddings and routed to queue,Content hashes/embeddings
+Reviews,Generate variant link candidates,4,P0,AI/Search,Variant candidates created with dimensions/rationale; no auto-merge,Embeddings/summaries
+Reviews,Build Reviews Hub queue list,4,P0,Frontend,"Queues show duplicate, variant, similarity, stale, approvals, comments",Review API
+Reviews,Build compare panel,4,P0,Frontend,"Reviewer sees side-by-side previews, metadata, provenance, rationale, confidence",Review item detail API
+Reviews,Implement mark-as-variant command,4,P0,Backend,Accepted variant updates graph transactionally and writes audit event,Review item; permissions
+Reviews,Implement mark-as-similar command,4,P0,Backend,Accepted similarity creates edge and writes audit event,Review item; permissions
+Reviews,Implement merge-versions command,4,P1,Backend,"Authorized merge preserves provenance, supersedes link, audit trail",Version model
+Reviews,Implement reject candidate action,4,P0,Backend,Rejected item records reason and does not alter graph,Review item
+ContentBlocks,Create ContentBlock tables and APIs,5,P0,Backend,Families/variants/versions/members support ordered unit references,Core schema
+ContentBlocks,Create ContentBlock from selected units,5,P0,Full-stack,User can select units and save ordered reusable block,Library/tray
+ContentBlocks,Build ContentBlock detail page,5,P0,Frontend,"Detail shows ordered members, purpose, notes, where-used, insert action",ContentBlock APIs
+Storyboard,Create Storyboard tables and APIs,5,P0,Backend,"Storyboards, snapshots, sections, slots exist with ordered composition",Core schema
+Storyboard,Build Storyboard workspace shell,5,P0,Frontend,"Sections/slots layout renders with toolbar, tray, diagnostics panel placeholder",Storyboard APIs
+Storyboard,Implement section CRUD/reorder,5,P0,Full-stack,User can add/rename/reorder/collapse sections; ordering persists,Storyboard shell
+Storyboard,Implement slot CRUD/reorder,5,P0,Full-stack,"User can add gaps/slots, reorder slots, and persist purpose/required fields",Sections
+Storyboard,Insert ContentUnit into slot,5,P0,Full-stack,User can add a selected content unit from search/library/tray to storyboard slot,Search/library
+Storyboard,Insert ContentBlock into storyboard,5,P0,Full-stack,User can insert block and inspect underlying members,ContentBlocks
+Storyboard,Implement slot swap/compare skeleton,5,P1,Frontend,User can open alternatives panel and swap selected unit/block,Search/recommendations
+Storyboard,Create storyboard snapshots,5,P0,Full-stack,Snapshot preserves section/slot order and selected object refs immutably,Storyboard models
+Storyboard,Add anchored comments,5,P0,Full-stack,"Comments can attach to storyboard, snapshot, section, or slot",Comments
+Storyboard,Implement basic diagnostics,5,P1,AI/Search,"Duplicate, stale/unapproved, gap count, read-time warnings appear",Storyboard data
+Permissions,Implement role model and auth stub,6,P0,Backend,Viewer/Contributor/Curator/Reviewer/Admin roles enforced for key actions,Auth foundation
+Permissions,Prevent restricted content leakage in search,6,P0,Backend/Search,"Unauthorized content excluded from result cards, snippets, thumbnails, grouped family results",Permission model
+Observability,Build ingestion job dashboard,6,P1,Admin/Backend,Admin can see jobs by status/stage/failure reason/duration,Job telemetry
+Observability,Track search telemetry,6,P1,Search,"Queries, results, clicks, zero-result events, add-to-storyboard events captured",Search UI/API
+Testing,Add Playwright core-flow tests,6,P0,QA/Frontend,"Upload, browse, search, review, storyboard core flows tested",Core features
+Testing,Add backend integration tests for governance commands,6,P0,Backend,Approval/canonical/variant/similarity actions validate permissions and audit,Review/governance APIs
+Pilot,Create demo walkthrough and script,6,P0,Product,Pilot demo can run from seeded corpus without engineering help,Seed data; core flows
+Pilot,Performance pass,6,P1,Full-stack,Search/detail/library meet initial targets on pilot corpus,Telemetry
