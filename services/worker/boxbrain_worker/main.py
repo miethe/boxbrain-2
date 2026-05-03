@@ -35,9 +35,9 @@ def run_stage(job_id: UUID, stage: str) -> WorkerStageResult:
 def process_ingestion_job(job_id: str) -> dict[str, Any]:
     """RQ entrypoint for deterministic MVP PPTX ingestion."""
 
-    from app.dependencies import repository, object_storage
+    from app.dependencies import repository, object_storage, slide_renderer
     from app.application.use_cases import BoxBrainUseCases
 
-    use_cases = BoxBrainUseCases(repository, object_storage=object_storage)
+    use_cases = BoxBrainUseCases(repository, object_storage=object_storage, slide_renderer=slide_renderer)
     job = use_cases.process_ingestion_job(UUID(job_id))
     return job.model_dump(mode="json")

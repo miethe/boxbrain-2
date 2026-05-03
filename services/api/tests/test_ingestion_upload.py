@@ -4,6 +4,12 @@ import io
 import zipfile
 from uuid import UUID
 
+from fastapi.testclient import TestClient
+
+from app.application.slide_renderer import SlideRenderError, SlideRenderer
+from app.infrastructure.in_memory_repository import InMemoryBoxBrainRepository
+from app.main import create_app
+
 from .conftest import role_headers
 
 
@@ -97,3 +103,52 @@ def test_deterministic_processor_creates_one_atomic_unit_per_slide_and_is_idempo
     assert len(created_ids) == 2
     assert all(repo.content_unit_versions[UUID(value)].source_slide_count == 1 for value in created_ids)
     assert len(set(created_ids)) == 2
+    created_versions = [repo.content_unit_versions[UUID(value)] for value in created_ids]
+    assert [version.source_order_index for version in created_versions] == [1, 2]
+    assert created_versions[0].render_uri
+    assert created_versions[0].thumbnail_uri
+    assert created_versions[0].render_uri != created_versions[0].thumbnail_uri
+    assert repo.work_product_versions[UUID(upload["workProductVersionId"])].filmstrip_version_ids == [
+        UUID(value) for value in created_ids
+    ]
+    assert repo.work_product_versions[UUID(upload["workProductVersionId"])].preview_uri == created_versions[0].thumbnail_uri
+    assert len(repo.embeddings) == 2
+    assert first.outputSummary is not None
+    assert first.outputSummary.createdContentUnitVersionIds == [UUID(value) for value in created_ids]
+
+
+class MissingRenderer(SlideRenderer):
+    renderer_name = "missing-test-renderer"
+
+    def render_pptx(self, *, content: bytes, filename: str, slide_count: int):
+        raise SlideRenderError(
+            "renderer_unavailable",
+            "LibreOffice renderer is not installed or not on PATH. Install LibreOffice and retry.",
+        )
+
+
+def test_renderer_failure_records_actionable_job_state():
+    app = create_app(InMemoryBoxBrainRepository(), slide_renderer=MissingRenderer())
+    payload = _pptx_bytes(["Cloud ROI"])
+
+    with TestClient(app) as client:
+        upload = client.post(
+            "/api/uploads",
+            files={
+                "file": (
+                    "deck.pptx",
+                    payload,
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                )
+            },
+            data={"artifactType": "deck", "title": "Pilot Deck"},
+            headers=role_headers("contributor", "contributor-1"),
+        ).json()
+
+        job = client.app.state.use_cases.process_ingestion_job(UUID(upload["id"]))
+
+    assert job.status == "failed"
+    assert job.stage == "rendered"
+    assert job.errorCode == "renderer_unavailable"
+    assert "LibreOffice" in (job.errorMessage or "")
+    assert job.stageTelemetry["rendered"]["status"] == "failed"

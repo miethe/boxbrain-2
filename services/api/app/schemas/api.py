@@ -60,6 +60,15 @@ class ProvenanceRecord(BaseModel):
     createdAt: datetime
 
 
+class IngestionOutputSummary(BaseModel):
+    slideCount: int = 0
+    renderCount: int = 0
+    embeddingCount: int = 0
+    createdContentUnitVersionIds: list[UUID] = Field(default_factory=list)
+    workProductVersionId: UUID | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
 class IngestionJob(BaseModel):
     id: UUID
     status: Literal["queued", "running", "failed", "complete"]
@@ -69,6 +78,8 @@ class IngestionJob(BaseModel):
     originalObjectId: UUID | None = None
     workProductVersionId: UUID | None = None
     uploadMetadata: dict[str, Any] = Field(default_factory=dict)
+    outputSummary: IngestionOutputSummary | None = None
+    stageTelemetry: dict[str, Any] = Field(default_factory=dict)
     errorCode: str | None = None
     errorMessage: str | None = None
     retryCount: int = 0
@@ -98,6 +109,7 @@ class ContentUnitVersion(BaseModel):
     freshnessState: FreshnessState
     qualityScore: float | None = None
     usageScore: float | None = None
+    sourceOrderIndex: int | None = None
     createdAt: datetime
 
 

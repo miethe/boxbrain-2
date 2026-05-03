@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.routes import (
     admin,
+    assets,
     comments,
     content_blocks,
     content_units,
@@ -20,6 +21,7 @@ from app.api.routes import (
     work_products,
 )
 from app.application.use_cases import BoxBrainUseCases
+from app.application.slide_renderer import SlideRenderer
 from app.domain.errors import ConflictError, DomainError, NotFoundError, PermissionDeniedError
 from app.infrastructure.in_memory_repository import InMemoryBoxBrainRepository
 from app.infrastructure.queue import IngestionQueue
@@ -30,6 +32,7 @@ def create_app(
     repository: InMemoryBoxBrainRepository | None = None,
     object_storage: ObjectStorage | None = None,
     ingestion_queue: IngestionQueue | None = None,
+    slide_renderer: SlideRenderer | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="BoxBrain v2 API",
@@ -54,13 +57,21 @@ def create_app(
         resolved_ingestion_queue = default_ingestion_queue
     else:
         resolved_ingestion_queue = ingestion_queue
+    if slide_renderer is None:
+        from app.dependencies import slide_renderer as default_slide_renderer
+
+        resolved_slide_renderer = default_slide_renderer
+    else:
+        resolved_slide_renderer = slide_renderer
     app.state.repository = repo
     app.state.object_storage = resolved_object_storage
     app.state.ingestion_queue = resolved_ingestion_queue
+    app.state.slide_renderer = resolved_slide_renderer
     app.state.use_cases = BoxBrainUseCases(
         repo,
         object_storage=resolved_object_storage,
         ingestion_queue=resolved_ingestion_queue,
+        slide_renderer=resolved_slide_renderer,
     )
 
     register_exception_handlers(app)
@@ -71,6 +82,7 @@ def create_app(
 def register_routes(app: FastAPI) -> None:
     for router in (
         health.router,
+        assets.router,
         ingestion.router,
         search.router,
         content_units.router,

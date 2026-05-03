@@ -10,12 +10,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.models import (
     AuditEvent,
-    IngestionJob,
-    ProvenanceRecord,
-    StoredObject,
     ContentUnitFamily,
     ContentUnitVariant,
     ContentUnitVersion,
+    EmbeddingRecord,
+    IngestionJob,
+    ProvenanceRecord,
+    StoredObject,
     WorkProductFamily,
     WorkProductVersion,
     now_utc,
@@ -25,6 +26,7 @@ from app.infrastructure.db_models import (
     ContentUnitFamilyRow,
     ContentUnitVariantRow,
     ContentUnitVersionRow,
+    EmbeddingRow,
     IngestionJobRow,
     ProvenanceRecordRow,
     StoredObjectRow,
@@ -138,7 +140,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                         variant_id=row.variant_id,
                         version_number=row.version_number,
                         render_uri=row.render_uri,
-                        thumbnail_uri=row.render_uri,
+                        thumbnail_uri=row.thumbnail_uri,
                         summary=row.summary,
                         approval_state=row.approval_state,
                         freshness_state=row.freshness_state or "fresh",
@@ -147,6 +149,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                         extracted_text=row.extracted_text,
                         speaker_notes=row.speaker_notes,
                         provenance_id=row.provenance_id,
+                        source_order_index=row.source_order_index,
                         created_at=row.created_at,
                     )
                     for row in content_unit_rows
@@ -211,6 +214,20 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                 )
                 for row in session.scalars(select(AuditEventRow))
             ]
+            self.embeddings = {
+                row.id: EmbeddingRecord(
+                    id=row.id,
+                    target_type=row.target_type,
+                    target_id=row.target_id,
+                    embedding_kind=row.embedding_kind,
+                    model_name=row.model_name,
+                    model_version=row.model_version,
+                    dims=row.dims,
+                    metadata=dict(row.metadata_),
+                    created_at=row.created_at,
+                )
+                for row in session.scalars(select(EmbeddingRow))
+            }
 
     def save_stored_object(self, stored_object: StoredObject) -> None:
         self.stored_objects[stored_object.id] = stored_object
@@ -356,6 +373,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     variant_id=variant.id,
                     version_number=version.version_number,
                     render_uri=version.render_uri,
+                    thumbnail_uri=version.thumbnail_uri,
                     extracted_text=version.extracted_text,
                     summary=version.summary,
                     speaker_notes=version.speaker_notes,
@@ -371,6 +389,35 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     created_at=version.created_at,
                 )
             )
+
+    def save_embedding(self, embedding: EmbeddingRecord) -> None:
+        self.embeddings[embedding.id] = embedding
+        with self._session() as session:
+            session.merge(
+                EmbeddingRow(
+                    id=embedding.id,
+                    target_type=embedding.target_type,
+                    target_id=embedding.target_id,
+                    embedding_kind=embedding.embedding_kind,
+                    model_name=embedding.model_name,
+                    model_version=embedding.model_version,
+                    dims=embedding.dims,
+                    metadata_=embedding.metadata,
+                    created_at=embedding.created_at,
+                )
+            )
+
+    def update_work_product_version(self, version: WorkProductVersion) -> None:
+        self.work_product_versions[version.id] = version
+        with self._session() as session:
+            row = session.get(WorkProductVersionRow, version.id)
+            if row is not None:
+                row.preview_uri = version.preview_uri
+            family = self.work_product_families.get(version.family_id)
+            if family is not None:
+                family_row = session.get(WorkProductFamilyRow, family.id)
+                if family_row is not None:
+                    family_row.summary = family.summary
 
     def record_audit(
         self,

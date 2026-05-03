@@ -4,12 +4,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.infrastructure.in_memory_repository import InMemoryBoxBrainRepository
+from app.application.slide_renderer import FakeSlideRenderer
 from app.main import create_app
 
 
 @pytest.fixture()
 def client() -> Iterator[TestClient]:
-    app = create_app(InMemoryBoxBrainRepository())
+    app = create_app(InMemoryBoxBrainRepository(), slide_renderer=FakeSlideRenderer())
     with TestClient(app) as test_client:
         yield test_client
 

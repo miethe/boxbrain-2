@@ -60,6 +60,19 @@ class AuditEvent:
 
 
 @dataclass(slots=True)
+class EmbeddingRecord:
+    id: UUID
+    target_type: str
+    target_id: UUID
+    embedding_kind: str
+    model_name: str
+    model_version: str | None
+    dims: int
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=now_utc)
+
+
+@dataclass(slots=True)
 class ContentUnitFamily:
     id: UUID
     family_title: str
@@ -99,6 +112,7 @@ class ContentUnitVersion:
     provenance_id: UUID
     restricted: bool = False
     source_slide_count: int = 1
+    source_order_index: int | None = None
     created_at: datetime = field(default_factory=now_utc)
 
     def __post_init__(self) -> None:

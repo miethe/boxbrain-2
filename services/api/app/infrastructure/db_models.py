@@ -130,6 +130,7 @@ class ContentUnitVersionRow(Base):
     variant_id: Mapped[UUID] = mapped_column(ForeignKey("content_unit_variants.id"), nullable=False)
     version_number: Mapped[str] = mapped_column(Text, nullable=False)
     render_uri: Mapped[str | None] = mapped_column(Text)
+    thumbnail_uri: Mapped[str | None] = mapped_column(Text)
     extracted_text: Mapped[str | None] = mapped_column(Text)
     summary: Mapped[str | None] = mapped_column(Text)
     speaker_notes: Mapped[str | None] = mapped_column(Text)

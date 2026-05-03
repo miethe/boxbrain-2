@@ -28,6 +28,7 @@ def provenance_model(record: d.ProvenanceRecord) -> s.ProvenanceRecord:
 
 
 def ingestion_job_model(job: d.IngestionJob) -> s.IngestionJob:
+    summary = _ingestion_output_summary(job)
     return s.IngestionJob(
         id=job.id,
         status=cast(Literal["queued", "running", "failed", "complete"], job.status),
@@ -37,6 +38,8 @@ def ingestion_job_model(job: d.IngestionJob) -> s.IngestionJob:
         originalObjectId=job.original_object_id,
         workProductVersionId=job.work_product_version_id,
         uploadMetadata=job.upload_metadata,
+        outputSummary=summary,
+        stageTelemetry=dict(job.upload_metadata.get("stageTelemetry") or {}),
         errorCode=job.error_code,
         errorMessage=job.error_message,
         retryCount=job.retry_count,
@@ -72,7 +75,29 @@ def content_unit_version_model(version: d.ContentUnitVersion) -> s.ContentUnitVe
         freshnessState=cast(s.FreshnessState, version.freshness_state),
         qualityScore=version.quality_score,
         usageScore=version.usage_score,
+        sourceOrderIndex=version.source_order_index,
         createdAt=version.created_at,
+    )
+
+
+def _ingestion_output_summary(job: d.IngestionJob) -> s.IngestionOutputSummary | None:
+    raw = job.upload_metadata.get("outputSummary")
+    if not isinstance(raw, dict):
+        return None
+    created_ids = []
+    for value in raw.get("createdContentUnitVersionIds", []):
+        try:
+            created_ids.append(UUID(str(value)))
+        except ValueError:
+            continue
+    work_product_version_id = raw.get("workProductVersionId") or job.work_product_version_id
+    return s.IngestionOutputSummary(
+        slideCount=int(raw.get("slideCount") or job.upload_metadata.get("slideCount") or 0),
+        renderCount=int(raw.get("renderCount") or 0),
+        embeddingCount=int(raw.get("embeddingCount") or 0),
+        createdContentUnitVersionIds=created_ids,
+        workProductVersionId=UUID(str(work_product_version_id)) if work_product_version_id else None,
+        warnings=[str(value) for value in raw.get("warnings", [])],
     )
 
 
@@ -188,7 +213,7 @@ def work_product_family_card(
         title=family.title,
         artifactType=family.artifact_type,
         summary=family.summary,
-        previewUri=family.preview_uri,
+        previewUri=latest_version.preview_uri if latest_version else family.preview_uri,
         variantCount=family.variant_count,
         versionCount=family.version_count,
         statusChips=work_product_status(family, latest_version),

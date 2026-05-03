@@ -174,6 +174,7 @@ CREATE TABLE IF NOT EXISTS content_unit_versions (
   render_object_id UUID REFERENCES stored_objects(id),
   thumbnail_object_id UUID REFERENCES stored_objects(id),
   render_uri TEXT,
+  thumbnail_uri TEXT,
   extracted_text TEXT,
   summary TEXT,
   speaker_notes TEXT,
@@ -463,6 +464,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
   model_version TEXT,
   dims INTEGER NOT NULL,
   embedding vector(1536),
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (target_type, target_id, embedding_kind, model_name, model_version)
 );
@@ -531,4 +533,3 @@ CREATE TABLE IF NOT EXISTS collection_members (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (collection_id, member_type, member_id)
 );
-

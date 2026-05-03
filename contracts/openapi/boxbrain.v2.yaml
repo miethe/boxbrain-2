@@ -9,6 +9,21 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /api/assets/{key}:
+    get:
+      summary: Get stored render or thumbnail asset
+      operationId: getAsset
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Stored binary asset
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
   /api/health:
     get:
       summary: Health check
@@ -978,12 +993,31 @@ components:
         uploadMetadata:
           type: object
           additionalProperties: true
+        outputSummary:
+          $ref: '#/components/schemas/IngestionOutputSummary'
+          nullable: true
+        stageTelemetry:
+          type: object
+          additionalProperties: true
         errorCode: { type: string, nullable: true }
         errorMessage: { type: string, nullable: true }
         retryCount: { type: integer, default: 0 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time, nullable: true }
+    IngestionOutputSummary:
+      type: object
+      properties:
+        slideCount: { type: integer, default: 0 }
+        renderCount: { type: integer, default: 0 }
+        embeddingCount: { type: integer, default: 0 }
+        createdContentUnitVersionIds:
+          type: array
+          items: { type: string, format: uuid }
+        workProductVersionId: { type: string, format: uuid, nullable: true }
+        warnings:
+          type: array
+          items: { type: string }
     ContentUnitFamilyCard:
       type: object
       required: [id, familyTitle, unitType]
@@ -1039,6 +1073,7 @@ components:
         freshnessState: { $ref: '#/components/schemas/FreshnessState' }
         qualityScore: { type: number, nullable: true }
         usageScore: { type: number, nullable: true }
+        sourceOrderIndex: { type: integer, nullable: true }
         createdAt: { type: string, format: date-time }
     ContentUnitVersionDetail:
       allOf:

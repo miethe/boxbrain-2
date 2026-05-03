@@ -8,6 +8,7 @@ from app.domain.models import (
     Comment,
     ContentBlockMember,
     ContentBlockVersion,
+    EmbeddingRecord,
     ContentUnitFamily,
     ContentUnitVariant,
     ContentUnitVersion,
@@ -71,6 +72,7 @@ class InMemoryBoxBrainRepository:
         self.similarity_edges: dict[UUID, SimilarityEdge] = {}
         self.audit_events: list[AuditEvent] = []
         self.stored_objects: dict[UUID, StoredObject] = {}
+        self.embeddings: dict[UUID, EmbeddingRecord] = {}
         if seed:
             self.seed()
 

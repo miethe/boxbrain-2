@@ -7,12 +7,22 @@ from uuid import UUID, uuid4
 from app.application import presenters as p
 from app.application.pptx_processor import extract_pptx_slides
 from app.application.ports import BoxBrainRepository
+from app.application.slide_renderer import (
+    RenderedSlideAsset,
+    SlideRenderError,
+    SlideRenderer,
+    build_slide_renderer,
+)
 from app.domain.errors import ConflictError, NotFoundError
 from app.domain.ingestion_search import (
+    DETERMINISTIC_EMBEDDING_MODEL,
+    DETERMINISTIC_EMBEDDING_VERSION,
     content_unit_fingerprint,
+    deterministic_text_embedding,
     hash_bytes,
     validate_pptx_upload,
 )
+from app.domain.ingestion_search.embeddings import DEFAULT_EMBEDDING_DIMS
 from app.domain.models import (
     Actor,
     Comment,
@@ -21,6 +31,7 @@ from app.domain.models import (
     ContentUnitFamily,
     ContentUnitVariant,
     ContentUnitVersion,
+    EmbeddingRecord,
     IngestionJob,
     Note,
     ProvenanceRecord,
@@ -52,10 +63,12 @@ class BoxBrainUseCases:
         *,
         object_storage: ObjectStorage | None = None,
         ingestion_queue: IngestionQueue | None = None,
+        slide_renderer: SlideRenderer | None = None,
     ) -> None:
         self.repository = repository
         self.object_storage = object_storage or InMemoryObjectStorage()
         self.ingestion_queue = ingestion_queue or NoopIngestionQueue()
+        self.slide_renderer = slide_renderer or build_slide_renderer()
 
     def health(self) -> s.HealthResponse:
         return s.HealthResponse(status="ok")
@@ -321,44 +334,104 @@ class BoxBrainUseCases:
             content_type=job.upload_metadata.get("contentType"),
         )
         if not validation.valid:
-            job.status = "failed"
-            job.stage = "validated"
-            job.error_code = validation.error_code
-            job.error_message = validation.error_message
-            job.updated_at = now_utc()
-            self._save_ingestion_job(job)
+            self._fail_ingestion_job(
+                job,
+                stage="validated",
+                error_code=validation.error_code or "validation_failed",
+                error_message=validation.error_message or "PPTX validation failed.",
+            )
             return p.ingestion_job_model(job)
 
         job.status = "running"
-        job.stage = "validated"
-        job.updated_at = now_utc()
-        self._save_ingestion_job(job)
+        self._mark_ingestion_stage(job, "validated", status="complete")
+
+        try:
+            rendered_assets = self.slide_renderer.render_pptx(
+                content=payload,
+                filename=str(job.upload_metadata.get("filename") or "upload.pptx"),
+                slide_count=int(validation.slide_count or 0),
+            )
+        except SlideRenderError as exc:
+            self._fail_ingestion_job(
+                job,
+                stage="rendered",
+                error_code=exc.code,
+                error_message=exc.message,
+            )
+            return p.ingestion_job_model(job)
+
+        render_assets_by_slide = {asset.source_order_index: asset for asset in rendered_assets}
+        self._mark_ingestion_stage(
+            job,
+            "rendered",
+            status="complete",
+            metadata={
+                "renderCount": len(rendered_assets),
+                "renderer": self.slide_renderer.renderer_name,
+                "rendererVersion": rendered_assets[0].renderer_version if rendered_assets else None,
+            },
+        )
 
         slides = extract_pptx_slides(payload)
-        job.stage = "rendered"
-        job.updated_at = now_utc()
-        self._save_ingestion_job(job)
+        self._mark_ingestion_stage(
+            job,
+            "extracted",
+            status="complete",
+            metadata={"slideCount": len(slides), "extractorVersion": "pptx-xml-v2"},
+        )
 
-        created_ids = {
+        existing_ids = [
             UUID(value)
             for value in job.upload_metadata.get("createdContentUnitVersionIds", [])
-        }
-        if not created_ids:
-            created_ids = self._create_content_units_from_slides(job, slides, validation.content_hash)
+        ]
+        if existing_ids:
+            created_ids = existing_ids
+        else:
+            created_ids = self._create_content_units_from_slides(
+                job,
+                slides,
+                validation.content_hash,
+                render_assets_by_slide,
+            )
         job.upload_metadata["createdContentUnitVersionIds"] = [str(value) for value in created_ids]
-        job.stage = "complete"
+        self._mark_ingestion_stage(
+            job,
+            "units_created",
+            status="complete",
+            metadata={"createdContentUnitCount": len(created_ids)},
+            save=False,
+        )
+        job.upload_metadata["outputSummary"] = {
+            "slideCount": len(slides),
+            "renderCount": len(rendered_assets),
+            "embeddingCount": len(created_ids),
+            "createdContentUnitVersionIds": [str(value) for value in created_ids],
+            "workProductVersionId": str(job.work_product_version_id) if job.work_product_version_id else None,
+            "warnings": list(job.upload_metadata.get("warnings") or []),
+        }
+        self._mark_ingestion_stage(
+            job,
+            "indexed",
+            status="complete",
+            metadata={"embeddingCount": len(created_ids)},
+            save=False,
+        )
         job.status = "complete"
         job.error_code = None
         job.error_message = None
-        job.updated_at = now_utc()
+        self._mark_ingestion_stage(job, "complete", status="complete", save=False)
         job.completed_at = job.updated_at
 
         work_product = self.repository.work_product_versions.get(job.work_product_version_id)
         if work_product is not None:
-            work_product.filmstrip_version_ids = list(created_ids)
+            work_product.filmstrip_version_ids = created_ids
             if created_ids:
-                first = self.repository.content_unit_versions[next(iter(created_ids))]
+                first = self.repository.content_unit_versions[created_ids[0]]
                 work_product.preview_uri = first.thumbnail_uri
+                family = self.repository.work_product_families.get(work_product.family_id)
+                if family is not None:
+                    family.preview_uri = first.thumbnail_uri
+            self._update_work_product_version(work_product)
 
         self._save_ingestion_job(job)
         self.repository.record_audit(
@@ -1252,31 +1325,132 @@ class BoxBrainUseCases:
         if storyboard:
             storyboard.updated_at = now_utc()
 
+    def _mark_ingestion_stage(
+        self,
+        job: IngestionJob,
+        stage: str,
+        *,
+        status: str,
+        metadata: dict[str, Any] | None = None,
+        save: bool = True,
+    ) -> None:
+        timestamp = now_utc()
+        job.stage = stage
+        job.updated_at = timestamp
+        telemetry = dict(job.upload_metadata.get("stageTelemetry") or {})
+        telemetry[stage] = {
+            "status": status,
+            "completedAt": timestamp.isoformat(),
+            **(metadata or {}),
+        }
+        job.upload_metadata["stageTelemetry"] = telemetry
+        if save:
+            self._save_ingestion_job(job)
+
+    def _fail_ingestion_job(
+        self,
+        job: IngestionJob,
+        *,
+        stage: str,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        job.status = "failed"
+        job.error_code = error_code
+        job.error_message = error_message
+        self._mark_ingestion_stage(
+            job,
+            stage,
+            status="failed",
+            metadata={"errorCode": error_code, "errorMessage": error_message},
+        )
+
+    def _store_rendered_slide_object(
+        self,
+        job: IngestionJob,
+        source_order_index: int,
+        content: bytes,
+        content_type: str,
+        extension: str,
+        *,
+        object_type: str,
+    ) -> StoredObject:
+        digest = hash_bytes(content)
+        key = (
+            f"renders/{job.id}/{source_order_index:04d}/"
+            f"{object_type}-{digest[:12]}{extension if extension.startswith('.') else f'.{extension}'}"
+        )
+        artifact = self.object_storage.put_bytes(
+            key=key,
+            content=content,
+            content_type=content_type,
+            metadata={
+                "sha256": digest,
+                "jobId": str(job.id),
+                "sourceOrderIndex": str(source_order_index),
+                "objectType": object_type,
+            },
+        )
+        stored_object = StoredObject(
+            id=uuid4(),
+            object_type=object_type,
+            storage_uri=f"/api/assets/{artifact.key}",
+            mime_type=content_type,
+            byte_size=len(content),
+            sha256=digest,
+            metadata={"bucket": artifact.bucket, "key": artifact.key, "storageUri": artifact.storage_uri},
+            created_at=now_utc(),
+        )
+        self.repository.stored_objects[stored_object.id] = stored_object
+        self._save_stored_object(stored_object)
+        return stored_object
+
     def _create_content_units_from_slides(
         self,
         job: IngestionJob,
         slides,
         source_hash: str | None,
-    ) -> set[UUID]:
-        created_ids: set[UUID] = set()
+        rendered_assets: dict[int, RenderedSlideAsset],
+    ) -> list[UUID]:
+        created_ids: list[UUID] = []
         source_file_hash = source_hash or str(job.upload_metadata.get("sourceFileHash") or "")
         taxonomy = cast(dict[str, list[str]], job.upload_metadata.get("taxonomy") or {})
         for slide in slides:
+            rendered_asset = rendered_assets.get(slide.source_order_index)
+            if rendered_asset is None:
+                raise ConflictError(f"Rendered asset missing for slide {slide.source_order_index}.")
+            existing = self._find_ingested_version(job.id, slide.source_order_index)
+            if existing is not None:
+                created_ids.append(existing.id)
+                continue
+            render_object = self._store_rendered_slide_object(
+                job,
+                slide.source_order_index,
+                rendered_asset.render_content,
+                rendered_asset.render_content_type,
+                rendered_asset.render_extension,
+                object_type="render",
+            )
+            thumbnail_object = self._store_rendered_slide_object(
+                job,
+                slide.source_order_index,
+                rendered_asset.thumbnail_content,
+                rendered_asset.thumbnail_content_type,
+                rendered_asset.thumbnail_extension,
+                object_type="thumbnail",
+            )
             fingerprint = content_unit_fingerprint(
                 source_file_hash=source_file_hash,
                 source_order_index=slide.source_order_index,
                 extracted_text=slide.extracted_text,
                 speaker_notes=slide.speaker_notes,
+                visual_bytes=rendered_asset.render_content,
                 metadata={
                     "jobId": str(job.id),
                     "workProductVersionId": str(job.work_product_version_id),
                     "sourceOrderIndex": slide.source_order_index,
                 },
             )
-            existing = self._find_ingested_version(job.id, slide.source_order_index)
-            if existing is not None:
-                created_ids.add(existing.id)
-                continue
 
             provenance = ProvenanceRecord(
                 id=uuid4(),
@@ -1328,8 +1502,8 @@ class BoxBrainUseCases:
                 id=uuid4(),
                 variant_id=variant.id,
                 version_number="v1.0",
-                render_uri=f"/placeholder/renders/{job.id}/{slide.source_order_index}.png",
-                thumbnail_uri=f"/placeholder/thumbs/{job.id}/{slide.source_order_index}.png",
+                render_uri=render_object.storage_uri,
+                thumbnail_uri=thumbnail_object.storage_uri,
                 summary=slide.extracted_text[:240] if slide.extracted_text else None,
                 approval_state="draft",
                 freshness_state="fresh",
@@ -1339,6 +1513,7 @@ class BoxBrainUseCases:
                 speaker_notes=slide.speaker_notes,
                 provenance_id=provenance.id,
                 source_slide_count=1,
+                source_order_index=slide.source_order_index,
                 created_at=now_utc(),
             )
             variant.latest_version_id = version.id
@@ -1354,7 +1529,30 @@ class BoxBrainUseCases:
                 text_hash=fingerprint.text_hash,
                 visual_hash=fingerprint.visual_hash,
             )
-            created_ids.add(version.id)
+            self._save_embedding(
+                EmbeddingRecord(
+                    id=uuid4(),
+                    target_type="content_unit_version",
+                    target_id=version.id,
+                    embedding_kind="text",
+                    model_name=DETERMINISTIC_EMBEDDING_MODEL,
+                    model_version=DETERMINISTIC_EMBEDDING_VERSION,
+                    dims=DEFAULT_EMBEDDING_DIMS,
+                    metadata={
+                        "source": "deterministic_pptx_ingest",
+                        "sourceOrderIndex": slide.source_order_index,
+                        "embedding": list(
+                            deterministic_text_embedding(
+                                "\n".join(
+                                    part for part in (slide.extracted_text, slide.speaker_notes) if part
+                                ),
+                                dims=DEFAULT_EMBEDDING_DIMS,
+                            )
+                        ),
+                    },
+                )
+            )
+            created_ids.append(version.id)
         return created_ids
 
     def _find_ingested_version(
@@ -1431,6 +1629,17 @@ class BoxBrainUseCases:
                 text_hash=text_hash,
                 visual_hash=visual_hash,
             )
+
+    def _save_embedding(self, embedding: EmbeddingRecord) -> None:
+        self.repository.embeddings[embedding.id] = embedding
+        save = getattr(self.repository, "save_embedding", None)
+        if callable(save):
+            save(embedding)
+
+    def _update_work_product_version(self, version: WorkProductVersion) -> None:
+        save = getattr(self.repository, "update_work_product_version", None)
+        if callable(save):
+            save(version)
 
     def _review_target_version_ids(self, item: ReviewItem) -> tuple[UUID, UUID]:
         version_ids = [
