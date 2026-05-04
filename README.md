@@ -30,10 +30,11 @@ BoxBrain v2 is a governed enterprise slide and content catalog for decomposing b
    cp .env.example .env
    ```
 
-4. Start local infrastructure:
+4. Start local infrastructure and apply migrations:
 
    ```bash
    make infra-up
+   make db-migrate
    ```
 
 5. Run scaffold verification:
@@ -42,7 +43,7 @@ BoxBrain v2 is a governed enterprise slide and content catalog for decomposing b
    pnpm verify
    ```
 
-Local infrastructure starts PostgreSQL with pgvector, Redis, and MinIO. The Postgres container initializes from `infra/initial_db_schema.sql`, copied from the planning asset bundle.
+Local infrastructure starts PostgreSQL with pgvector, Redis, and MinIO. Database schema creation flows through Alembic. Set `BOXBRAIN_DB_SCHEMA=boxbrain` to keep BoxBrain tables and its Alembic version table in a dedicated PostgreSQL schema, which is the safe option when pointing `DATABASE_URL` at an existing PostgreSQL database.
 
 ## Useful Commands
 
@@ -54,6 +55,7 @@ pnpm typecheck
 pnpm test
 pnpm verify
 make infra-up
+make db-migrate
 make infra-down
 make infra-logs
 ```

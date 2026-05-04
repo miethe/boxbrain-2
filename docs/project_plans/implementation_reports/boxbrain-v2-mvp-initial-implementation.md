@@ -124,6 +124,7 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 - Library now loads live `/api/content-units/families` and `/api/work-products/families` data with loading, empty, error, and restricted states.
 - ContentUnit detail now loads live family/detail and version/detail APIs, including variant/version expansion, provenance, similar items, where-used references, comments, and notes.
 - Frontend API helpers now cover ContentUnit family/detail, variants, versions, similar, where-used, comments, notes, WorkProduct families, and governance mutation endpoints.
+- The web dev/start scripts now load the repo `.env`/`.env.example` and derive the Next.js port from `WEB_PORT`, `PORT`, or `APP_URL`, so `pnpm --filter @boxbrain/web dev` respects local port overrides.
 - Existing demo-backed surfaces remain intact for routes not yet moved to generated/API-backed data.
 
 ## Backend Features Completed
@@ -165,6 +166,8 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
   - No-op queue for tests/local default.
   - RQ queue when `BOXBRAIN_ENQUEUE_INGESTION=true`.
 - Compose command detection now supports `docker compose`, `docker-compose`, and `podman compose`, with `COMPOSE=...` override support.
+- Runtime Makefile targets load the selected `.env`/`.env.example` file so `DATABASE_URL`, Redis, MinIO, and schema settings are shared by compose, migrations, API, and worker commands.
+- `BOXBRAIN_DB_SCHEMA` isolates BoxBrain tables and the Alembic version table in a dedicated PostgreSQL schema for safer reuse of an existing PostgreSQL database.
 - `make api-db` runs FastAPI in PostgreSQL/S3/RQ mode.
 - `make worker-ingest` runs the local RQ worker against the `boxbrain-ingestion` queue with the import path and integration-mode environment configured.
 - Database-mode ingestion list/detail/retry/process paths refresh the SQLAlchemy read model before reading jobs, so API and worker processes can see each other's persisted state.
@@ -218,6 +221,12 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
   - `cd services/api && uv run pytest -q tests/test_live_rendering.py`
 - Alembic offline SQL generation passed:
   - `cd services/api && uv run alembic upgrade head --sql`
+- Local env-file database/schema wiring passed:
+  - `make db-migrate` applied migrations to `postgresql+psycopg://boxbrain:boxbrain@localhost:5435/boxbrain` with `BOXBRAIN_DB_SCHEMA=boxbrain`.
+  - `make api-db` booted and `curl -sS http://127.0.0.1:8000/api/health` returned `{"status":"ok","service":"boxbrain-api"}`.
+- Local web env-file port wiring passed:
+  - `pnpm --filter @boxbrain/web dev` booted Next.js on `http://localhost:3300` from `APP_URL=http://localhost:3300`.
+  - `curl -I -sS http://localhost:3300` returned `HTTP/1.1 200 OK`.
 - Focused Milestone 2 backend validation passed:
   - `cd services/api && uv run pytest -q tests/test_milestone2_visibility_api.py tests/test_governance.py tests/test_search_permissions.py tests/test_api_invariants.py tests/test_ingestion_upload.py`
   - Result: 20 passed.

@@ -3,9 +3,9 @@ from __future__ import annotations
 import io
 import os
 import shutil
-import zipfile
 
 import pytest
+from pptx import Presentation
 
 from app.application.slide_renderer import LibreOfficeSlideRenderer
 
@@ -18,18 +18,10 @@ pytestmark = pytest.mark.skipif(
 
 def _pptx_bytes() -> bytes:
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("[Content_Types].xml", "<Types />")
-        archive.writestr("ppt/presentation.xml", "<presentation />")
-        archive.writestr(
-            "ppt/slides/slide1.xml",
-            (
-                "<p:sld xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" "
-                "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">"
-                "<a:t>Live render smoke</a:t>"
-                "</p:sld>"
-            ),
-        )
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[5])
+    slide.shapes.title.text = "Live render smoke"
+    presentation.save(buffer)
     return buffer.getvalue()
 
 

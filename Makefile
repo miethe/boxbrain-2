@@ -10,6 +10,12 @@ COMPOSE ?= $(shell \
 	fi)
 COMPOSE_FILE ?= infra/docker-compose.local.yml
 COMPOSE_ENV_FILE ?= $(if $(wildcard .env),.env,.env.example)
+
+ifneq ($(wildcard $(COMPOSE_ENV_FILE)),)
+include $(COMPOSE_ENV_FILE)
+export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' $(COMPOSE_ENV_FILE))
+endif
+
 REDIS_URL ?= redis://localhost:6379/0
 
 .PHONY: help install infra-up infra-down infra-logs infra-ps db-migrate api-db worker-ingest openapi-check verify

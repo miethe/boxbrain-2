@@ -17,6 +17,8 @@ make api-db
 make worker-ingest
 ```
 
+`make db-migrate`, `make api-db`, and `make worker-ingest` load the repo env file selected by the root Makefile. To reuse an existing PostgreSQL database safely, set `DATABASE_URL` for that database and set `BOXBRAIN_DB_SCHEMA=boxbrain` so BoxBrain tables and `alembic_version` are isolated from other applications.
+
 Run tests:
 
 ```bash

@@ -14,7 +14,14 @@ class Base(DeclarativeBase):
 
 def build_engine(database_url: str | None = None):
     settings = get_settings()
-    return create_engine(database_url or settings.database_url, pool_pre_ping=True)
+    connect_args = {}
+    if settings.database_schema:
+        connect_args["options"] = f"-csearch_path={settings.database_schema},public"
+    return create_engine(
+        database_url or settings.database_url,
+        pool_pre_ping=True,
+        connect_args=connect_args,
+    )
 
 
 engine = build_engine()
