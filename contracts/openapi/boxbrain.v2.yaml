@@ -166,14 +166,6 @@ paths:
       summary: List ContentUnit families
       operationId: listContentUnitFamilies
       parameters:
-        - $ref: '#/components/parameters/pageCursor'
-        - $ref: '#/components/parameters/pageLimit'
-        - name: mode
-          in: query
-          schema:
-            type: string
-            enum: [families, variants]
-            default: families
         - name: approvalState
           in: query
           schema:
@@ -359,9 +351,6 @@ paths:
     get:
       summary: List WorkProduct families
       operationId: listWorkProductFamilies
-      parameters:
-        - $ref: '#/components/parameters/pageCursor'
-        - $ref: '#/components/parameters/pageLimit'
       responses:
         '200':
           description: WorkProduct families

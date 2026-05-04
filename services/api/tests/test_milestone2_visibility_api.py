@@ -215,6 +215,14 @@ def test_restricted_versions_do_not_leak_through_variant_versions_similar_or_sea
         json={"query": "secret-only-board-appendix", "limit": 10},
         headers=role_headers("viewer", "viewer-1"),
     )
+    restricted_detail = client.get(
+        f"/api/content-units/versions/{restricted_version.id}",
+        headers=role_headers("viewer", "viewer-1"),
+    )
+    reviewer_detail = client.get(
+        f"/api/content-units/versions/{restricted_version.id}",
+        headers=role_headers("reviewer", "reviewer-1"),
+    )
 
     assert version_list.status_code == 200
     assert str(restricted_version.id) not in {item["id"] for item in version_list.json()["items"]}
@@ -222,3 +230,7 @@ def test_restricted_versions_do_not_leak_through_variant_versions_similar_or_sea
     assert str(restricted_version.id) not in {item["objectId"] for item in similar.json()}
     assert search.status_code == 200
     assert search.json()["items"] == []
+    assert restricted_detail.status_code == 404
+    assert restricted_detail.json()["error"]["code"] == "not_found"
+    assert reviewer_detail.status_code == 200
+    assert reviewer_detail.json()["id"] == str(restricted_version.id)

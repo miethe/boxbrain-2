@@ -1,15 +1,18 @@
 import Link from "next/link";
-import { AlertCircle, GitBranch, History, MessageSquare, Network, ShieldCheck } from "lucide-react";
+import { revalidatePath } from "next/cache";
+import { AlertCircle, CheckCircle2, GitBranch, History, MessageSquare, MessageSquarePlus, Network, NotebookPen, RefreshCw, ShieldCheck, Star } from "lucide-react";
 import {
   ApiError,
   API_BASE_URL,
   boxbrainApi,
+  type ApprovalState,
   type Comment,
   type ContentUnitFamilyDetail,
   type ContentUnitVariant,
   type ContentUnitVersion,
   type ContentUnitVersionDetail,
   type ContentUnitWhereUsedReference,
+  type FreshnessState,
   type Note,
   type SearchResultItem,
   type StatusChips,
@@ -75,7 +78,7 @@ export default async function ContentUnitPage({ params }: { params: Promise<{ id
     return <ContentUnitError message={result.message} />;
   }
 
-  return result.model.source === "family" ? <FamilyDetail model={result.model} /> : <VersionDetail model={result.model} />;
+  return result.model.source === "family" ? <FamilyDetail model={result.model} pageId={id} /> : <VersionDetail model={result.model} pageId={id} />;
 }
 
 async function loadContentUnit(id: string): Promise<ContentUnitLoadResult> {
@@ -149,11 +152,88 @@ async function loadVersionAncillary(version: ContentUnitVersionDetail): Promise<
   };
 }
 
-function FamilyDetail({ model }: { model: Extract<ContentUnitPageModel, { source: "family" }> }) {
+async function createPersistentCommentAction(formData: FormData) {
+  "use server";
+
+  const pageId = requiredFormValue(formData, "pageId");
+  const versionId = requiredFormValue(formData, "versionId");
+  const body = requiredFormValue(formData, "body");
+  await boxbrainApi.createComment({
+    kind: "persistent_comment",
+    targetType: "content_unit_version",
+    targetId: versionId,
+    body
+  });
+  revalidateContentUnitPaths(pageId, versionId);
+}
+
+async function createNoteAction(formData: FormData) {
+  "use server";
+
+  const pageId = requiredFormValue(formData, "pageId");
+  const versionId = requiredFormValue(formData, "versionId");
+  await boxbrainApi.createNote({
+    targetType: "content_unit_version",
+    targetId: versionId,
+    title: optionalFormValue(formData, "title"),
+    body: requiredFormValue(formData, "body"),
+    noteType: optionalFormValue(formData, "noteType") ?? "usage_guidance",
+    isPinned: formData.get("isPinned") === "on"
+  });
+  revalidateContentUnitPaths(pageId, versionId);
+}
+
+async function setCanonicalVariantAction(formData: FormData) {
+  "use server";
+
+  const pageId = requiredFormValue(formData, "pageId");
+  const versionId = optionalFormValue(formData, "versionId");
+  await boxbrainApi.setContentUnitCanonicalVariant(requiredFormValue(formData, "variantId"), optionalFormValue(formData, "reason"));
+  revalidateContentUnitPaths(pageId, versionId);
+}
+
+async function updateApprovalAction(formData: FormData) {
+  "use server";
+
+  const pageId = requiredFormValue(formData, "pageId");
+  const versionId = requiredFormValue(formData, "versionId");
+  await boxbrainApi.updateContentUnitApproval(versionId, requiredFormValue(formData, "approvalState") as ApprovalState, optionalFormValue(formData, "notes"));
+  revalidateContentUnitPaths(pageId, versionId);
+}
+
+async function updateFreshnessAction(formData: FormData) {
+  "use server";
+
+  const pageId = requiredFormValue(formData, "pageId");
+  const versionId = requiredFormValue(formData, "versionId");
+  await boxbrainApi.updateContentUnitFreshness(versionId, requiredFormValue(formData, "freshnessState") as FreshnessState, optionalFormValue(formData, "notes"));
+  revalidateContentUnitPaths(pageId, versionId);
+}
+
+function revalidateContentUnitPaths(pageId: string, versionId?: string | null) {
+  revalidatePath(`/content-units/${pageId}`);
+  if (versionId && versionId !== pageId) revalidatePath(`/content-units/${versionId}`);
+}
+
+function requiredFormValue(formData: FormData, field: string) {
+  const value = optionalFormValue(formData, field);
+  if (!value) throw new Error(`${field} is required.`);
+  return value;
+}
+
+function optionalFormValue(formData: FormData, field: string) {
+  const value = formData.get(field);
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function FamilyDetail({ model, pageId }: { model: Extract<ContentUnitPageModel, { source: "family" }>; pageId: string }) {
   const canonicalVariant = model.versionGroups.find((group) => group.variant.isCanonical)?.variant ?? model.versionGroups[0]?.variant;
   const version = model.selectedVersion;
   const tags = taxonomyTags(model.family.taxonomy);
   const status = versionStatus(model.family.statusChips, version);
+  const variantOptions = model.versionGroups.map((group) => group.variant);
 
   return (
     <div className="route-body">
@@ -203,13 +283,13 @@ function FamilyDetail({ model }: { model: Extract<ContentUnitPageModel, { source
           </Card>
         </div>
 
-        <SideRail version={version} ancillary={model.ancillary} familyNotes={model.family.notes ?? []} />
+        <SideRail pageId={pageId} version={version} ancillary={model.ancillary} familyNotes={model.family.notes ?? []} variantOptions={variantOptions} />
       </div>
     </div>
   );
 }
 
-function VersionDetail({ model }: { model: Extract<ContentUnitPageModel, { source: "version" }> }) {
+function VersionDetail({ model, pageId }: { model: Extract<ContentUnitPageModel, { source: "version" }>; pageId: string }) {
   const version = model.version;
 
   return (
@@ -254,7 +334,7 @@ function VersionDetail({ model }: { model: Extract<ContentUnitPageModel, { sourc
           </Card>
         </div>
 
-        <SideRail version={version} ancillary={model.ancillary} familyNotes={[]} />
+        <SideRail pageId={pageId} version={version} ancillary={model.ancillary} familyNotes={[]} variantOptions={[]} />
       </div>
     </div>
   );
@@ -300,8 +380,21 @@ function VariantGrid({ groups }: { groups: VersionGroup[] }) {
   );
 }
 
-function SideRail({ version, ancillary, familyNotes }: { version?: ContentUnitVersionDetail; ancillary: AncillaryData; familyNotes: Note[] }) {
+function SideRail({
+  pageId,
+  version,
+  ancillary,
+  familyNotes,
+  variantOptions
+}: {
+  pageId: string;
+  version?: ContentUnitVersionDetail;
+  ancillary: AncillaryData;
+  familyNotes: Note[];
+  variantOptions: ContentUnitVariant[];
+}) {
   const allNotes = [...familyNotes, ...ancillary.notes];
+  const currentVariant = variantOptions.find((variant) => variant.id === version?.variantId);
 
   return (
     <div className="grid content-start gap-4">
@@ -309,12 +402,73 @@ function SideRail({ version, ancillary, familyNotes }: { version?: ContentUnitVe
         <div className="mb-3 flex items-center gap-2 text-sm font-bold">
           <ShieldCheck size={16} color="var(--ok)" /> Governance
         </div>
-        <div className="grid gap-3">
-          <Meter value={qualityScore(version)} label="quality score" />
-          <Button disabled>Request approval</Button>
-          <Button disabled>Set canonical variant</Button>
-          <Button disabled>Deprecate stale version</Button>
-        </div>
+        <Meter value={qualityScore(version)} label="quality score" />
+        {version ? (
+          <div className="mt-4 grid gap-3">
+            <form action={updateApprovalAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
+              <FormIds pageId={pageId} versionId={version.id} />
+              <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
+                Approval
+                <select name="approvalState" defaultValue={version.approvalState} className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold normal-case text-slate-800">
+                  {approvalOptions.map((state) => (
+                    <option key={state} value={state}>
+                      {state}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <input name="notes" className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Decision note" />
+              <Button type="submit" className="justify-center">
+                <CheckCircle2 size={14} /> Update approval
+              </Button>
+            </form>
+
+            <form action={updateFreshnessAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
+              <FormIds pageId={pageId} versionId={version.id} />
+              <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
+                Freshness
+                <select name="freshnessState" defaultValue={version.freshnessState ?? "aging"} className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold normal-case text-slate-800">
+                  {freshnessOptions.map((state) => (
+                    <option key={state} value={state}>
+                      {state}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <input name="notes" className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Freshness note" />
+              <Button type="submit" className="justify-center">
+                <RefreshCw size={14} /> Update freshness
+              </Button>
+            </form>
+
+            <form action={setCanonicalVariantAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
+              <FormIds pageId={pageId} versionId={version.id} />
+              <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
+                Canonical variant
+                {variantOptions.length > 0 ? (
+                  <select name="variantId" defaultValue={currentVariant?.id ?? version.variantId} className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold normal-case text-slate-800">
+                    {variantOptions.map((variant) => (
+                      <option key={variant.id} value={variant.id}>
+                        {variant.variantLabel}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <input type="hidden" name="variantId" value={version.variantId} />
+                    <div className="rounded-md bg-slate-50 px-2 py-1.5 text-sm normal-case text-slate-700">{version.variantId}</div>
+                  </>
+                )}
+              </label>
+              <input name="reason" className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Canonical reason" />
+              <Button type="submit" className="justify-center">
+                <Star size={14} /> Set canonical
+              </Button>
+            </form>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-lg border border-slate-200 p-3 text-sm text-slate-500">No version is selected, so write controls are unavailable.</div>
+        )}
       </Card>
       <Card className="p-4">
         <div className="mb-3 flex items-center gap-2 text-sm font-bold">
@@ -341,8 +495,64 @@ function SideRail({ version, ancillary, familyNotes }: { version?: ContentUnitVe
         <div className="mb-3 flex items-center gap-2 text-sm font-bold">
           <MessageSquare size={16} /> Comments and notes
         </div>
+        {version && <CommentNoteForms pageId={pageId} versionId={version.id} />}
         <CommentNoteList comments={ancillary.comments} notes={allNotes} />
       </Card>
+    </div>
+  );
+}
+
+const approvalOptions: ApprovalState[] = ["draft", "review", "approved", "deprecated", "archived"];
+const freshnessOptions: FreshnessState[] = ["fresh", "aging", "stale"];
+const noteTypeOptions = ["usage_guidance", "review_note", "migration_note"];
+
+function FormIds({ pageId, versionId }: { pageId: string; versionId: string }) {
+  return (
+    <>
+      <input type="hidden" name="pageId" value={pageId} />
+      <input type="hidden" name="versionId" value={versionId} />
+    </>
+  );
+}
+
+function CommentNoteForms({ pageId, versionId }: { pageId: string; versionId: string }) {
+  return (
+    <div className="mb-3 grid gap-3">
+      <form action={createPersistentCommentAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
+        <FormIds pageId={pageId} versionId={versionId} />
+        <textarea
+          name="body"
+          required
+          rows={2}
+          className="min-h-16 rounded-md border border-slate-200 px-2 py-1.5 text-sm"
+          placeholder="Persistent comment"
+        />
+        <Button type="submit" className="justify-center">
+          <MessageSquarePlus size={14} /> Add comment
+        </Button>
+      </form>
+
+      <form action={createNoteAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
+        <FormIds pageId={pageId} versionId={versionId} />
+        <input name="title" className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Note title" />
+        <textarea name="body" required rows={2} className="min-h-16 rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Note body" />
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+          <select name="noteType" defaultValue="usage_guidance" className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold text-slate-800">
+            {noteTypeOptions.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1 text-xs font-semibold text-slate-600">
+            <input type="checkbox" name="isPinned" className="h-4 w-4 rounded border-slate-300" />
+            Pin
+          </label>
+        </div>
+        <Button type="submit" className="justify-center">
+          <NotebookPen size={14} /> Add note
+        </Button>
+      </form>
     </div>
   );
 }

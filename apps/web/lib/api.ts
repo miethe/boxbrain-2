@@ -407,6 +407,13 @@ export async function updateContentUnitApproval(versionId: string, approvalState
   });
 }
 
+export async function updateContentUnitFreshness(versionId: string, freshnessState: FreshnessState, notes?: string): Promise<ContentUnitVersion> {
+  return requestJson<ContentUnitVersion>(`/api/content-units/versions/${encodeURIComponent(versionId)}/freshness`, {
+    method: "PATCH",
+    json: notes ? { freshnessState, notes } : { freshnessState }
+  });
+}
+
 export async function listSimilarContentUnits(versionId: string): Promise<SearchResultItem[]> {
   return requestJson<SearchResultItem[]>(`/api/content-units/${encodeURIComponent(versionId)}/similar`);
 }
@@ -460,6 +467,7 @@ export const boxbrainApi = {
   getContentUnitVersion,
   setContentUnitCanonicalVariant,
   updateContentUnitApproval,
+  updateContentUnitFreshness,
   listSimilarContentUnits,
   listContentUnitWhereUsed,
   listComments,

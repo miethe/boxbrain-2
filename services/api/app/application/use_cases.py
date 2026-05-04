@@ -519,8 +519,7 @@ class BoxBrainUseCases:
 
     def get_content_unit_version(self, version_id: UUID, actor: Actor) -> s.ContentUnitVersionDetail:
         version = self._get_content_unit_version(version_id)
-        variant = self._get_content_unit_variant(version.variant_id)
-        if not self._can_access_family(variant.family_id, actor):
+        if not self._can_access_version(version.id, actor):
             raise NotFoundError("ContentUnit version not found.")
         provenance = self.repository.provenance_records[version.provenance_id]
         return p.content_unit_version_detail(

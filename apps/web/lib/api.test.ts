@@ -228,21 +228,30 @@ describe("content unit graph api", () => {
       approvalState: "approved",
       freshnessState: "fresh"
     };
+    const staleVersion = {
+      ...approvedVersion,
+      freshnessState: "stale"
+    };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => canonicalVariant })
-      .mockResolvedValueOnce({ ok: true, json: async () => approvedVersion });
+      .mockResolvedValueOnce({ ok: true, json: async () => approvedVersion })
+      .mockResolvedValueOnce({ ok: true, json: async () => staleVersion });
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(boxbrainApi.setContentUnitCanonicalVariant("variant-1", "Curator selected.")).resolves.toEqual(canonicalVariant);
     await expect(boxbrainApi.updateContentUnitApproval("version-1", "approved", "Approved for reuse.")).resolves.toEqual(approvedVersion);
+    await expect(boxbrainApi.updateContentUnitFreshness("version-1", "stale", "Metric expired.")).resolves.toEqual(staleVersion);
 
     const [, canonicalInit] = fetchMock.mock.calls[0] as [string, RequestInit];
     const [, approvalInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const [, freshnessInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect(canonicalInit.method).toBe("POST");
     expect(canonicalInit.body).toBe(JSON.stringify({ reason: "Curator selected." }));
     expect(new Headers(canonicalInit.headers).get("content-type")).toBe("application/json");
     expect(approvalInit.method).toBe("PATCH");
     expect(approvalInit.body).toBe(JSON.stringify({ approvalState: "approved", notes: "Approved for reuse." }));
+    expect(freshnessInit.method).toBe("PATCH");
+    expect(freshnessInit.body).toBe(JSON.stringify({ freshnessState: "stale", notes: "Metric expired." }));
   });
 });

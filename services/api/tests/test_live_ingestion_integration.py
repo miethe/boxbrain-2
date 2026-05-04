@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import os
 import zipfile
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
+from app.domain.models import (
+    ContentUnitFamily,
+    ContentUnitVariant,
+    ContentUnitVersion,
+    ProvenanceRecord,
+    now_utc,
+)
 from app.infrastructure.queue import RQIngestionQueue
 from app.infrastructure.sqlalchemy_repository import SqlAlchemyBoxBrainRepository
 from app.infrastructure.storage import S3ObjectStorage
@@ -43,6 +51,13 @@ def _pptx_bytes(slides: list[str]) -> bytes:
     return buffer.getvalue()
 
 
+def _assert_postgres_schema_is_migrated(engine) -> None:
+    with engine.connect() as connection:
+        migrated = connection.scalar(text("select to_regclass('public.ingestion_jobs')"))
+        if migrated is None:
+            pytest.fail("PostgreSQL schema is not migrated. Run make db-migrate before live tests.")
+
+
 def test_live_database_s3_rq_ingestion_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOXBRAIN_REPOSITORY", "database")
     monkeypatch.setenv("BOXBRAIN_STORAGE", "s3")
@@ -57,10 +72,7 @@ def test_live_database_s3_rq_ingestion_round_trip(monkeypatch: pytest.MonkeyPatc
         pytest.fail(f"Redis is unavailable at {settings.redis_url}. Run make infra-up. {exc}")
 
     engine = create_engine(settings.database_url, pool_pre_ping=True)
-    with engine.connect() as connection:
-        migrated = connection.scalar(text("select to_regclass('public.ingestion_jobs')"))
-        if migrated is None:
-            pytest.fail("PostgreSQL schema is not migrated. Run make db-migrate before live tests.")
+    _assert_postgres_schema_is_migrated(engine)
 
     session_factory = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
     repository = SqlAlchemyBoxBrainRepository(session_factory, seed=False)
@@ -156,3 +168,109 @@ def test_live_database_s3_rq_ingestion_round_trip(monkeypatch: pytest.MonkeyPatc
                 )
                 == 1
             )
+
+
+def test_live_database_comments_and_notes_persist_after_reload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BOXBRAIN_REPOSITORY", "database")
+    monkeypatch.setenv("BOXBRAIN_STORAGE", "memory")
+    monkeypatch.setenv("BOXBRAIN_ENQUEUE_INGESTION", "false")
+
+    settings = get_settings()
+    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    _assert_postgres_schema_is_migrated(engine)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
+    repository = SqlAlchemyBoxBrainRepository(session_factory, seed=False)
+
+    provenance = ProvenanceRecord(
+        id=uuid4(),
+        origin_type="uploaded_source",
+        source_system="database_persistence_test",
+        source_refs=["db-comment-note-test"],
+        pipeline_version="test-v1",
+        created_at=now_utc(),
+    )
+    family = ContentUnitFamily(
+        id=uuid4(),
+        family_title="Database persistence target",
+        conceptual_summary="Public content unit used for comment and note persistence.",
+        unit_type="slide",
+        taxonomy={},
+    )
+    variant = ContentUnitVariant(
+        id=uuid4(),
+        family_id=family.id,
+        variant_label="Default",
+        variant_type="source",
+        variant_dimensions={},
+        is_canonical=True,
+        linked_by="manual",
+        linked_confidence=None,
+        latest_version_id=None,
+    )
+    version = ContentUnitVersion(
+        id=uuid4(),
+        variant_id=variant.id,
+        version_number="v1.0",
+        render_uri="/test/db-persistence/render.png",
+        thumbnail_uri="/test/db-persistence/thumb.png",
+        summary="Database persistence target version.",
+        approval_state="draft",
+        freshness_state="fresh",
+        quality_score=None,
+        usage_score=None,
+        extracted_text="Database persistence target version.",
+        speaker_notes=None,
+        provenance_id=provenance.id,
+        created_at=now_utc(),
+    )
+    variant.latest_version_id = version.id
+    repository.save_provenance_record(provenance)
+    repository.save_content_unit(
+        family,
+        variant,
+        version,
+        source_work_product_version_id=None,
+        source_order_index=1,
+        text_hash="db-comment-note-test",
+        visual_hash=None,
+    )
+
+    app = create_app(repository=repository)
+    with TestClient(app) as client:
+        comment_response = client.post(
+            "/api/comments",
+            json={
+                "kind": "persistent_comment",
+                "targetType": "content_unit_version",
+                "targetId": str(version.id),
+                "body": "Persist this database comment.",
+            },
+            headers={"x-boxbrain-role": "contributor", "x-boxbrain-user-id": "db-commenter"},
+        )
+        note_response = client.post(
+            "/api/notes",
+            json={
+                "targetType": "content_unit_version",
+                "targetId": str(version.id),
+                "title": "Persistence guidance",
+                "body": "Persist this database note.",
+                "isPinned": True,
+            },
+            headers={"x-boxbrain-role": "curator", "x-boxbrain-user-id": "db-curator"},
+        )
+
+    assert comment_response.status_code == 201
+    assert note_response.status_code == 201
+    comment = comment_response.json()
+    note = note_response.json()
+
+    reloaded_repository = SqlAlchemyBoxBrainRepository(session_factory, seed=False)
+    comment_id = UUID(comment["id"])
+    note_id = UUID(note["id"])
+
+    assert comment_id in reloaded_repository.comments
+    assert note_id in reloaded_repository.notes
+    assert reloaded_repository.comments[comment_id].body == "Persist this database comment."
+    assert reloaded_repository.notes[note_id].is_pinned is True
