@@ -8,8 +8,11 @@ from .ai_candidates import create_ai_review_candidate, to_ai_output_record
 from .embeddings import (
     DETERMINISTIC_EMBEDDING_MODEL,
     DETERMINISTIC_EMBEDDING_VERSION,
+    DEFAULT_EMBEDDING_DIMS,
+    coerce_embedding_vector,
     cosine_similarity,
     deterministic_text_embedding,
+    pgvector_literal,
 )
 from .hashing import (
     content_unit_fingerprint,
@@ -58,6 +61,7 @@ __all__ = [
     "ApprovalState",
     "ContentUnitFingerprint",
     "DEFAULT_RANKING_WEIGHTS",
+    "DEFAULT_EMBEDDING_DIMS",
     "DETERMINISTIC_EMBEDDING_MODEL",
     "DETERMINISTIC_EMBEDDING_VERSION",
     "FreshnessState",
@@ -74,6 +78,7 @@ __all__ = [
     "UploadValidationResult",
     "WorkerStep",
     "content_unit_fingerprint",
+    "coerce_embedding_vector",
     "cosine_similarity",
     "create_ai_review_candidate",
     "deterministic_text_embedding",
@@ -85,6 +90,7 @@ __all__ = [
     "next_stage",
     "next_worker_steps",
     "normalize_text_for_hash",
+    "pgvector_literal",
     "rank_documents",
     "retry_job",
     "score_document",

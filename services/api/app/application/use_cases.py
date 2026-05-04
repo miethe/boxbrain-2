@@ -17,12 +17,17 @@ from app.domain.errors import ConflictError, NotFoundError
 from app.domain.ingestion_search import (
     DETERMINISTIC_EMBEDDING_MODEL,
     DETERMINISTIC_EMBEDDING_VERSION,
+    RankedResult,
+    SearchDocument,
+    SearchQuery,
     content_unit_fingerprint,
+    coerce_embedding_vector,
     deterministic_text_embedding,
     hash_bytes,
+    rank_documents,
     validate_pptx_upload,
 )
-from app.domain.ingestion_search.embeddings import DEFAULT_EMBEDDING_DIMS
+from app.domain.ingestion_search.embeddings import DEFAULT_EMBEDDING_DIMS, tokenize
 from app.domain.models import (
     Actor,
     Comment,
@@ -235,6 +240,21 @@ class BoxBrainUseCases:
             work_product_version,
             variant_id=variant_id,
             original_object_id=stored_object.id,
+        )
+        self._save_embedding(
+            EmbeddingRecord(
+                id=uuid4(),
+                target_type="work_product_version",
+                target_id=work_product_version.id,
+                embedding_kind="text",
+                model_name=DETERMINISTIC_EMBEDDING_MODEL,
+                model_version=DETERMINISTIC_EMBEDDING_VERSION,
+                dims=DEFAULT_EMBEDDING_DIMS,
+                metadata={
+                    "source": "upload_metadata",
+                    "embeddingText": self._work_product_embedding_text(family, work_product_version, taxonomy),
+                },
+            )
         )
 
         upload_metadata.update(
@@ -1160,97 +1180,39 @@ class BoxBrainUseCases:
         return payload
 
     def search(self, request: s.SearchRequest, actor: Actor) -> s.SearchResponse:
-        query = request.query.strip()
-        terms = [term for term in query.lower().split() if term]
-        items: list[s.SearchResultItem] = []
-        filtered_restricted = 0
-        requested_types = set(request.objectTypes)
-
-        if not requested_types or "content_unit" in requested_types or "content_units" in requested_types:
-            for family in self.repository.content_unit_families.values():
-                if not self._can_access_family(family.id, actor):
-                    filtered_restricted += 1
-                    continue
-                score = self._score_content_unit_family(family.id, terms, actor)
-                if score <= 0 and terms:
-                    continue
-                variants = self._variants_for_family(family.id)
-                versions_by_variant = self._versions_by_variant(family.id)
-                card = p.content_unit_family_card(family, variants, versions_by_variant)
-                items.append(
-                    s.SearchResultItem(
-                        objectType="content_unit_family",
-                        objectId=family.id,
-                        resultGrain="family",
-                        title=card.familyTitle,
-                        summary=card.conceptualSummary,
-                        previewUri=card.canonicalPreviewUri,
-                        score=score or 0.15,
-                        explanationChips=self._explanation_chips(terms, family.family_title),
-                        statusChips=card.statusChips,
-                    )
-                )
+        self._refresh_repository()
+        requested_types = {item.casefold() for item in request.objectTypes}
+        search_query = SearchQuery(
+            text=request.query.strip(),
+            taxonomy=self._taxonomy_filters(request),
+            metadata_filters=self._metadata_filters(request),
+            include_restricted=can_view_restricted(actor),
+        )
+        result_mode = self._resolve_result_mode(request)
+        hybrid_results = self._hybrid_search_results(
+            search_query,
+            requested_types=requested_types,
+            actor=actor,
+            limit=max(request.limit * 4, request.limit),
+        )
+        filtered_restricted = self._restricted_search_candidate_count(requested_types, actor)
+        items = self._search_items_from_ranked_results(hybrid_results, result_mode, actor)
 
         if not requested_types or "content_block" in requested_types or "content_blocks" in requested_types:
-            for block in self.repository.content_blocks.values():
-                if self._block_is_restricted(block) and not can_view_restricted(actor):
-                    filtered_restricted += 1
-                    continue
-                haystack = f"{block.title} {block.summary or ''}".lower()
-                score = self._score_text(haystack, terms)
-                if score <= 0 and terms:
-                    continue
-                items.append(
-                    s.SearchResultItem(
-                        objectType="content_block_version",
-                        objectId=block.id,
-                        resultGrain="block",
-                        title=block.title,
-                        summary=block.summary,
-                        previewUri=None,
-                        score=score or 0.12,
-                        explanationChips=["ordered ContentBlock", "reusable mini-story"],
-                        statusChips=s.StatusChips(
-                            approvalState=cast(s.ApprovalState, block.approval_state),
-                            freshnessState="fresh",
-                            isCanonical=True,
-                            isRestricted=block.restricted,
-                            linkSource="manual",
-                        ),
-                    )
-                )
-
-        if not requested_types or "work_product" in requested_types or "work_products" in requested_types:
-            for wp_family in self.repository.work_product_families.values():
-                if wp_family.restricted and not can_view_restricted(actor):
-                    filtered_restricted += 1
-                    continue
-                haystack = f"{wp_family.title} {wp_family.summary or ''} {wp_family.artifact_type}".lower()
-                score = self._score_text(haystack, terms)
-                if score <= 0 and terms:
-                    continue
-                version = self._latest_work_product_version(wp_family.id)
-                items.append(
-                    s.SearchResultItem(
-                        objectType="work_product_family",
-                        objectId=wp_family.id,
-                        resultGrain="work_product",
-                        title=wp_family.title,
-                        summary=wp_family.summary,
-                        previewUri=wp_family.preview_uri,
-                        score=score or 0.1,
-                        explanationChips=["source artifact", "decomposed work product"],
-                        statusChips=p.work_product_status(wp_family, version),
-                    )
-                )
+            items.extend(self._content_block_search_items(request, actor))
 
         if request.profile == "approved_only":
             items = [item for item in items if item.statusChips.approvalState == "approved"]
 
-        items = sorted(items, key=lambda item: item.score, reverse=True)[: request.limit]
+        items = sorted(items, key=lambda item: (item.score, item.title), reverse=True)[: request.limit]
         debug = None
-        if can_view_restricted(actor):
-            debug = {"filteredRestrictedCount": filtered_restricted, "profile": request.profile}
+        if self._can_view_search_debug(actor):
+            debug = {
+                "filteredRestrictedCount": filtered_restricted,
+                "profile": request.profile,
+                "resultMode": result_mode,
+                "backend": "database" if self._has_database_search() else "memory",
+            }
         return s.SearchResponse(
             query=request.query,
             interpretedIntent=self._interpret_intent(request),
@@ -1262,6 +1224,429 @@ class BoxBrainUseCases:
         response = self.search(request, actor)
         response.interpretedIntent = response.interpretedIntent or "natural_language_retrieval"
         return response
+
+    def _hybrid_search_results(
+        self,
+        query: SearchQuery,
+        *,
+        requested_types: set[str],
+        actor: Actor,
+        limit: int,
+    ) -> list[RankedResult]:
+        database_search = getattr(self.repository, "hybrid_search_documents", None)
+        if callable(database_search):
+            results = list(
+                database_search(
+                    query,
+                    object_types=requested_types,
+                    include_restricted=can_view_restricted(actor),
+                    limit=limit,
+                )
+            )
+        else:
+            results = self._memory_search_results(
+                query,
+                requested_types=requested_types,
+                actor=actor,
+                limit=limit,
+            )
+        return [result for result in results if self._passes_search_relevance(query, result)]
+
+    def _memory_search_results(
+        self,
+        query: SearchQuery,
+        *,
+        requested_types: set[str],
+        actor: Actor,
+        limit: int,
+    ) -> list[RankedResult]:
+        documents = self._memory_search_documents(requested_types, actor)
+        return rank_documents(query, documents, limit=limit)
+
+    def _memory_search_documents(
+        self,
+        requested_types: set[str],
+        actor: Actor,
+    ) -> list[SearchDocument]:
+        documents: list[SearchDocument] = []
+        include_content_units = not requested_types or bool(
+            requested_types.intersection(
+                {
+                    "content_unit",
+                    "content_units",
+                    "content_unit_family",
+                    "content_unit_variant",
+                    "content_unit_version",
+                }
+            )
+        )
+        if include_content_units:
+            for version in self.repository.content_unit_versions.values():
+                if not self._can_access_version(version.id, actor):
+                    continue
+                variant = self.repository.content_unit_variants.get(version.variant_id)
+                family = (
+                    self.repository.content_unit_families.get(variant.family_id)
+                    if variant
+                    else None
+                )
+                if variant is None or family is None:
+                    continue
+                documents.append(
+                    SearchDocument(
+                        id=str(version.id),
+                        object_type="content_unit_version",
+                        title=family.family_title,
+                        summary=version.summary or family.conceptual_summary or "",
+                        text=version.extracted_text or "",
+                        speaker_notes=version.speaker_notes or "",
+                        taxonomy=family.taxonomy,
+                        metadata={
+                            "familyId": str(family.id),
+                            "variantId": str(variant.id),
+                            "versionId": str(version.id),
+                            "familyTitle": family.family_title,
+                            "familySummary": family.conceptual_summary,
+                            "variantLabel": variant.variant_label,
+                            "variantType": variant.variant_type,
+                            "variantDimensions": variant.variant_dimensions,
+                            "isCanonical": variant.is_canonical,
+                            "linkSource": variant.linked_by,
+                            "versionNumber": version.version_number,
+                            "sourceOrderIndex": version.source_order_index,
+                            "previewUri": version.thumbnail_uri,
+                        },
+                        embedding=self._stored_embedding("content_unit_version", version.id),
+                        approval_state=version.approval_state,
+                        freshness_state=version.freshness_state,
+                        updated_at=version.created_at,
+                        is_restricted=family.restricted or version.restricted,
+                    )
+                )
+
+        include_work_products = not requested_types or bool(
+            requested_types.intersection(
+                {
+                    "work_product",
+                    "work_products",
+                    "work_product_family",
+                    "work_product_version",
+                }
+            )
+        )
+        if include_work_products:
+            for wp_version in self.repository.work_product_versions.values():
+                if not self._can_access_work_product_version(wp_version, actor):
+                    continue
+                wp_family = self.repository.work_product_families.get(wp_version.family_id)
+                if wp_family is None:
+                    continue
+                documents.append(
+                    SearchDocument(
+                        id=str(wp_version.id),
+                        object_type="work_product_version",
+                        title=wp_family.title,
+                        summary=wp_family.summary or "",
+                        text=" ".join(
+                            part
+                            for part in (
+                                wp_version.title,
+                                wp_family.summary or "",
+                                wp_family.artifact_type,
+                            )
+                            if part
+                        ),
+                        taxonomy={},
+                        metadata={
+                            "familyId": str(wp_family.id),
+                            "versionId": str(wp_version.id),
+                            "familyTitle": wp_family.title,
+                            "familySummary": wp_family.summary,
+                            "artifactType": wp_family.artifact_type,
+                            "versionNumber": wp_version.version_number,
+                            "previewUri": wp_version.preview_uri or wp_family.preview_uri,
+                            "isCanonical": True,
+                            "linkSource": "manual",
+                        },
+                        embedding=self._stored_embedding("work_product_version", wp_version.id),
+                        approval_state=wp_version.approval_state,
+                        freshness_state="fresh",
+                        is_restricted=wp_family.restricted or wp_version.restricted,
+                    )
+                )
+        return documents
+
+    def _passes_search_relevance(self, query: SearchQuery, result: RankedResult) -> bool:
+        if not query.text.strip():
+            return True
+        breakdown = result.breakdown
+        if breakdown.metadata > 0:
+            return True
+        query_token_count = len(tokenize(query.text))
+        if breakdown.lexical > 0 and (query_token_count <= 2 or breakdown.lexical >= 0.5):
+            return True
+        return breakdown.semantic >= 0.55
+
+    def _search_items_from_ranked_results(
+        self,
+        results: list[RankedResult],
+        result_mode: str,
+        actor: Actor,
+    ) -> list[s.SearchResultItem]:
+        grouped: dict[tuple[str, str], list[RankedResult]] = defaultdict(list)
+        for result in results:
+            key = self._search_group_key(result.document, result_mode)
+            if key is not None:
+                grouped[key].append(result)
+
+        items: list[s.SearchResultItem] = []
+        for group_results in grouped.values():
+            group_results.sort(key=lambda item: item.score, reverse=True)
+            top = group_results[0]
+            item = self._search_item_from_result(top, result_mode, len(group_results), actor)
+            if item is not None:
+                items.append(item)
+        return items
+
+    def _search_group_key(
+        self,
+        document: SearchDocument,
+        result_mode: str,
+    ) -> tuple[str, str] | None:
+        metadata = document.metadata
+        if document.object_type == "content_unit_version":
+            if result_mode == "families":
+                return ("content_unit_family", str(metadata.get("familyId") or ""))
+            if result_mode == "variants":
+                return ("content_unit_variant", str(metadata.get("variantId") or ""))
+            return ("content_unit_version", str(metadata.get("versionId") or document.id))
+        if document.object_type == "work_product_version":
+            if result_mode == "versions":
+                return ("work_product_version", str(metadata.get("versionId") or document.id))
+            return ("work_product_family", str(metadata.get("familyId") or ""))
+        return None
+
+    def _search_item_from_result(
+        self,
+        result: RankedResult,
+        result_mode: str,
+        group_count: int,
+        actor: Actor,
+    ) -> s.SearchResultItem | None:
+        document = result.document
+        metadata = document.metadata
+        score = min(1.0, result.score + (0.03 * max(group_count - 1, 0)))
+        chips = self._component_explanation_chips(result, result_mode, group_count)
+        if document.object_type == "content_unit_version":
+            version_id = UUID(str(metadata.get("versionId") or document.id))
+            version = self.repository.content_unit_versions.get(version_id)
+            if version is None or not self._can_access_version(version.id, actor):
+                return None
+            variant = self._get_content_unit_variant(version.variant_id)
+            family = self._get_content_unit_family(variant.family_id)
+            if result_mode == "families":
+                card = p.content_unit_family_card(
+                    family,
+                    self._variants_for_family(family.id),
+                    self._versions_by_variant(family.id),
+                )
+                return s.SearchResultItem(
+                    objectType="content_unit_family",
+                    objectId=family.id,
+                    resultGrain="family",
+                    title=card.familyTitle,
+                    summary=card.conceptualSummary,
+                    previewUri=card.canonicalPreviewUri,
+                    score=round(score, 6),
+                    explanationChips=chips,
+                    statusChips=card.statusChips,
+                )
+            if result_mode == "variants":
+                return s.SearchResultItem(
+                    objectType="content_unit_variant",
+                    objectId=variant.id,
+                    resultGrain="variant",
+                    title=f"{family.family_title} - {variant.variant_label}",
+                    summary=version.summary or family.conceptual_summary,
+                    previewUri=version.thumbnail_uri,
+                    score=round(score, 6),
+                    explanationChips=chips,
+                    statusChips=p.content_unit_status(family, variant, version),
+                )
+            return s.SearchResultItem(
+                objectType="content_unit_version",
+                objectId=version.id,
+                resultGrain="version",
+                title=f"{family.family_title} ({version.version_number})",
+                summary=version.summary or family.conceptual_summary,
+                previewUri=version.thumbnail_uri,
+                score=round(score, 6),
+                explanationChips=chips,
+                statusChips=p.content_unit_status(family, variant, version),
+            )
+
+        if document.object_type == "work_product_version":
+            version_id = UUID(str(metadata.get("versionId") or document.id))
+            wp_version = self.repository.work_product_versions.get(version_id)
+            if wp_version is None or not self._can_access_work_product_version(wp_version, actor):
+                return None
+            wp_family = self.repository.work_product_families.get(wp_version.family_id)
+            if wp_family is None:
+                return None
+            object_type = "work_product_version" if result_mode == "versions" else "work_product_family"
+            object_id = wp_version.id if result_mode == "versions" else wp_family.id
+            return s.SearchResultItem(
+                objectType=object_type,
+                objectId=object_id,
+                resultGrain="work_product",
+                title=wp_version.title if result_mode == "versions" else wp_family.title,
+                summary=wp_family.summary,
+                previewUri=wp_version.preview_uri or wp_family.preview_uri,
+                score=round(score, 6),
+                explanationChips=chips,
+                statusChips=p.work_product_status(wp_family, wp_version),
+            )
+        return None
+
+    def _content_block_search_items(
+        self,
+        request: s.SearchRequest,
+        actor: Actor,
+    ) -> list[s.SearchResultItem]:
+        terms = [term for term in request.query.casefold().split() if term]
+        items: list[s.SearchResultItem] = []
+        for block in self.repository.content_blocks.values():
+            if not self._can_access_block(block, actor):
+                continue
+            haystack = f"{block.title} {block.summary or ''}".casefold()
+            score = self._score_text(haystack, terms)
+            if score <= 0 and terms:
+                continue
+            items.append(
+                s.SearchResultItem(
+                    objectType="content_block_version",
+                    objectId=block.id,
+                    resultGrain="block",
+                    title=block.title,
+                    summary=block.summary,
+                    previewUri=None,
+                    score=score or 0.12,
+                    explanationChips=["keyword match", "ordered composition"],
+                    statusChips=s.StatusChips(
+                        approvalState=cast(s.ApprovalState, block.approval_state),
+                        freshnessState="fresh",
+                        isCanonical=True,
+                        isRestricted=block.restricted,
+                        linkSource="manual",
+                    ),
+                )
+            )
+        return items
+
+    def _component_explanation_chips(
+        self,
+        result: RankedResult,
+        result_mode: str,
+        group_count: int,
+    ) -> list[str]:
+        label_map = {
+            "lexical": "keyword match",
+            "semantic": "semantic match",
+            "metadata": "metadata match",
+            "trusted": "approved/trusted",
+        }
+        chips = [label_map.get(chip, chip) for chip in result.explanation]
+        if not chips:
+            chips.append("deterministic rank")
+        if result_mode == "families":
+            chips.append("family rollup")
+        elif result_mode == "variants":
+            chips.append("variant rollup")
+        else:
+            chips.append("version match")
+        if group_count > 1:
+            chips.append(f"{group_count} matching versions")
+        return chips
+
+    def _stored_embedding(self, target_type: str, target_id: UUID) -> tuple[float, ...] | None:
+        for embedding in self.repository.embeddings.values():
+            if (
+                embedding.target_type == target_type
+                and embedding.target_id == target_id
+                and embedding.embedding_kind == "text"
+            ):
+                vector = coerce_embedding_vector(
+                    embedding.metadata.get("embedding"),
+                    dims=embedding.dims,
+                )
+                if vector is not None:
+                    return vector
+                embedding_text = embedding.metadata.get("embeddingText")
+                if isinstance(embedding_text, str) and embedding_text.strip():
+                    return deterministic_text_embedding(embedding_text, dims=embedding.dims)
+        return None
+
+    def _taxonomy_filters(self, request: s.SearchRequest) -> dict[str, Any]:
+        taxonomy = request.filters.get("taxonomy")
+        return dict(taxonomy) if isinstance(taxonomy, dict) else {}
+
+    def _metadata_filters(self, request: s.SearchRequest) -> dict[str, Any]:
+        return {key: value for key, value in request.filters.items() if key != "taxonomy"}
+
+    def _resolve_result_mode(self, request: s.SearchRequest) -> str:
+        if request.resultMode != "auto":
+            return request.resultMode
+        lowered = request.query.casefold()
+        if any(term in lowered for term in ("version", "latest", "exact", "slide", "source")):
+            return "versions"
+        if request.profile in {"executive", "technical"}:
+            return "variants"
+        if any(term in lowered for term in ("board", "executive", "technical", "audience")):
+            return "variants"
+        return "families"
+
+    def _restricted_search_candidate_count(self, requested_types: set[str], actor: Actor) -> int:
+        if can_view_restricted(actor):
+            return 0
+        count = 0
+        content_types = {
+            "content_unit",
+            "content_units",
+            "content_unit_family",
+            "content_unit_variant",
+            "content_unit_version",
+        }
+        work_product_types = {
+            "work_product",
+            "work_products",
+            "work_product_family",
+            "work_product_version",
+        }
+        if not requested_types or requested_types.intersection(content_types):
+            count += sum(
+                1
+                for version in self.repository.content_unit_versions.values()
+                if not self._can_access_version(version.id, actor)
+            )
+        if not requested_types or requested_types.intersection(work_product_types):
+            count += sum(
+                1
+                for version in self.repository.work_product_versions.values()
+                if not self._can_access_work_product_version(version, actor)
+            )
+        if not requested_types or requested_types.intersection({"content_block", "content_blocks"}):
+            count += sum(
+                1
+                for block in self.repository.content_blocks.values()
+                if not self._can_access_block(block, actor)
+            )
+        return count
+
+    def _has_database_search(self) -> bool:
+        return callable(getattr(self.repository, "hybrid_search_documents", None))
+
+    def _can_view_search_debug(self, actor: Actor) -> bool:
+        return actor.role in {"reviewer", "admin"}
 
     def _get_job(self, job_id: UUID) -> IngestionJob:
         job = self.repository.ingestion_jobs.get(job_id)
@@ -1772,6 +2157,9 @@ class BoxBrainUseCases:
                     metadata={
                         "source": "deterministic_pptx_ingest",
                         "sourceOrderIndex": slide.source_order_index,
+                        "embeddingText": "\n".join(
+                            part for part in (slide.extracted_text, slide.speaker_notes) if part
+                        ),
                         "embedding": list(
                             deterministic_text_embedding(
                                 "\n".join(
@@ -1837,6 +2225,33 @@ class BoxBrainUseCases:
                 variant_id=variant_id,
                 original_object_id=original_object_id,
             )
+
+    def _work_product_embedding_text(
+        self,
+        family: WorkProductFamily,
+        version: WorkProductVersion,
+        taxonomy: dict[str, Any] | None,
+    ) -> str:
+        taxonomy_values: list[str] = []
+        for value in (taxonomy or {}).values():
+            if isinstance(value, str):
+                taxonomy_values.append(value)
+            else:
+                try:
+                    taxonomy_values.extend(str(item) for item in value)
+                except TypeError:
+                    taxonomy_values.append(str(value))
+        return "\n".join(
+            part
+            for part in (
+                family.title,
+                family.summary,
+                family.artifact_type,
+                version.title,
+                *taxonomy_values,
+            )
+            if part
+        )
 
     def _save_content_unit(
         self,

@@ -6,12 +6,44 @@ from uuid import UUID, uuid4
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Numeric, Text, func
 from sqlalchemy.dialects.postgresql import ENUM, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import UserDefinedType
 
+from app.domain.ingestion_search import coerce_embedding_vector, pgvector_literal
 from app.infrastructure.database import Base
 
 
 JsonDict = dict
 JsonList = list
+
+
+class PGVector(UserDefinedType):
+    cache_ok = True
+
+    def __init__(self, dims: int) -> None:
+        self.dims = dims
+
+    def get_col_spec(self, **_: object) -> str:
+        return f"vector({self.dims})"
+
+    def bind_processor(self, dialect):
+        def process(value):
+            vector = coerce_embedding_vector(value, dims=self.dims)
+            if vector is None:
+                return None
+            return pgvector_literal(vector)
+
+        return process
+
+    def result_processor(self, dialect, coltype):
+        def process(value):
+            vector = coerce_embedding_vector(value, dims=self.dims)
+            if vector is None:
+                return None
+            return list(vector)
+
+        return process
+
+
 ApprovalStateEnum = ENUM(
     "draft",
     "review",
@@ -228,6 +260,7 @@ class EmbeddingRow(Base):
     model_name: Mapped[str] = mapped_column(Text, nullable=False)
     model_version: Mapped[str | None] = mapped_column(Text)
     dims: Mapped[int] = mapped_column(nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(PGVector(1536))
     metadata_: Mapped[JsonDict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

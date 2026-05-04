@@ -7,6 +7,7 @@ import math
 import re
 from collections import Counter
 from collections.abc import Sequence
+from typing import Any
 
 DETERMINISTIC_EMBEDDING_MODEL = "boxbrain-deterministic-token-hash"
 DETERMINISTIC_EMBEDDING_VERSION = "v1"
@@ -64,9 +65,34 @@ def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
     return dot / (left_norm * right_norm)
 
 
+def coerce_embedding_vector(value: Any, *, dims: int | None = None) -> tuple[float, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            stripped = stripped[1:-1]
+        if not stripped:
+            return None
+        raw_values: Sequence[Any] = stripped.split(",")
+    else:
+        try:
+            raw_values = tuple(value)
+        except TypeError:
+            return None
+
+    vector = tuple(float(item) for item in raw_values)
+    if dims is not None and len(vector) != dims:
+        return None
+    return vector
+
+
+def pgvector_literal(vector: Sequence[float]) -> str:
+    return "[" + ",".join(f"{float(value):.8f}" for value in vector) + "]"
+
+
 def _feature_tokens(tokens: Sequence[str]) -> tuple[str, ...]:
     if not tokens:
         return ()
     bigrams = tuple(f"{left} {right}" for left, right in zip(tokens, tokens[1:]))
     return tuple(tokens) + bigrams
-

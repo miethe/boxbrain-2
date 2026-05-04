@@ -5,9 +5,23 @@ from contextlib import contextmanager
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy import text
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.domain.ingestion_search import (
+    DEFAULT_EMBEDDING_DIMS,
+    DEFAULT_RANKING_WEIGHTS,
+    RankingWeights,
+    RankedResult,
+    ScoreBreakdown,
+    SearchDocument,
+    SearchQuery,
+    coerce_embedding_vector,
+    deterministic_text_embedding,
+    pgvector_literal,
+    score_document,
+)
 from app.domain.models import (
     AuditEvent,
     Comment,
@@ -39,6 +53,172 @@ from app.infrastructure.db_models import (
     WorkProductVersionRow,
 )
 from app.infrastructure.in_memory_repository import InMemoryBoxBrainRepository
+
+
+CONTENT_UNIT_SEARCH_TYPES = {
+    "content_unit",
+    "content_units",
+    "content_unit_family",
+    "content_unit_variant",
+    "content_unit_version",
+}
+WORK_PRODUCT_SEARCH_TYPES = {
+    "work_product",
+    "work_products",
+    "work_product_family",
+    "work_product_version",
+}
+
+
+def build_hybrid_search_sql(
+    *,
+    include_content_units: bool,
+    include_work_products: bool,
+    include_restricted: bool,
+) -> str:
+    restricted_content_unit_filter = (
+        "TRUE" if include_restricted else "NOT (content_unit.family_restricted OR content_unit.version_restricted)"
+    )
+    restricted_work_product_filter = (
+        "TRUE"
+        if include_restricted
+        else "NOT (work_product.family_restricted OR work_product.version_restricted)"
+    )
+    content_unit_enabled = "TRUE" if include_content_units else "FALSE"
+    work_product_enabled = "TRUE" if include_work_products else "FALSE"
+    return f"""
+WITH query_input AS (
+  SELECT
+    websearch_to_tsquery('english', :query_text) AS ts_query,
+    CAST(:query_embedding AS vector(1536)) AS query_embedding
+),
+content_unit AS (
+  SELECT
+    'content_unit_version' AS object_type,
+    cuv.id AS object_id,
+    cuf.id AS family_id,
+    cuvar.id AS variant_id,
+    cuv.id AS version_id,
+    cuf.family_title AS title,
+    cuv.summary AS summary,
+    cuv.thumbnail_uri AS preview_uri,
+    cuf.taxonomy AS taxonomy,
+    jsonb_build_object(
+      'familyTitle', cuf.family_title,
+      'familySummary', cuf.conceptual_summary,
+      'variantLabel', cuvar.variant_label,
+      'variantType', cuvar.variant_type,
+      'variantDimensions', cuvar.variant_dimensions,
+      'isCanonical', cuvar.is_canonical,
+      'linkSource', cuvar.linked_by,
+      'versionNumber', cuv.version_number,
+      'sourceOrderIndex', cuv.source_order_index
+    ) AS metadata,
+    cuv.approval_state AS approval_state,
+    coalesce(cuv.freshness_state, 'fresh') AS freshness_state,
+    cuf.restricted AS family_restricted,
+    cuv.restricted AS version_restricted,
+    cuv.created_at AS updated_at,
+    CASE
+      WHEN :query_text = '' THEN 0
+      ELSE LEAST(1.0, ts_rank_cd(cuv.search_vector, query_input.ts_query, 32) * 4.0)
+    END AS lexical_score,
+    CASE
+      WHEN embeddings.embedding IS NULL OR :query_text = '' THEN 0
+      ELSE GREATEST(0.0, 1.0 - (embeddings.embedding <=> query_input.query_embedding))
+    END AS semantic_score
+  FROM query_input
+  JOIN content_unit_versions cuv ON TRUE
+  JOIN content_unit_variants cuvar ON cuvar.id = cuv.variant_id
+  JOIN content_unit_families cuf ON cuf.id = cuvar.family_id
+  LEFT JOIN embeddings
+    ON embeddings.target_type = 'content_unit_version'
+   AND embeddings.target_id = cuv.id
+   AND embeddings.embedding_kind = 'text'
+   AND embeddings.embedding IS NOT NULL
+  WHERE {content_unit_enabled}
+    AND {restricted_content_unit_filter}
+),
+work_product AS (
+  SELECT
+    'work_product_version' AS object_type,
+    wpv.id AS object_id,
+    wpf.id AS family_id,
+    wpvar.id AS variant_id,
+    wpv.id AS version_id,
+    wpf.title AS title,
+    coalesce(wpv.summary, wpf.summary) AS summary,
+    wpv.preview_uri AS preview_uri,
+    wpf.taxonomy AS taxonomy,
+    jsonb_build_object(
+      'artifactType', wpf.artifact_type,
+      'familyTitle', wpf.title,
+      'familySummary', wpf.summary,
+      'variantLabel', wpvar.variant_label,
+      'variantType', wpvar.variant_type,
+      'variantDimensions', wpvar.variant_dimensions,
+      'isCanonical', wpvar.is_canonical,
+      'versionNumber', wpv.version_number
+    ) AS metadata,
+    wpv.approval_state AS approval_state,
+    coalesce(wpv.freshness_state, 'fresh') AS freshness_state,
+    wpf.restricted AS family_restricted,
+    wpv.restricted AS version_restricted,
+    wpv.created_at AS updated_at,
+    CASE
+      WHEN :query_text = '' THEN 0
+      ELSE LEAST(1.0, ts_rank_cd(wpv.search_vector, query_input.ts_query, 32) * 4.0)
+    END AS lexical_score,
+    CASE
+      WHEN embeddings.embedding IS NULL OR :query_text = '' THEN 0
+      ELSE GREATEST(0.0, 1.0 - (embeddings.embedding <=> query_input.query_embedding))
+    END AS semantic_score
+  FROM query_input
+  JOIN work_product_versions wpv ON TRUE
+  JOIN work_product_variants wpvar ON wpvar.id = wpv.variant_id
+  JOIN work_product_families wpf ON wpf.id = wpvar.family_id
+  LEFT JOIN embeddings
+    ON embeddings.target_type = 'work_product_version'
+   AND embeddings.target_id = wpv.id
+   AND embeddings.embedding_kind = 'text'
+   AND embeddings.embedding IS NOT NULL
+  WHERE {work_product_enabled}
+    AND {restricted_work_product_filter}
+),
+combined AS (
+  SELECT * FROM content_unit
+  UNION ALL
+  SELECT * FROM work_product
+)
+SELECT *
+FROM combined
+ORDER BY
+  ((:lexical_weight * lexical_score) + (:semantic_weight * semantic_score)) DESC,
+  title ASC,
+  object_id ASC
+LIMIT :limit
+"""
+
+
+def _bounded_float(value: Any) -> float:
+    if value is None:
+        return 0.0
+    return max(0.0, min(1.0, float(value)))
+
+
+def _explanation_components(breakdown: ScoreBreakdown) -> tuple[str, ...]:
+    components: list[str] = []
+    if breakdown.lexical > 0:
+        components.append("keyword match")
+    if breakdown.semantic > 0:
+        components.append("semantic match")
+    if breakdown.metadata > 0:
+        components.append("metadata match")
+    if breakdown.trust >= 0.65:
+        components.append("approved/trusted")
+    if breakdown.freshness >= 0.6:
+        components.append("fresh")
+    return tuple(components)
 
 
 class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
@@ -266,6 +446,102 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                 for row in session.scalars(select(EmbeddingRow))
             }
 
+    def hybrid_search_documents(
+        self,
+        query: SearchQuery,
+        *,
+        object_types: set[str],
+        include_restricted: bool,
+        limit: int,
+        weights: RankingWeights = DEFAULT_RANKING_WEIGHTS,
+    ) -> list[RankedResult]:
+        include_content_units = not object_types or bool(object_types.intersection(CONTENT_UNIT_SEARCH_TYPES))
+        include_work_products = not object_types or bool(object_types.intersection(WORK_PRODUCT_SEARCH_TYPES))
+        if not include_content_units and not include_work_products:
+            return []
+
+        query_text = query.text.strip()
+        query_embedding = deterministic_text_embedding(query_text, dims=DEFAULT_EMBEDDING_DIMS)
+        sql = build_hybrid_search_sql(
+            include_content_units=include_content_units,
+            include_work_products=include_work_products,
+            include_restricted=include_restricted,
+        )
+        params = {
+            "query_text": query_text,
+            "query_embedding": pgvector_literal(query_embedding),
+            "lexical_weight": weights.lexical,
+            "semantic_weight": weights.semantic,
+            "limit": max(limit, 1),
+        }
+        with self._session() as session:
+            rows = session.execute(text(sql), params).mappings().all()
+
+        results: list[RankedResult] = []
+        for row in rows:
+            document = self._search_document_from_row(row)
+            policy_breakdown = score_document(
+                query,
+                document,
+                weights=weights,
+                query_embedding=query_embedding,
+            )
+            lexical = _bounded_float(row.get("lexical_score"))
+            semantic = _bounded_float(row.get("semantic_score"))
+            metadata = policy_breakdown.metadata
+            trust = policy_breakdown.trust
+            freshness = policy_breakdown.freshness
+            total = (
+                weights.lexical * lexical
+                + weights.semantic * semantic
+                + weights.metadata * metadata
+                + weights.trust * trust
+                + weights.freshness * freshness
+            )
+            breakdown = ScoreBreakdown(
+                lexical=round(lexical, 6),
+                semantic=round(semantic, 6),
+                metadata=round(metadata, 6),
+                trust=round(trust, 6),
+                freshness=round(freshness, 6),
+                total=round(total, 6),
+            )
+            results.append(
+                RankedResult(
+                    document=document,
+                    score=breakdown.total,
+                    breakdown=breakdown,
+                    explanation=_explanation_components(breakdown),
+                )
+            )
+
+        results.sort(key=lambda item: (item.score, item.document.id), reverse=True)
+        return results[:limit]
+
+    def _search_document_from_row(self, row: Any) -> SearchDocument:
+        metadata = dict(row["metadata"] or {})
+        metadata.update(
+            {
+                "familyId": str(row["family_id"]),
+                "variantId": str(row["variant_id"]),
+                "versionId": str(row["version_id"]),
+                "previewUri": row["preview_uri"],
+            }
+        )
+        return SearchDocument(
+            id=str(row["object_id"]),
+            object_type=str(row["object_type"]),
+            title=str(row["title"] or ""),
+            summary=row["summary"],
+            text=row["summary"] or "",
+            taxonomy=dict(row["taxonomy"] or {}),
+            metadata=metadata,
+            approval_state=str(row["approval_state"]),
+            freshness_state=str(row["freshness_state"] or "fresh"),
+            updated_at=row["updated_at"],
+            is_restricted=bool(row["family_restricted"] or row["version_restricted"]),
+        )
+
     def save_stored_object(self, stored_object: StoredObject) -> None:
         self.stored_objects[stored_object.id] = stored_object
         with self._session() as session:
@@ -457,6 +733,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
 
     def save_embedding(self, embedding: EmbeddingRecord) -> None:
         self.embeddings[embedding.id] = embedding
+        vector = self._embedding_vector(embedding)
         with self._session() as session:
             session.merge(
                 EmbeddingRow(
@@ -467,10 +744,25 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     model_name=embedding.model_name,
                     model_version=embedding.model_version,
                     dims=embedding.dims,
+                    embedding=list(vector) if vector is not None else None,
                     metadata_=embedding.metadata,
                     created_at=embedding.created_at,
                 )
             )
+
+    def _embedding_vector(self, embedding: EmbeddingRecord) -> tuple[float, ...] | None:
+        if embedding.dims != DEFAULT_EMBEDDING_DIMS:
+            return None
+        vector = coerce_embedding_vector(
+            embedding.metadata.get("embedding"),
+            dims=embedding.dims,
+        )
+        if vector is not None:
+            return vector
+        embedding_text = embedding.metadata.get("embeddingText")
+        if isinstance(embedding_text, str) and embedding_text.strip():
+            return deterministic_text_embedding(embedding_text, dims=embedding.dims)
+        return None
 
     def save_comment(self, comment: Comment) -> None:
         self.comments[comment.id] = comment
