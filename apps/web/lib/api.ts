@@ -1,4 +1,4 @@
-import { contentFamilies, reviewItems, storyboardSections } from "@/features/demo/data";
+import { reviewItems, storyboardSections } from "@/features/demo/data";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -191,6 +191,29 @@ export type SearchResultItem = {
   explanationChips?: string[];
   statusChips?: StatusChips;
   [key: string]: unknown;
+};
+
+export type SearchProfile = "general" | "executive" | "technical" | "opportunity" | "duplicate_review" | "similarity_review" | "approved_only";
+export type SearchResultMode = "auto" | "families" | "variants" | "versions";
+
+export type SearchRequest = {
+  query: string;
+  profile?: SearchProfile;
+  objectTypes?: string[];
+  filters?: Record<string, unknown>;
+  resultMode?: SearchResultMode;
+  limit?: number;
+};
+
+export type AskRequest = SearchRequest & {
+  context?: Record<string, unknown>;
+};
+
+export type SearchResponse = {
+  query: string;
+  interpretedIntent?: string | null;
+  items: SearchResultItem[];
+  debug?: Record<string, unknown> | null;
 };
 
 export type ContentUnitWhereUsedReference = {
@@ -422,6 +445,20 @@ export async function listContentUnitWhereUsed(versionId: string): Promise<Conte
   return requestJson<ContentUnitWhereUsedReference[]>(`/api/content-units/${encodeURIComponent(versionId)}/where-used`);
 }
 
+export async function searchBoxBrain(input: SearchRequest): Promise<SearchResponse> {
+  return requestJson<SearchResponse>("/api/search", {
+    method: "POST",
+    json: input
+  });
+}
+
+export async function askBoxBrain(input: AskRequest): Promise<SearchResponse> {
+  return requestJson<SearchResponse>("/api/ask", {
+    method: "POST",
+    json: input
+  });
+}
+
 export async function listComments(targetType?: string, targetId?: string): Promise<Comment[]> {
   return requestJson<Comment[]>(
     `/api/comments${queryString({
@@ -470,6 +507,8 @@ export const boxbrainApi = {
   updateContentUnitFreshness,
   listSimilarContentUnits,
   listContentUnitWhereUsed,
+  searchBoxBrain,
+  askBoxBrain,
   listComments,
   createComment,
   listNotes,
@@ -483,11 +522,7 @@ export const boxbrainApi = {
       title: "Cloud Modernization Executive Storyboard",
       sections: storyboardSections
     }),
-  ask: (query: string) =>
-    apiFetch("/api/ask", {
-      answer: `Seeded answer for "${query}". Results are grouped by family and filtered by visibility before ranking.`,
-      items: contentFamilies.filter((item) => !item.restricted)
-    }),
+  ask: (query: string) => askBoxBrain({ query }),
   uploadArtifact,
   listIngestionJobs,
   getIngestionJob,

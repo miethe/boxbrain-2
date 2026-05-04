@@ -254,4 +254,70 @@ describe("content unit graph api", () => {
     expect(freshnessInit.method).toBe("PATCH");
     expect(freshnessInit.body).toBe(JSON.stringify({ freshnessState: "stale", notes: "Metric expired." }));
   });
+
+  it("posts search and ask requests to live retrieval endpoints", async () => {
+    const response = {
+      query: "cloud roi",
+      interpretedIntent: "approved content",
+      items: [
+        {
+          objectType: "content_unit_family",
+          objectId: "00000000-0000-4000-8000-000000000101",
+          resultGrain: "family",
+          title: "Cloud ROI",
+          score: 0.92,
+          explanationChips: ["matched cloud"],
+          statusChips: {
+            approvalState: "approved",
+            freshnessState: "fresh"
+          }
+        }
+      ],
+      debug: { filteredRestrictedCount: 1 }
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => response })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...response, interpretedIntent: "natural_language_retrieval" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      boxbrainApi.searchBoxBrain({
+        query: "cloud roi",
+        profile: "executive",
+        objectTypes: ["content_unit", "work_product"],
+        filters: { approvalState: "approved", freshnessState: "fresh" },
+        resultMode: "families",
+        limit: 10
+      })
+    ).resolves.toEqual(response);
+    await expect(boxbrainApi.askBoxBrain({ query: "cloud roi", context: { savedSearch: false } })).resolves.toMatchObject({
+      interpretedIntent: "natural_language_retrieval"
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:8000/api/search",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          query: "cloud roi",
+          profile: "executive",
+          objectTypes: ["content_unit", "work_product"],
+          filters: { approvalState: "approved", freshnessState: "fresh" },
+          resultMode: "families",
+          limit: 10
+        })
+      })
+    );
+    expect(new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers).get("content-type")).toBe("application/json");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/ask",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ query: "cloud roi", context: { savedSearch: false } })
+      })
+    );
+  });
 });
