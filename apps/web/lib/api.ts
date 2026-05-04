@@ -1,4 +1,4 @@
-import { contentFamilies, reviewItems, storyboardSections, workProducts } from "@/features/demo/data";
+import { contentFamilies, reviewItems, storyboardSections } from "@/features/demo/data";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -55,6 +55,37 @@ export type UploadArtifactInput = {
 
 export type ApprovalState = "draft" | "review" | "approved" | "deprecated" | "archived";
 export type FreshnessState = "fresh" | "aging" | "stale";
+export type LinkSource = "manual" | "ai" | "hybrid";
+export type ContentUnitListMode = "families" | "variants";
+
+export type Taxonomy = {
+  offerings?: string[];
+  technologies?: string[];
+  sectors?: string[];
+  geos?: string[];
+  stages?: string[];
+  audiences?: string[];
+  purposes?: string[];
+  useCases?: string[];
+  tags?: string[];
+  locales?: string[];
+  visualStyles?: string[];
+  [key: string]: unknown;
+};
+
+export type StatusChips = {
+  approvalState: ApprovalState;
+  freshnessState: FreshnessState;
+  isCanonical?: boolean;
+  isRestricted?: boolean;
+  linkSource?: LinkSource;
+  [key: string]: unknown;
+};
+
+export type PageEnvelope<T> = {
+  items: T[];
+  nextCursor?: string | null;
+};
 
 export type ContentUnitVersion = {
   id: string;
@@ -69,6 +100,34 @@ export type ContentUnitVersion = {
   usageScore?: number | null;
   sourceOrderIndex?: number | null;
   createdAt?: string;
+  [key: string]: unknown;
+};
+
+export type ContentUnitVariant = {
+  id: string;
+  familyId: string;
+  variantLabel: string;
+  variantType?: string;
+  variantDimensions?: Record<string, unknown>;
+  isCanonical: boolean;
+  linkedBy?: LinkSource;
+  linkedConfidence?: number | null;
+  latestVersionId?: string | null;
+  latestVersion?: ContentUnitVersion | null;
+  [key: string]: unknown;
+};
+
+export type ContentUnitFamilyCard = {
+  id: string;
+  familyTitle: string;
+  conceptualSummary?: string | null;
+  unitType: string;
+  canonicalPreviewUri?: string | null;
+  variantCount?: number;
+  versionCount?: number;
+  taxonomy?: Taxonomy;
+  statusChips?: StatusChips;
+  [key: string]: unknown;
 };
 
 export type ProvenanceRecord = {
@@ -80,6 +139,79 @@ export type ProvenanceRecord = {
   modelInfo?: string | null;
   pipelineVersion?: string | null;
   createdAt?: string;
+  [key: string]: unknown;
+};
+
+export type Comment = {
+  id: string;
+  kind: string;
+  targetType: string;
+  targetId: string;
+  anchor?: Record<string, unknown>;
+  parentCommentId?: string | null;
+  body: string;
+  status: string;
+  createdAt?: string;
+  [key: string]: unknown;
+};
+
+export type Note = {
+  id: string;
+  targetType: string;
+  targetId: string;
+  title?: string | null;
+  body: string;
+  noteType: string;
+  isPinned: boolean;
+  createdAt?: string;
+  [key: string]: unknown;
+};
+
+export type ContentUnitFamilyDetail = ContentUnitFamilyCard & {
+  variants?: ContentUnitVariant[];
+  notes?: Note[];
+};
+
+export type ContentUnitVersionDetail = ContentUnitVersion & {
+  extractedText?: string | null;
+  speakerNotes?: string | null;
+  provenance?: ProvenanceRecord;
+  comments?: Comment[];
+  notes?: Note[];
+};
+
+export type SearchResultItem = {
+  objectType: string;
+  objectId: string;
+  resultGrain: "family" | "variant" | "version" | "block" | "work_product" | "play";
+  title: string;
+  summary?: string | null;
+  previewUri?: string | null;
+  score: number;
+  explanationChips?: string[];
+  statusChips?: StatusChips;
+  [key: string]: unknown;
+};
+
+export type ContentUnitWhereUsedReference = {
+  objectType: string;
+  objectId: string;
+  title?: string;
+  orderIndex?: number;
+  slotId?: string;
+  [key: string]: unknown;
+};
+
+export type WorkProductFamilyCard = {
+  id: string;
+  title: string;
+  artifactType: string;
+  summary?: string | null;
+  previewUri?: string | null;
+  variantCount?: number;
+  versionCount?: number;
+  statusChips?: StatusChips;
+  [key: string]: unknown;
 };
 
 export type WorkProductVersionDetail = {
@@ -91,6 +223,33 @@ export type WorkProductVersionDetail = {
   previewUri?: string | null;
   filmstrip: ContentUnitVersion[];
   provenance: ProvenanceRecord;
+  [key: string]: unknown;
+};
+
+export type ListContentUnitFamiliesInput = {
+  cursor?: string;
+  limit?: number;
+  mode?: ContentUnitListMode;
+  approvalState?: ApprovalState;
+  freshnessState?: FreshnessState;
+};
+
+export type CreateCommentInput = {
+  kind: "review_comment" | "persistent_comment" | "note_discussion";
+  targetType: string;
+  targetId: string;
+  anchor?: Record<string, unknown>;
+  parentCommentId?: string | null;
+  body: string;
+};
+
+export type CreateNoteInput = {
+  targetType: string;
+  targetId: string;
+  title?: string | null;
+  body: string;
+  noteType?: string;
+  isPinned?: boolean;
 };
 
 type RequestJsonOptions = RequestInit & {
@@ -109,6 +268,15 @@ export class ApiError extends Error {
 
 function apiUrl(path: string) {
   return `${API_BASE_URL}${path}`;
+}
+
+function queryString(params: Record<string, string | number | undefined>) {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) searchParams.set(key, String(value));
+  }
+  const query = searchParams.toString();
+  return query ? `?${query}` : "";
 }
 
 function defaultHeaders(initHeaders?: HeadersInit, hasJsonBody = false) {
@@ -197,9 +365,109 @@ export type IngestionJobsResult = {
   items: IngestionJob[];
 };
 
+export async function listContentUnitFamilies(input: ListContentUnitFamiliesInput = {}): Promise<PageEnvelope<ContentUnitFamilyCard>> {
+  return requestJson<PageEnvelope<ContentUnitFamilyCard>>(
+    `/api/content-units/families${queryString({
+      cursor: input.cursor,
+      limit: input.limit,
+      mode: input.mode,
+      approvalState: input.approvalState,
+      freshnessState: input.freshnessState
+    })}`
+  );
+}
+
+export async function getContentUnitFamily(familyId: string): Promise<ContentUnitFamilyDetail> {
+  return requestJson<ContentUnitFamilyDetail>(`/api/content-units/families/${encodeURIComponent(familyId)}`);
+}
+
+export async function listContentUnitVariants(familyId: string): Promise<PageEnvelope<ContentUnitVariant>> {
+  return requestJson<PageEnvelope<ContentUnitVariant>>(`/api/content-units/families/${encodeURIComponent(familyId)}/variants`);
+}
+
+export async function listContentUnitVersions(variantId: string): Promise<PageEnvelope<ContentUnitVersion>> {
+  return requestJson<PageEnvelope<ContentUnitVersion>>(`/api/content-units/variants/${encodeURIComponent(variantId)}/versions`);
+}
+
+export async function getContentUnitVersion(versionId: string): Promise<ContentUnitVersionDetail> {
+  return requestJson<ContentUnitVersionDetail>(`/api/content-units/versions/${encodeURIComponent(versionId)}`);
+}
+
+export async function setContentUnitCanonicalVariant(variantId: string, reason?: string): Promise<ContentUnitVariant> {
+  return requestJson<ContentUnitVariant>(`/api/content-units/variants/${encodeURIComponent(variantId)}/canonical`, {
+    method: "POST",
+    json: reason ? { reason } : {}
+  });
+}
+
+export async function updateContentUnitApproval(versionId: string, approvalState: ApprovalState, notes?: string): Promise<ContentUnitVersion> {
+  return requestJson<ContentUnitVersion>(`/api/content-units/versions/${encodeURIComponent(versionId)}/approval`, {
+    method: "PATCH",
+    json: notes ? { approvalState, notes } : { approvalState }
+  });
+}
+
+export async function listSimilarContentUnits(versionId: string): Promise<SearchResultItem[]> {
+  return requestJson<SearchResultItem[]>(`/api/content-units/${encodeURIComponent(versionId)}/similar`);
+}
+
+export async function listContentUnitWhereUsed(versionId: string): Promise<ContentUnitWhereUsedReference[]> {
+  return requestJson<ContentUnitWhereUsedReference[]>(`/api/content-units/${encodeURIComponent(versionId)}/where-used`);
+}
+
+export async function listComments(targetType?: string, targetId?: string): Promise<Comment[]> {
+  return requestJson<Comment[]>(
+    `/api/comments${queryString({
+      targetType,
+      targetId
+    })}`
+  );
+}
+
+export async function createComment(input: CreateCommentInput): Promise<Comment> {
+  return requestJson<Comment>("/api/comments", {
+    method: "POST",
+    json: input
+  });
+}
+
+export async function listNotes(targetType?: string, targetId?: string): Promise<Note[]> {
+  return requestJson<Note[]>(
+    `/api/notes${queryString({
+      targetType,
+      targetId
+    })}`
+  );
+}
+
+export async function createNote(input: CreateNoteInput): Promise<Note> {
+  return requestJson<Note>("/api/notes", {
+    method: "POST",
+    json: input
+  });
+}
+
+export async function listWorkProductFamilies(): Promise<PageEnvelope<WorkProductFamilyCard>> {
+  return requestJson<PageEnvelope<WorkProductFamilyCard>>("/api/work-products/families");
+}
+
 export const boxbrainApi = {
-  listContentFamilies: () => apiFetch("/api/content-units/families", { items: contentFamilies }),
-  listWorkProducts: () => apiFetch("/api/work-products/families", { items: workProducts }),
+  listContentFamilies: listContentUnitFamilies,
+  listContentUnitFamilies,
+  getContentUnitFamily,
+  listContentUnitVariants,
+  listContentUnitVersions,
+  getContentUnitVersion,
+  setContentUnitCanonicalVariant,
+  updateContentUnitApproval,
+  listSimilarContentUnits,
+  listContentUnitWhereUsed,
+  listComments,
+  createComment,
+  listNotes,
+  createNote,
+  listWorkProducts: listWorkProductFamilies,
+  listWorkProductFamilies,
   listReviews: () => apiFetch("/api/reviews/items", { items: reviewItems }),
   getStoryboard: () =>
     apiFetch("/api/storyboards/sb-cloud-modernization", {

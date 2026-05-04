@@ -16,6 +16,7 @@ const queuedJob: IngestionJob = {
 describe("ingestion api", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("normalizes list responses from array and item envelopes", () => {
@@ -96,5 +97,152 @@ describe("ingestion api", () => {
       "http://localhost:8000/api/work-products/versions/00000000-0000-4000-8000-000000000402",
       expect.objectContaining({ cache: "no-store" })
     );
+  });
+});
+
+describe("content unit graph api", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("lists ContentUnit families with graph filters", async () => {
+    const response = {
+      items: [
+        {
+          id: "family-1",
+          familyTitle: "Cloud ROI",
+          unitType: "slide",
+          statusChips: {
+            approvalState: "approved",
+            freshnessState: "fresh"
+          }
+        }
+      ],
+      nextCursor: "next"
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => response
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      boxbrainApi.listContentUnitFamilies({
+        cursor: "cursor-1",
+        limit: 25,
+        mode: "families",
+        approvalState: "approved",
+        freshnessState: "fresh"
+      })
+    ).resolves.toEqual(response);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/content-units/families?cursor=cursor-1&limit=25&mode=families&approvalState=approved&freshnessState=fresh",
+      expect.objectContaining({ cache: "no-store" })
+    );
+  });
+
+  it("fetches family, variant versions, and version detail endpoints", async () => {
+    const family = {
+      id: "family-1",
+      familyTitle: "Cloud ROI",
+      unitType: "slide",
+      variants: []
+    };
+    const versions = {
+      items: [
+        {
+          id: "version-1",
+          variantId: "variant-1",
+          versionNumber: "v1",
+          approvalState: "review",
+          freshnessState: "aging"
+        }
+      ]
+    };
+    const versionDetail = {
+      ...versions.items[0],
+      provenance: {
+        id: "prov-1",
+        originType: "imported"
+      },
+      comments: [],
+      notes: []
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => family })
+      .mockResolvedValueOnce({ ok: true, json: async () => versions })
+      .mockResolvedValueOnce({ ok: true, json: async () => versionDetail });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.getContentUnitFamily("family 1")).resolves.toEqual(family);
+    await expect(boxbrainApi.listContentUnitVersions("variant/1")).resolves.toEqual(versions);
+    await expect(boxbrainApi.getContentUnitVersion("version/1")).resolves.toEqual(versionDetail);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/content-units/families/family%201",
+      "http://localhost:8000/api/content-units/variants/variant%2F1/versions",
+      "http://localhost:8000/api/content-units/versions/version%2F1"
+    ]);
+  });
+
+  it("fetches similar, where-used, comments, and notes for a version", async () => {
+    const similar = [{ objectId: "version-2", objectType: "content_unit_version", resultGrain: "version", title: "Similar", score: 0.91 }];
+    const whereUsed = [{ objectType: "storyboard", objectId: "storyboard-1", title: "Board story" }];
+    const comments = [{ id: "comment-1", kind: "persistent_comment", targetType: "content_unit_version", targetId: "version-1", body: "Check metric.", status: "open" }];
+    const notes = [{ id: "note-1", targetType: "content_unit_version", targetId: "version-1", body: "Use for board.", noteType: "usage_guidance", isPinned: true }];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => similar })
+      .mockResolvedValueOnce({ ok: true, json: async () => whereUsed })
+      .mockResolvedValueOnce({ ok: true, json: async () => comments })
+      .mockResolvedValueOnce({ ok: true, json: async () => notes });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.listSimilarContentUnits("version-1")).resolves.toEqual(similar);
+    await expect(boxbrainApi.listContentUnitWhereUsed("version-1")).resolves.toEqual(whereUsed);
+    await expect(boxbrainApi.listComments("content_unit_version", "version-1")).resolves.toEqual(comments);
+    await expect(boxbrainApi.listNotes("content_unit_version", "version-1")).resolves.toEqual(notes);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/content-units/version-1/similar",
+      "http://localhost:8000/api/content-units/version-1/where-used",
+      "http://localhost:8000/api/comments?targetType=content_unit_version&targetId=version-1",
+      "http://localhost:8000/api/notes?targetType=content_unit_version&targetId=version-1"
+    ]);
+  });
+
+  it("writes governance requests with json bodies", async () => {
+    const canonicalVariant = {
+      id: "variant-1",
+      familyId: "family-1",
+      variantLabel: "Executive",
+      isCanonical: true
+    };
+    const approvedVersion = {
+      id: "version-1",
+      variantId: "variant-1",
+      versionNumber: "v1",
+      approvalState: "approved",
+      freshnessState: "fresh"
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => canonicalVariant })
+      .mockResolvedValueOnce({ ok: true, json: async () => approvedVersion });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.setContentUnitCanonicalVariant("variant-1", "Curator selected.")).resolves.toEqual(canonicalVariant);
+    await expect(boxbrainApi.updateContentUnitApproval("version-1", "approved", "Approved for reuse.")).resolves.toEqual(approvedVersion);
+
+    const [, canonicalInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [, approvalInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(canonicalInit.method).toBe("POST");
+    expect(canonicalInit.body).toBe(JSON.stringify({ reason: "Curator selected." }));
+    expect(new Headers(canonicalInit.headers).get("content-type")).toBe("application/json");
+    expect(approvalInit.method).toBe("PATCH");
+    expect(approvalInit.body).toBe(JSON.stringify({ approvalState: "approved", notes: "Approved for reuse." }));
   });
 });
