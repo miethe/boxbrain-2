@@ -112,7 +112,19 @@ def test_deterministic_processor_creates_one_atomic_unit_per_slide_and_is_idempo
         UUID(value) for value in created_ids
     ]
     assert repo.work_product_versions[UUID(upload["workProductVersionId"])].preview_uri == created_versions[0].thumbnail_uri
-    assert len(repo.embeddings) == 2
+    content_unit_embeddings = [
+        embedding
+        for embedding in repo.embeddings.values()
+        if embedding.target_type == "content_unit_version"
+    ]
+    work_product_embeddings = [
+        embedding
+        for embedding in repo.embeddings.values()
+        if embedding.target_type == "work_product_version"
+        and embedding.target_id == UUID(upload["workProductVersionId"])
+    ]
+    assert len(content_unit_embeddings) == 2
+    assert len(work_product_embeddings) == 1
     assert first.outputSummary is not None
     assert first.outputSummary.createdContentUnitVersionIds == [UUID(value) for value in created_ids]
 
