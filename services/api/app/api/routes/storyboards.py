@@ -13,8 +13,9 @@ router = APIRouter(tags=["storyboards"])
 @router.get("/storyboards", response_model=dict[str, list[s.Storyboard] | None])
 def list_storyboards(
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
 ) -> dict[str, list[s.Storyboard] | None]:
-    return {"items": use_cases.list_storyboards(), "nextCursor": None}
+    return {"items": use_cases.list_storyboards(actor), "nextCursor": None}
 
 
 @router.post("/storyboards", response_model=s.Storyboard, status_code=status.HTTP_201_CREATED)
@@ -30,16 +31,18 @@ def create_storyboard(
 def get_storyboard(
     storyboard_id: UUID,
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
 ) -> s.StoryboardDetail:
-    return use_cases.get_storyboard(storyboard_id)
+    return use_cases.get_storyboard(storyboard_id, actor)
 
 
 @router.get("/storyboards/{storyboard_id}/snapshots", response_model=list[s.StoryboardSnapshot])
 def list_snapshots(
     storyboard_id: UUID,
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
 ) -> list[s.StoryboardSnapshot]:
-    return use_cases.list_storyboard_snapshots(storyboard_id)
+    return use_cases.list_storyboard_snapshots(storyboard_id, actor)
 
 
 @router.post("/storyboards/{storyboard_id}/snapshots", response_model=s.StoryboardSnapshot)
@@ -60,8 +63,9 @@ def create_snapshot(
 def get_snapshot(
     snapshot_id: UUID,
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
 ) -> s.StoryboardSnapshot:
-    return use_cases.get_storyboard_snapshot(snapshot_id)
+    return use_cases.get_storyboard_snapshot(snapshot_id, actor)
 
 
 @router.post("/storyboards/{storyboard_id}/sections", response_model=s.StoryboardSection, status_code=status.HTTP_201_CREATED)
@@ -108,5 +112,6 @@ def update_slot(
 def analyze_storyboard(
     storyboard_id: UUID,
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
 ) -> s.StoryboardDiagnostics:
-    return use_cases.analyze_storyboard(storyboard_id)
+    return use_cases.analyze_storyboard(storyboard_id, actor)

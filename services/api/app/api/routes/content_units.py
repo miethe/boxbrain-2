@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.dependencies import get_actor, get_use_cases
 from app.application.use_cases import BoxBrainUseCases
@@ -12,10 +12,19 @@ router = APIRouter(prefix="/content-units", tags=["content-units"])
 
 @router.get("/families", response_model=dict[str, list[s.ContentUnitFamilyCard] | None])
 def list_families(
+    approval_state: s.ApprovalState | None = Query(default=None, alias="approvalState"),
+    freshness_state: s.FreshnessState | None = Query(default=None, alias="freshnessState"),
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
     actor: Actor = Depends(get_actor),
 ) -> dict[str, list[s.ContentUnitFamilyCard] | None]:
-    return {"items": use_cases.list_content_unit_families(actor), "nextCursor": None}
+    return {
+        "items": use_cases.list_content_unit_families(
+            actor,
+            approval_state=approval_state,
+            freshness_state=freshness_state,
+        ),
+        "nextCursor": None,
+    }
 
 
 @router.get("/families/{family_id}", response_model=s.ContentUnitFamilyDetail)
@@ -83,6 +92,21 @@ def update_approval(
     )
 
 
+@router.patch("/versions/{version_id}/freshness", response_model=s.ContentUnitVersion)
+def update_freshness(
+    version_id: UUID,
+    request: s.UpdateFreshnessRequest,
+    use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
+) -> s.ContentUnitVersion:
+    return use_cases.update_content_unit_freshness(
+        version_id,
+        request.freshnessState,
+        actor,
+        notes=request.notes,
+    )
+
+
 @router.get("/{version_id}/similar", response_model=list[s.SearchResultItem])
 def similar(
     version_id: UUID,
@@ -92,9 +116,10 @@ def similar(
     return use_cases.similar_content_units(version_id, actor)
 
 
-@router.get("/{version_id}/where-used", response_model=list[dict])
+@router.get("/{version_id}/where-used", response_model=list[s.ContentUnitUsageReference])
 def where_used(
     version_id: UUID,
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
-) -> list[dict]:
-    return use_cases.where_used(version_id)
+    actor: Actor = Depends(get_actor),
+) -> list[s.ContentUnitUsageReference]:
+    return use_cases.where_used(version_id, actor)

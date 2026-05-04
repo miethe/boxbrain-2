@@ -221,6 +221,7 @@ def work_product_family_card(
 
 
 def work_product_version_detail(
+    family: d.WorkProductFamily,
     version: d.WorkProductVersion,
     filmstrip: list[d.ContentUnitVersion],
     provenance: d.ProvenanceRecord,
@@ -232,6 +233,7 @@ def work_product_version_detail(
         versionNumber=version.version_number,
         approvalState=cast(s.ApprovalState, version.approval_state),
         previewUri=version.preview_uri,
+        statusChips=work_product_status(family, version),
         filmstrip=[content_unit_version_model(unit) for unit in filmstrip],
         provenance=provenance_model(provenance),
     )

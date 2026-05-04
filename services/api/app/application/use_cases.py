@@ -41,6 +41,7 @@ from app.domain.models import (
     Storyboard,
     StoryboardSection,
     StoryboardSlot,
+    StoryboardSnapshot,
     WorkProductFamily,
     WorkProductVersion,
     now_utc,
@@ -449,11 +450,23 @@ class BoxBrainUseCases:
         )
         return p.ingestion_job_model(job)
 
-    def list_content_unit_families(self, actor: Actor) -> list[s.ContentUnitFamilyCard]:
+    def list_content_unit_families(
+        self,
+        actor: Actor,
+        *,
+        approval_state: str | None = None,
+        freshness_state: str | None = None,
+    ) -> list[s.ContentUnitFamilyCard]:
         families = [
             family
             for family in self.repository.content_unit_families.values()
             if self._can_access_family(family.id, actor)
+            and self._family_matches_version_filters(
+                family.id,
+                approval_state=approval_state,
+                freshness_state=freshness_state,
+                actor=actor,
+            )
         ]
         return [
             p.content_unit_family_card(
@@ -497,6 +510,7 @@ class BoxBrainUseCases:
             version
             for version in self.repository.content_unit_versions.values()
             if version.variant_id == variant_id
+            and self._can_access_version(version.id, actor)
         ]
         return [
             p.content_unit_version_model(version)
@@ -542,6 +556,7 @@ class BoxBrainUseCases:
         version = self._get_content_unit_version(version_id)
         prior = {"approvalState": version.approval_state}
         version.approval_state = approval_state
+        self._save_content_unit_version(version)
         self.repository.record_audit(
             action="approval_state_change",
             actor_id=actor.user_id,
@@ -553,10 +568,34 @@ class BoxBrainUseCases:
         )
         return p.content_unit_version_model(version)
 
+    def update_content_unit_freshness(
+        self,
+        version_id: UUID,
+        freshness_state: str,
+        actor: Actor,
+        notes: str | None = None,
+    ) -> s.ContentUnitVersion:
+        require_curator_actor(actor)
+        version = self._get_content_unit_version(version_id)
+        variant = self._get_content_unit_variant(version.variant_id)
+        if not self._can_access_family(variant.family_id, actor):
+            raise NotFoundError("ContentUnit version not found.")
+        prior = {"freshnessState": version.freshness_state}
+        version.freshness_state = freshness_state
+        self._save_content_unit_version(version)
+        self.repository.record_audit(
+            action="freshness_state_change",
+            actor_id=actor.user_id,
+            target_type="content_unit_version",
+            target_id=version.id,
+            prior_state=prior,
+            new_state={"freshnessState": version.freshness_state},
+            reason=notes,
+        )
+        return p.content_unit_version_model(version)
+
     def similar_content_units(self, version_id: UUID, actor: Actor) -> list[s.SearchResultItem]:
-        source = self._get_content_unit_version(version_id)
-        source_variant = self._get_content_unit_variant(source.variant_id)
-        if not self._can_access_family(source_variant.family_id, actor):
+        if not self._can_access_version(version_id, actor):
             raise NotFoundError("ContentUnit version not found.")
         results: list[s.SearchResultItem] = []
         for edge in self.repository.similarity_edges.values():
@@ -568,9 +607,9 @@ class BoxBrainUseCases:
             if target_id is None:
                 continue
             target = self._get_content_unit_version(target_id)
-            target_variant = self._get_content_unit_variant(target.variant_id)
-            if not self._can_access_family(target_variant.family_id, actor):
+            if not self._can_access_version(target.id, actor):
                 continue
+            target_variant = self._get_content_unit_variant(target.variant_id)
             target_family = self._get_content_unit_family(target_variant.family_id)
             results.append(
                 s.SearchResultItem(
@@ -587,39 +626,61 @@ class BoxBrainUseCases:
             )
         return sorted(results, key=lambda item: item.score, reverse=True)
 
-    def where_used(self, version_id: UUID) -> list[dict[str, Any]]:
-        self._get_content_unit_version(version_id)
-        used: list[dict[str, Any]] = []
+    def where_used(self, version_id: UUID, actor: Actor) -> list[s.ContentUnitUsageReference]:
+        if not self._can_access_version(version_id, actor):
+            raise NotFoundError("ContentUnit version not found.")
+        used: list[s.ContentUnitUsageReference] = []
         for block in self.repository.content_blocks.values():
+            if not self._can_access_block(block, actor):
+                continue
             for member in block.members:
                 if member.member_id == version_id:
                     used.append(
-                        {
-                            "objectType": "content_block_version",
-                            "objectId": str(block.id),
-                            "title": block.title,
-                            "orderIndex": member.order_index,
-                        }
+                        s.ContentUnitUsageReference(
+                            objectType="content_block_version",
+                            objectId=block.id,
+                            title=block.title,
+                            orderIndex=member.order_index,
+                            memberId=member.id,
+                        )
                     )
         for storyboard in self.repository.storyboards.values():
+            if not self._can_access_storyboard(storyboard, actor):
+                continue
             for section in storyboard.draft_sections:
                 for slot in section.slots:
                     if slot.selected_object_id == version_id:
                         used.append(
-                            {
-                                "objectType": "storyboard",
-                                "objectId": str(storyboard.id),
-                                "title": storyboard.title,
-                                "slotId": str(slot.id),
-                            }
+                            s.ContentUnitUsageReference(
+                                objectType="storyboard",
+                                objectId=storyboard.id,
+                                title=storyboard.title,
+                                orderIndex=slot.order_index,
+                                sectionId=section.id,
+                                slotId=slot.id,
+                            )
                         )
+        for work_product in self.repository.work_product_versions.values():
+            if not self._can_access_work_product_version(work_product, actor):
+                continue
+            for order_index, filmstrip_version_id in enumerate(work_product.filmstrip_version_ids):
+                if filmstrip_version_id == version_id:
+                    used.append(
+                        s.ContentUnitUsageReference(
+                            objectType="work_product_version",
+                            objectId=work_product.id,
+                            title=work_product.title,
+                            orderIndex=order_index,
+                            workProductVersionId=work_product.id,
+                        )
+                    )
         return used
 
     def list_work_product_families(self, actor: Actor) -> list[s.WorkProductFamilyCard]:
         families = [
             family
             for family in self.repository.work_product_families.values()
-            if can_view_restricted(actor) or not family.restricted
+            if self._can_access_work_product_family(family.id, actor)
         ]
         return [
             p.work_product_family_card(family, self._latest_work_product_version(family.id))
@@ -628,7 +689,7 @@ class BoxBrainUseCases:
 
     def get_work_product_version(self, version_id: UUID, actor: Actor) -> s.WorkProductVersionDetail:
         version = self._get_work_product_version(version_id)
-        if version.restricted and not can_view_restricted(actor):
+        if not self._can_access_work_product_version(version, actor):
             raise NotFoundError("WorkProduct version not found.")
         filmstrip = [
             unit
@@ -637,7 +698,8 @@ class BoxBrainUseCases:
             for unit in [self.repository.content_unit_versions[unit_id]]
         ]
         provenance = self.repository.provenance_records[version.provenance_id]
-        return p.work_product_version_detail(version, filmstrip, provenance)
+        family = self.repository.work_product_families[version.family_id]
+        return p.work_product_version_detail(family, version, filmstrip, provenance)
 
     def create_content_block(
         self,
@@ -657,7 +719,7 @@ class BoxBrainUseCases:
             )
             for member in request.members
         ]
-        self._validate_content_block_members(members)
+        self._validate_content_block_members(members, actor)
         block = ContentBlockVersion(
             id=uuid4(),
             family_id=uuid4(),
@@ -671,13 +733,20 @@ class BoxBrainUseCases:
         self.repository.content_blocks[block.id] = block
         return p.content_block_model(block)
 
-    def list_content_blocks(self) -> list[s.ContentBlockVersionDetail]:
-        blocks = sorted(self.repository.content_blocks.values(), key=lambda item: item.title)
+    def list_content_blocks(self, actor: Actor) -> list[s.ContentBlockVersionDetail]:
+        blocks = sorted(
+            (
+                block
+                for block in self.repository.content_blocks.values()
+                if self._can_access_block(block, actor)
+            ),
+            key=lambda item: item.title,
+        )
         return [p.content_block_model(block) for block in blocks]
 
-    def get_content_block(self, block_id: UUID) -> s.ContentBlockVersionDetail:
+    def get_content_block(self, block_id: UUID, actor: Actor) -> s.ContentBlockVersionDetail:
         block = self.repository.content_blocks.get(block_id)
-        if block is None:
+        if block is None or not self._can_access_block(block, actor):
             raise NotFoundError("ContentBlock not found.")
         return p.content_block_model(block)
 
@@ -693,14 +762,17 @@ class BoxBrainUseCases:
         self.repository.storyboards[storyboard.id] = storyboard
         return p.storyboard_model(storyboard)
 
-    def list_storyboards(self) -> list[s.Storyboard]:
+    def list_storyboards(self, actor: Actor) -> list[s.Storyboard]:
         return [
             p.storyboard_model(storyboard)
             for storyboard in sorted(self.repository.storyboards.values(), key=lambda item: item.title)
+            if self._can_access_storyboard(storyboard, actor)
         ]
 
-    def get_storyboard(self, storyboard_id: UUID) -> s.StoryboardDetail:
+    def get_storyboard(self, storyboard_id: UUID, actor: Actor) -> s.StoryboardDetail:
         storyboard = self._get_storyboard(storyboard_id)
+        if not self._can_access_storyboard(storyboard, actor):
+            raise NotFoundError("Storyboard not found.")
         snapshot = (
             self.repository.storyboard_snapshots.get(storyboard.current_snapshot_id)
             if storyboard.current_snapshot_id
@@ -716,24 +788,29 @@ class BoxBrainUseCases:
     ) -> s.StoryboardSnapshot:
         require_role(actor, "contributor")
         storyboard = self._get_storyboard(storyboard_id)
+        if not self._can_access_storyboard(storyboard, actor):
+            raise NotFoundError("Storyboard not found.")
         snapshot = self.repository.freeze_storyboard_snapshot(storyboard, request.versionLabel)
         return p.storyboard_snapshot_model(snapshot)
 
-    def list_storyboard_snapshots(self, storyboard_id: UUID) -> list[s.StoryboardSnapshot]:
-        self._get_storyboard(storyboard_id)
+    def list_storyboard_snapshots(self, storyboard_id: UUID, actor: Actor) -> list[s.StoryboardSnapshot]:
+        storyboard = self._get_storyboard(storyboard_id)
+        if not self._can_access_storyboard(storyboard, actor):
+            raise NotFoundError("Storyboard not found.")
         snapshots = [
             snapshot
             for snapshot in self.repository.storyboard_snapshots.values()
             if snapshot.storyboard_id == storyboard_id
+            and self._can_access_storyboard_snapshot(snapshot, actor)
         ]
         return [
             p.storyboard_snapshot_model(snapshot)
             for snapshot in sorted(snapshots, key=lambda item: item.created_at)
         ]
 
-    def get_storyboard_snapshot(self, snapshot_id: UUID) -> s.StoryboardSnapshot:
+    def get_storyboard_snapshot(self, snapshot_id: UUID, actor: Actor) -> s.StoryboardSnapshot:
         snapshot = self.repository.storyboard_snapshots.get(snapshot_id)
-        if snapshot is None:
+        if snapshot is None or not self._can_access_storyboard_snapshot(snapshot, actor):
             raise NotFoundError("Storyboard snapshot not found.")
         return p.storyboard_snapshot_model(snapshot)
 
@@ -745,6 +822,8 @@ class BoxBrainUseCases:
     ) -> s.StoryboardSection:
         require_role(actor, "contributor")
         storyboard = self._get_storyboard(storyboard_id)
+        if not self._can_access_storyboard(storyboard, actor):
+            raise NotFoundError("Storyboard not found.")
         order_index = request.orderIndex
         if order_index is None:
             order_index = len(storyboard.draft_sections)
@@ -768,6 +847,9 @@ class BoxBrainUseCases:
     ) -> s.StoryboardSection:
         require_role(actor, "contributor")
         section = self._get_draft_section(section_id)
+        parent = self._get_storyboard(section.storyboard_id)
+        if not self._can_access_storyboard(parent, actor):
+            raise NotFoundError("Draft storyboard section not found.")
         section.title = request.title
         section.summary = request.summary
         if request.orderIndex is not None:
@@ -783,7 +865,15 @@ class BoxBrainUseCases:
     ) -> s.StoryboardSlot:
         require_role(actor, "contributor")
         section = self._get_draft_section(section_id)
-        self._validate_slot_selection(request.slotType, request.selectedObjectType, request.selectedObjectId)
+        parent = self._get_storyboard(section.storyboard_id)
+        if not self._can_access_storyboard(parent, actor):
+            raise NotFoundError("Draft storyboard section not found.")
+        self._validate_slot_selection(
+            request.slotType,
+            request.selectedObjectType,
+            request.selectedObjectId,
+            actor,
+        )
         order_index = request.orderIndex
         if order_index is None:
             order_index = len(section.slots)
@@ -810,6 +900,9 @@ class BoxBrainUseCases:
     ) -> s.StoryboardSlot:
         require_role(actor, "contributor")
         slot, section = self._get_draft_slot(slot_id)
+        parent = self._get_storyboard(section.storyboard_id)
+        if not self._can_access_storyboard(parent, actor):
+            raise NotFoundError("Draft storyboard slot not found.")
         slot_type = request.slotType or slot.slot_type
         selected_object_type = (
             request.selectedObjectType if request.selectedObjectType is not None else slot.selected_object_type
@@ -817,7 +910,7 @@ class BoxBrainUseCases:
         selected_object_id = (
             request.selectedObjectId if request.selectedObjectId is not None else slot.selected_object_id
         )
-        self._validate_slot_selection(slot_type, selected_object_type, selected_object_id)
+        self._validate_slot_selection(slot_type, selected_object_type, selected_object_id, actor)
         slot.slot_type = slot_type
         slot.selected_object_type = selected_object_type
         slot.selected_object_id = selected_object_id
@@ -831,8 +924,10 @@ class BoxBrainUseCases:
         self._touch_storyboard(section.storyboard_id)
         return p.storyboard_slot_model(slot)
 
-    def analyze_storyboard(self, storyboard_id: UUID) -> s.StoryboardDiagnostics:
+    def analyze_storyboard(self, storyboard_id: UUID, actor: Actor) -> s.StoryboardDiagnostics:
         storyboard = self._get_storyboard(storyboard_id)
+        if not self._can_access_storyboard(storyboard, actor):
+            raise NotFoundError("Storyboard not found.")
         warnings: list[s.StoryboardDiagnosticWarning] = []
         selected_ids: list[UUID] = []
         for section in storyboard.draft_sections:
@@ -886,6 +981,8 @@ class BoxBrainUseCases:
 
     def create_comment(self, request: s.CreateCommentRequest, actor: Actor) -> s.Comment:
         require_role(actor, "contributor")
+        if not self._can_access_target(request.targetType, request.targetId, actor):
+            raise NotFoundError("Comment target not found.")
         comment = Comment(
             id=uuid4(),
             kind=request.kind,
@@ -897,14 +994,25 @@ class BoxBrainUseCases:
             created_at=now_utc(),
         )
         self.repository.comments[comment.id] = comment
+        self._save_comment(comment)
         return p.comment_model(comment)
 
-    def list_comments(self, target_type: str | None, target_id: UUID | None) -> list[s.Comment]:
+    def list_comments(
+        self,
+        target_type: str | None,
+        target_id: UUID | None,
+        actor: Actor,
+    ) -> list[s.Comment]:
         comments = list(self.repository.comments.values())
         if target_type:
             comments = [comment for comment in comments if comment.target_type == target_type]
         if target_id:
             comments = [comment for comment in comments if comment.target_id == target_id]
+        comments = [
+            comment
+            for comment in comments
+            if self._can_access_target(comment.target_type, comment.target_id, actor)
+        ]
         return [
             p.comment_model(comment)
             for comment in sorted(comments, key=lambda item: item.created_at)
@@ -912,6 +1020,8 @@ class BoxBrainUseCases:
 
     def create_note(self, request: s.CreateNoteRequest, actor: Actor) -> s.Note:
         require_curator_actor(actor)
+        if not self._can_access_target(request.targetType, request.targetId, actor):
+            raise NotFoundError("Note target not found.")
         note = Note(
             id=uuid4(),
             target_type=request.targetType,
@@ -924,6 +1034,7 @@ class BoxBrainUseCases:
             updated_at=now_utc(),
         )
         self.repository.notes[note.id] = note
+        self._save_note(note)
         self.repository.record_audit(
             action="note_create",
             actor_id=actor.user_id,
@@ -934,12 +1045,22 @@ class BoxBrainUseCases:
         )
         return p.note_model(note)
 
-    def list_notes(self, target_type: str | None, target_id: UUID | None) -> list[s.Note]:
+    def list_notes(
+        self,
+        target_type: str | None,
+        target_id: UUID | None,
+        actor: Actor,
+    ) -> list[s.Note]:
         notes = list(self.repository.notes.values())
         if target_type:
             notes = [note for note in notes if note.target_type == target_type]
         if target_id:
             notes = [note for note in notes if note.target_id == target_id]
+        notes = [
+            note
+            for note in notes
+            if self._can_access_target(note.target_type, note.target_id, actor)
+        ]
         return [p.note_model(note) for note in sorted(notes, key=lambda item: item.created_at)]
 
     def review_queues(self) -> list[s.ReviewQueueSummary]:
@@ -1051,7 +1172,7 @@ class BoxBrainUseCases:
                 if not self._can_access_family(family.id, actor):
                     filtered_restricted += 1
                     continue
-                score = self._score_content_unit_family(family.id, terms)
+                score = self._score_content_unit_family(family.id, terms, actor)
                 if score <= 0 and terms:
                     continue
                 variants = self._variants_for_family(family.id)
@@ -1200,6 +1321,30 @@ class BoxBrainUseCases:
                 versions_by_variant[version.variant_id].append(version)
         return versions_by_variant
 
+    def _family_matches_version_filters(
+        self,
+        family_id: UUID,
+        *,
+        approval_state: str | None,
+        freshness_state: str | None,
+        actor: Actor,
+    ) -> bool:
+        if approval_state is None and freshness_state is None:
+            return True
+        visible_versions = [
+            version
+            for versions in self._versions_by_variant(family_id).values()
+            for version in versions
+            if self._can_access_version(version.id, actor)
+        ]
+        for version in visible_versions:
+            if approval_state is not None and version.approval_state != approval_state:
+                continue
+            if freshness_state is not None and version.freshness_state != freshness_state:
+                continue
+            return True
+        return False
+
     def _notes_for(self, target_type: str, target_id: UUID):
         return [
             note
@@ -1247,6 +1392,81 @@ class BoxBrainUseCases:
             return False
         return True
 
+    def _can_access_block(self, block: ContentBlockVersion, actor: Actor) -> bool:
+        return can_view_restricted(actor) or not self._block_is_restricted(block)
+
+    def _can_access_storyboard(self, storyboard: Storyboard, actor: Actor) -> bool:
+        if can_view_restricted(actor):
+            return True
+        for section in storyboard.draft_sections:
+            for slot in section.slots:
+                if slot.selected_object_type and slot.selected_object_id:
+                    if not self._can_access_target(
+                        slot.selected_object_type,
+                        slot.selected_object_id,
+                        actor,
+                    ):
+                        return False
+        return True
+
+    def _can_access_storyboard_snapshot(
+        self,
+        snapshot: StoryboardSnapshot,
+        actor: Actor,
+    ) -> bool:
+        if can_view_restricted(actor):
+            return True
+        for section in snapshot.sections:
+            for slot in section.slots:
+                if slot.selected_object_type and slot.selected_object_id:
+                    if not self._can_access_target(
+                        slot.selected_object_type,
+                        slot.selected_object_id,
+                        actor,
+                    ):
+                        return False
+        return True
+
+    def _can_access_work_product_family(self, family_id: UUID, actor: Actor) -> bool:
+        family = self.repository.work_product_families.get(family_id)
+        if family is None:
+            return False
+        if family.restricted and not can_view_restricted(actor):
+            return False
+        return True
+
+    def _can_access_work_product_version(
+        self,
+        version: WorkProductVersion,
+        actor: Actor,
+    ) -> bool:
+        if not self._can_access_work_product_family(version.family_id, actor):
+            return False
+        if version.restricted and not can_view_restricted(actor):
+            return False
+        return True
+
+    def _can_access_target(self, target_type: str, target_id: UUID, actor: Actor) -> bool:
+        if target_type in {"content_unit_version", "content_unit"}:
+            return self._can_access_version(target_id, actor)
+        if target_type == "content_unit_variant":
+            variant = self.repository.content_unit_variants.get(target_id)
+            return bool(variant and self._can_access_family(variant.family_id, actor))
+        if target_type == "content_unit_family":
+            return self._can_access_family(target_id, actor)
+        if target_type == "content_block_version":
+            block = self.repository.content_blocks.get(target_id)
+            return bool(block and self._can_access_block(block, actor))
+        if target_type == "storyboard":
+            storyboard = self.repository.storyboards.get(target_id)
+            return bool(storyboard and self._can_access_storyboard(storyboard, actor))
+        if target_type == "work_product_version":
+            version = self.repository.work_product_versions.get(target_id)
+            return bool(version and self._can_access_work_product_version(version, actor))
+        if target_type == "work_product_family":
+            return self._can_access_work_product_family(target_id, actor)
+        return False
+
     def _set_canonical_variant_unchecked(
         self,
         variant_id: UUID,
@@ -1259,6 +1479,7 @@ class BoxBrainUseCases:
         for sibling in siblings:
             sibling.is_canonical = sibling.id == variant_id
         new = {str(sibling.id): sibling.is_canonical for sibling in siblings}
+        self._save_content_unit_variants(siblings)
         self.repository.record_audit(
             action="canonical_change",
             actor_id=actor.user_id,
@@ -1270,7 +1491,11 @@ class BoxBrainUseCases:
         )
         return variant
 
-    def _validate_content_block_members(self, members: list[ContentBlockMember]) -> None:
+    def _validate_content_block_members(
+        self,
+        members: list[ContentBlockMember],
+        actor: Actor,
+    ) -> None:
         if not members:
             raise ConflictError("ContentBlock requires at least one member.")
         seen_order_indexes: set[int] = set()
@@ -1280,8 +1505,12 @@ class BoxBrainUseCases:
             seen_order_indexes.add(member.order_index)
             if member.member_type == "content_unit_version":
                 self._get_content_unit_version(member.member_id)
+                if not self._can_access_version(member.member_id, actor):
+                    raise NotFoundError("ContentUnit version not found.")
             elif member.member_type == "content_unit_variant":
-                self._get_content_unit_variant(member.member_id)
+                variant = self._get_content_unit_variant(member.member_id)
+                if not self._can_access_family(variant.family_id, actor):
+                    raise NotFoundError("ContentUnit variant not found.")
             else:
                 raise ConflictError("Unsupported ContentBlock member type.")
 
@@ -1290,6 +1519,7 @@ class BoxBrainUseCases:
         slot_type: str,
         selected_object_type: str | None,
         selected_object_id: UUID | None,
+        actor: Actor,
     ) -> None:
         if slot_type == "gap":
             return
@@ -1304,6 +1534,8 @@ class BoxBrainUseCases:
             self._get_work_product_version(selected_object_id)
         else:
             raise ConflictError("Unsupported selected object type.")
+        if not self._can_access_target(selected_object_type, selected_object_id, actor):
+            raise NotFoundError("Selected object not found.")
 
     def _get_draft_section(self, section_id: UUID) -> StoryboardSection:
         for storyboard in self.repository.storyboards.values():
@@ -1630,11 +1862,36 @@ class BoxBrainUseCases:
                 visual_hash=visual_hash,
             )
 
+    def _save_content_unit_version(self, version: ContentUnitVersion) -> None:
+        self.repository.content_unit_versions[version.id] = version
+        save = getattr(self.repository, "save_content_unit_version", None)
+        if callable(save):
+            save(version)
+
+    def _save_content_unit_variants(self, variants: list[ContentUnitVariant]) -> None:
+        for variant in variants:
+            self.repository.content_unit_variants[variant.id] = variant
+        save = getattr(self.repository, "save_content_unit_variants", None)
+        if callable(save):
+            save(variants)
+
     def _save_embedding(self, embedding: EmbeddingRecord) -> None:
         self.repository.embeddings[embedding.id] = embedding
         save = getattr(self.repository, "save_embedding", None)
         if callable(save):
             save(embedding)
+
+    def _save_comment(self, comment: Comment) -> None:
+        self.repository.comments[comment.id] = comment
+        save = getattr(self.repository, "save_comment", None)
+        if callable(save):
+            save(comment)
+
+    def _save_note(self, note: Note) -> None:
+        self.repository.notes[note.id] = note
+        save = getattr(self.repository, "save_note", None)
+        if callable(save):
+            save(note)
 
     def _update_work_product_version(self, version: WorkProductVersion) -> None:
         save = getattr(self.repository, "update_work_product_version", None)
@@ -1672,9 +1929,22 @@ class BoxBrainUseCases:
                     )
                     if family and family.restricted:
                         return True
+            elif member.member_type == "content_unit_variant":
+                variant = self.repository.content_unit_variants.get(member.member_id)
+                family = (
+                    self.repository.content_unit_families.get(variant.family_id)
+                    if variant
+                    else None
+                )
+                if family and family.restricted:
+                    return True
+                if variant and variant.latest_version_id:
+                    latest = self.repository.content_unit_versions.get(variant.latest_version_id)
+                    if latest and latest.restricted:
+                        return True
         return False
 
-    def _score_content_unit_family(self, family_id: UUID, terms: list[str]) -> float:
+    def _score_content_unit_family(self, family_id: UUID, terms: list[str], actor: Actor) -> float:
         family = self._get_content_unit_family(family_id)
         variants = self._variants_for_family(family_id)
         versions_by_variant = self._versions_by_variant(family_id)
@@ -1684,6 +1954,8 @@ class BoxBrainUseCases:
         for variant in variants:
             haystack_parts.append(variant.variant_label)
             for version in versions_by_variant.get(variant.id, []):
+                if not self._can_access_version(version.id, actor):
+                    continue
                 haystack_parts.extend(
                     [
                         version.summary or "",

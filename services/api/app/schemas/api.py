@@ -156,6 +156,22 @@ class UpdateApprovalRequest(BaseModel):
     notes: str | None = None
 
 
+class UpdateFreshnessRequest(BaseModel):
+    freshnessState: FreshnessState
+    notes: str | None = None
+
+
+class ContentUnitUsageReference(BaseModel):
+    objectType: Literal["content_block_version", "storyboard", "work_product_version"]
+    objectId: UUID
+    title: str
+    orderIndex: int | None = None
+    memberId: UUID | None = None
+    sectionId: UUID | None = None
+    slotId: UUID | None = None
+    workProductVersionId: UUID | None = None
+
+
 class WorkProductFamilyCard(BaseModel):
     id: UUID
     title: str
@@ -174,6 +190,7 @@ class WorkProductVersionDetail(BaseModel):
     versionNumber: str
     approvalState: ApprovalState
     previewUri: str | None = None
+    statusChips: StatusChips
     filmstrip: list[ContentUnitVersion] = Field(default_factory=list)
     provenance: ProvenanceRecord
 

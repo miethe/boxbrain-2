@@ -10,11 +10,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.domain.models import (
     AuditEvent,
+    Comment,
     ContentUnitFamily,
     ContentUnitVariant,
     ContentUnitVersion,
     EmbeddingRecord,
     IngestionJob,
+    Note,
     ProvenanceRecord,
     StoredObject,
     WorkProductFamily,
@@ -23,11 +25,13 @@ from app.domain.models import (
 )
 from app.infrastructure.db_models import (
     AuditEventRow,
+    CommentRow,
     ContentUnitFamilyRow,
     ContentUnitVariantRow,
     ContentUnitVersionRow,
     EmbeddingRow,
     IngestionJobRow,
+    NoteRow,
     ProvenanceRecordRow,
     StoredObjectRow,
     WorkProductFamilyRow,
@@ -110,6 +114,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                         conceptual_summary=row.conceptual_summary,
                         unit_type=row.unit_type,
                         taxonomy=dict(row.taxonomy),
+                        restricted=row.restricted,
                     )
                     for row in session.scalars(select(ContentUnitFamilyRow))
                 }
@@ -149,6 +154,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                         extracted_text=row.extracted_text,
                         speaker_notes=row.speaker_notes,
                         provenance_id=row.provenance_id,
+                        restricted=row.restricted,
                         source_order_index=row.source_order_index,
                         created_at=row.created_at,
                     )
@@ -166,6 +172,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                         preview_uri=None,
                         variant_count=1,
                         version_count=1,
+                        restricted=row.restricted,
                     )
                     for row in session.scalars(select(WorkProductFamilyRow))
                 }
@@ -193,6 +200,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                         preview_uri=row.preview_uri,
                         filmstrip_version_ids=filmstrip_by_work_product.get(row.id, []),
                         provenance_id=row.provenance_id,
+                        restricted=row.restricted,
                     )
                     for row in session.scalars(select(WorkProductVersionRow))
                     if row.variant_id in work_product_variants
@@ -210,10 +218,39 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     prior_state=dict(row.prior_state or {}),
                     new_state=dict(row.new_state or {}),
                     metadata=dict(row.metadata_),
+                    reason=row.metadata_.get("reason"),
                     created_at=row.created_at,
                 )
                 for row in session.scalars(select(AuditEventRow))
             ]
+            self.comments = {
+                row.id: Comment(
+                    id=row.id,
+                    kind=row.kind,
+                    target_type=row.target_type,
+                    target_id=row.target_id,
+                    anchor=dict(row.anchor),
+                    body=row.body,
+                    status=row.status,
+                    parent_comment_id=row.parent_comment_id,
+                    created_at=row.created_at,
+                )
+                for row in session.scalars(select(CommentRow))
+            }
+            self.notes = {
+                row.id: Note(
+                    id=row.id,
+                    target_type=row.target_type,
+                    target_id=row.target_id,
+                    title=row.title,
+                    body=row.body,
+                    note_type=row.note_type,
+                    is_pinned=row.is_pinned,
+                    created_at=row.created_at,
+                    updated_at=row.updated_at,
+                )
+                for row in session.scalars(select(NoteRow))
+            }
             self.embeddings = {
                 row.id: EmbeddingRecord(
                     id=row.id,
@@ -302,6 +339,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     title=family.title,
                     artifact_type=family.artifact_type,
                     summary=family.summary,
+                    restricted=family.restricted,
                     taxonomy={},
                 )
             )
@@ -327,6 +365,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     original_object_id=original_object_id,
                     preview_uri=version.preview_uri,
                     summary=version.title,
+                    restricted=version.restricted,
                 )
             )
 
@@ -351,6 +390,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     family_title=family.family_title,
                     conceptual_summary=family.conceptual_summary,
                     unit_type=family.unit_type,
+                    restricted=family.restricted,
                     taxonomy=family.taxonomy,
                 )
             )
@@ -377,6 +417,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     extracted_text=version.extracted_text,
                     summary=version.summary,
                     speaker_notes=version.speaker_notes,
+                    restricted=version.restricted,
                     source_work_product_version_id=source_work_product_version_id,
                     source_order_index=source_order_index,
                     text_hash=text_hash,
@@ -389,6 +430,30 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     created_at=version.created_at,
                 )
             )
+
+    def save_content_unit_version(self, version: ContentUnitVersion) -> None:
+        self.content_unit_versions[version.id] = version
+        with self._session() as session:
+            row = session.get(ContentUnitVersionRow, version.id)
+            if row is not None:
+                row.approval_state = version.approval_state
+                row.freshness_state = version.freshness_state
+                row.restricted = version.restricted
+                row.render_uri = version.render_uri
+                row.thumbnail_uri = version.thumbnail_uri
+                row.summary = version.summary
+                row.extracted_text = version.extracted_text
+                row.speaker_notes = version.speaker_notes
+
+    def save_content_unit_variants(self, variants: list[ContentUnitVariant]) -> None:
+        for variant in variants:
+            self.content_unit_variants[variant.id] = variant
+        with self._session() as session:
+            for variant in variants:
+                row = session.get(ContentUnitVariantRow, variant.id)
+                if row is not None:
+                    row.is_canonical = variant.is_canonical
+                    row.latest_version_id = variant.latest_version_id
 
     def save_embedding(self, embedding: EmbeddingRecord) -> None:
         self.embeddings[embedding.id] = embedding
@@ -407,17 +472,55 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                 )
             )
 
+    def save_comment(self, comment: Comment) -> None:
+        self.comments[comment.id] = comment
+        with self._session() as session:
+            session.merge(
+                CommentRow(
+                    id=comment.id,
+                    kind=comment.kind,
+                    target_type=comment.target_type,
+                    target_id=comment.target_id,
+                    anchor=comment.anchor,
+                    parent_comment_id=comment.parent_comment_id,
+                    body=comment.body,
+                    status=comment.status,
+                    created_at=comment.created_at,
+                    updated_at=comment.created_at,
+                )
+            )
+
+    def save_note(self, note: Note) -> None:
+        self.notes[note.id] = note
+        with self._session() as session:
+            session.merge(
+                NoteRow(
+                    id=note.id,
+                    target_type=note.target_type,
+                    target_id=note.target_id,
+                    title=note.title,
+                    body=note.body,
+                    note_type=note.note_type,
+                    is_pinned=note.is_pinned,
+                    created_at=note.created_at,
+                    updated_at=note.updated_at,
+                )
+            )
+
     def update_work_product_version(self, version: WorkProductVersion) -> None:
         self.work_product_versions[version.id] = version
         with self._session() as session:
             row = session.get(WorkProductVersionRow, version.id)
             if row is not None:
                 row.preview_uri = version.preview_uri
+                row.approval_state = version.approval_state
+                row.restricted = version.restricted
             family = self.work_product_families.get(version.family_id)
             if family is not None:
                 family_row = session.get(WorkProductFamilyRow, family.id)
                 if family_row is not None:
                     family_row.summary = family.summary
+                    family_row.restricted = family.restricted
 
     def record_audit(
         self,

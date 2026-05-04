@@ -13,8 +13,9 @@ router = APIRouter(prefix="/content-blocks", tags=["content-blocks"])
 @router.get("", response_model=dict[str, list[s.ContentBlockVersionDetail] | None])
 def list_content_blocks(
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
 ) -> dict[str, list[s.ContentBlockVersionDetail] | None]:
-    return {"items": use_cases.list_content_blocks(), "nextCursor": None}
+    return {"items": use_cases.list_content_blocks(actor), "nextCursor": None}
 
 
 @router.post("", response_model=s.ContentBlockVersionDetail, status_code=status.HTTP_201_CREATED)
@@ -30,6 +31,6 @@ def create_content_block(
 def get_content_block(
     block_id: UUID,
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
 ) -> s.ContentBlockVersionDetail:
-    return use_cases.get_content_block(block_id)
-
+    return use_cases.get_content_block(block_id, actor)

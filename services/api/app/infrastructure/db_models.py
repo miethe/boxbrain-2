@@ -23,6 +23,13 @@ ApprovalStateEnum = ENUM(
 )
 FreshnessStateEnum = ENUM("fresh", "aging", "stale", name="freshness_state", create_type=False)
 LinkSourceEnum = ENUM("manual", "ai", "hybrid", name="link_source", create_type=False)
+CommentKindEnum = ENUM(
+    "review_comment",
+    "persistent_comment",
+    "note_discussion",
+    name="comment_kind",
+    create_type=False,
+)
 
 
 class StoredObjectRow(Base):
@@ -60,6 +67,7 @@ class WorkProductFamilyRow(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     artifact_type: Mapped[str] = mapped_column(Text, nullable=False, default="deck")
     summary: Mapped[str | None] = mapped_column(Text)
+    restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     taxonomy: Mapped[JsonDict] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -92,6 +100,7 @@ class WorkProductVersionRow(Base):
     preview_uri: Mapped[str | None] = mapped_column(Text)
     extracted_text: Mapped[str | None] = mapped_column(Text)
     summary: Mapped[str | None] = mapped_column(Text)
+    restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -102,6 +111,7 @@ class ContentUnitFamilyRow(Base):
     family_title: Mapped[str] = mapped_column(Text, nullable=False)
     conceptual_summary: Mapped[str | None] = mapped_column(Text)
     unit_type: Mapped[str] = mapped_column(Text, nullable=False, default="slide")
+    restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     taxonomy: Mapped[JsonDict] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -134,6 +144,7 @@ class ContentUnitVersionRow(Base):
     extracted_text: Mapped[str | None] = mapped_column(Text)
     summary: Mapped[str | None] = mapped_column(Text)
     speaker_notes: Mapped[str | None] = mapped_column(Text)
+    restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     source_work_product_version_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("work_product_versions.id")
     )
@@ -176,6 +187,35 @@ class AuditEventRow(Base):
     new_state: Mapped[JsonDict | None] = mapped_column(JSONB)
     metadata_: Mapped[JsonDict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CommentRow(Base):
+    __tablename__ = "comments"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    kind: Mapped[str] = mapped_column(CommentKindEnum, nullable=False, default="persistent_comment")
+    target_type: Mapped[str] = mapped_column(Text, nullable=False)
+    target_id: Mapped[UUID] = mapped_column(nullable=False)
+    anchor: Mapped[JsonDict] = mapped_column(JSONB, default=dict, nullable=False)
+    parent_comment_id: Mapped[UUID | None] = mapped_column(ForeignKey("comments.id"))
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class NoteRow(Base):
+    __tablename__ = "notes"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    target_type: Mapped[str] = mapped_column(Text, nullable=False)
+    target_id: Mapped[UUID] = mapped_column(nullable=False)
+    title: Mapped[str | None] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    note_type: Mapped[str] = mapped_column(Text, nullable=False, default="usage_guidance")
+    is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class EmbeddingRow(Base):

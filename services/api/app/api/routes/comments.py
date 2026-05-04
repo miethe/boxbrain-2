@@ -15,8 +15,9 @@ def list_comments(
     target_type: str | None = Query(default=None, alias="targetType"),
     target_id: UUID | None = Query(default=None, alias="targetId"),
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
 ) -> list[s.Comment]:
-    return use_cases.list_comments(target_type, target_id)
+    return use_cases.list_comments(target_type, target_id, actor)
 
 
 @router.post("", response_model=s.Comment, status_code=status.HTTP_201_CREATED)
@@ -26,4 +27,3 @@ def create_comment(
     actor: Actor = Depends(get_actor),
 ) -> s.Comment:
     return use_cases.create_comment(request, actor)
-

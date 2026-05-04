@@ -299,6 +299,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ContentUnitVersion'
+  /api/content-units/versions/{version_id}/freshness:
+    patch:
+      summary: Update ContentUnit version freshness state
+      operationId: updateContentUnitFreshness
+      parameters:
+        - $ref: '#/components/parameters/versionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [freshnessState]
+              properties:
+                freshnessState:
+                  $ref: '#/components/schemas/FreshnessState'
+                notes:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Updated version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentUnitVersion'
   /api/content-units/{version_id}/similar:
     get:
       summary: Find similar ContentUnit versions
@@ -328,8 +354,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  additionalProperties: true
+                  $ref: '#/components/schemas/ContentUnitUsageReference'
   /api/work-products/families:
     get:
       summary: List WorkProduct families
@@ -1089,6 +1114,20 @@ components:
             notes:
               type: array
               items: { $ref: '#/components/schemas/Note' }
+    ContentUnitUsageReference:
+      type: object
+      required: [objectType, objectId, title]
+      properties:
+        objectType:
+          type: string
+          enum: [content_block_version, storyboard, work_product_version]
+        objectId: { type: string, format: uuid }
+        title: { type: string }
+        orderIndex: { type: integer, nullable: true }
+        memberId: { type: string, format: uuid, nullable: true }
+        sectionId: { type: string, format: uuid, nullable: true }
+        slotId: { type: string, format: uuid, nullable: true }
+        workProductVersionId: { type: string, format: uuid, nullable: true }
     WorkProductFamilyCard:
       type: object
       required: [id, title, artifactType]
@@ -1110,6 +1149,7 @@ components:
         versionNumber: { type: string }
         approvalState: { $ref: '#/components/schemas/ApprovalState' }
         previewUri: { type: string, nullable: true }
+        statusChips: { $ref: '#/components/schemas/StatusChips' }
         filmstrip:
           type: array
           items: { $ref: '#/components/schemas/ContentUnitVersion' }
