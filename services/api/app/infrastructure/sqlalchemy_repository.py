@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
-from sqlalchemy import text
+from sqlalchemy import delete, text
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,6 +25,8 @@ from app.domain.ingestion_search import (
 from app.domain.models import (
     AuditEvent,
     Comment,
+    ContentBlockMember,
+    ContentBlockVersion,
     ContentUnitFamily,
     ContentUnitVariant,
     ContentUnitVersion,
@@ -42,6 +44,10 @@ from app.domain.models import (
 from app.infrastructure.db_models import (
     AuditEventRow,
     CommentRow,
+    ContentBlockFamilyRow,
+    ContentBlockMemberRow,
+    ContentBlockVariantRow,
+    ContentBlockVersionRow,
     ContentUnitFamilyRow,
     ContentUnitVariantRow,
     ContentUnitVersionRow,
@@ -72,6 +78,13 @@ WORK_PRODUCT_SEARCH_TYPES = {
     "work_product_family",
     "work_product_version",
 }
+CONTENT_BLOCK_SEARCH_TYPES = {
+    "content_block",
+    "content_blocks",
+    "content_block_family",
+    "content_block_variant",
+    "content_block_version",
+}
 
 
 def build_hybrid_search_sql(
@@ -79,6 +92,7 @@ def build_hybrid_search_sql(
     include_content_units: bool,
     include_work_products: bool,
     include_restricted: bool,
+    include_content_blocks: bool = False,
 ) -> str:
     restricted_content_unit_filter = (
         "TRUE" if include_restricted else "NOT (content_unit.family_restricted OR content_unit.version_restricted)"
@@ -90,6 +104,8 @@ def build_hybrid_search_sql(
     )
     content_unit_enabled = "TRUE" if include_content_units else "FALSE"
     work_product_enabled = "TRUE" if include_work_products else "FALSE"
+    restricted_content_block_filter = "TRUE" if include_restricted else "NOT content_block.version_restricted"
+    content_block_enabled = "TRUE" if include_content_blocks else "FALSE"
     return f"""
 WITH query_input AS (
   SELECT
@@ -189,10 +205,72 @@ work_product AS (
   WHERE {work_product_enabled}
     AND {restricted_work_product_filter}
 ),
+content_block AS (
+  SELECT
+    'content_block_version' AS object_type,
+    cbv.id AS object_id,
+    cbf.id AS family_id,
+    cbvar.id AS variant_id,
+    cbv.id AS version_id,
+    cbf.title AS title,
+    coalesce(cbv.summary, cbf.summary) AS summary,
+    NULL::text AS preview_uri,
+    cbf.taxonomy AS taxonomy,
+    jsonb_build_object(
+      'familyTitle', cbf.title,
+      'familySummary', cbf.summary,
+      'blockType', cbf.block_type,
+      'variantLabel', cbvar.variant_label,
+      'variantType', cbvar.variant_type,
+      'isCanonical', cbvar.is_canonical,
+      'linkSource', cbvar.linked_by,
+      'versionNumber', cbv.version_number,
+      'memberCount', (
+        SELECT count(*)
+        FROM content_block_members cbm
+        WHERE cbm.block_version_id = cbv.id
+      )
+    ) AS metadata,
+    cbv.approval_state AS approval_state,
+    coalesce(cbv.freshness_state, 'fresh') AS freshness_state,
+    FALSE AS family_restricted,
+    cbv.restricted AS version_restricted,
+    cbv.created_at AS updated_at,
+    CASE
+      WHEN :query_text = '' THEN 0
+      ELSE LEAST(
+        1.0,
+        ts_rank_cd(
+          setweight(to_tsvector('english', coalesce(cbf.title, '')), 'A') ||
+          setweight(to_tsvector('english', coalesce(cbf.summary, '')), 'B') ||
+          cbv.search_vector,
+          query_input.ts_query,
+          32
+        ) * 4.0
+      )
+    END AS lexical_score,
+    CASE
+      WHEN embeddings.embedding IS NULL OR :query_text = '' THEN 0
+      ELSE GREATEST(0.0, 1.0 - (embeddings.embedding <=> query_input.query_embedding))
+    END AS semantic_score
+  FROM query_input
+  JOIN content_block_versions cbv ON TRUE
+  JOIN content_block_variants cbvar ON cbvar.id = cbv.variant_id
+  JOIN content_block_families cbf ON cbf.id = cbvar.family_id
+  LEFT JOIN embeddings
+    ON embeddings.target_type = 'content_block_version'
+   AND embeddings.target_id = cbv.id
+   AND embeddings.embedding_kind = 'text'
+   AND embeddings.embedding IS NOT NULL
+  WHERE {content_block_enabled}
+    AND {restricted_content_block_filter}
+),
 combined AS (
   SELECT * FROM content_unit
   UNION ALL
   SELECT * FROM work_product
+  UNION ALL
+  SELECT * FROM content_block
 )
 SELECT *
 FROM combined
@@ -346,6 +424,48 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     if row.provenance_id is not None
                 }
             )
+            content_block_families = {
+                row.id: row for row in session.scalars(select(ContentBlockFamilyRow))
+            }
+            content_block_variants = {
+                row.id: row for row in session.scalars(select(ContentBlockVariantRow))
+            }
+            content_block_members: dict[UUID, list[ContentBlockMember]] = {}
+            for member_row in session.scalars(select(ContentBlockMemberRow)):
+                content_block_members.setdefault(member_row.block_version_id, []).append(
+                    ContentBlockMember(
+                        id=member_row.id,
+                        member_type=member_row.member_type,
+                        member_id=member_row.member_id,
+                        order_index=member_row.order_index,
+                        role=member_row.role,
+                        is_required=member_row.is_required,
+                        notes=member_row.notes,
+                    )
+                )
+            self.content_blocks.update(
+                {
+                    row.id: ContentBlockVersion(
+                        id=row.id,
+                        family_id=variant.family_id,
+                        title=family.title,
+                        summary=row.summary or family.summary,
+                        block_type=family.block_type,
+                        approval_state=row.approval_state,
+                        members=sorted(
+                            content_block_members.get(row.id, []),
+                            key=lambda item: item.order_index,
+                        ),
+                        restricted=row.restricted,
+                        created_at=row.created_at,
+                    )
+                    for row in session.scalars(select(ContentBlockVersionRow))
+                    for variant in [content_block_variants.get(row.variant_id)]
+                    if variant is not None
+                    for family in [content_block_families.get(variant.family_id)]
+                    if family is not None
+                }
+            )
             self.work_product_families.update(
                 {
                     row.id: WorkProductFamily(
@@ -365,9 +485,11 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                 row.id: row for row in session.scalars(select(WorkProductVariantRow))
             }
             filmstrip_by_work_product: dict[UUID, list[UUID]] = {}
-            for row in sorted(content_unit_rows, key=lambda item: item.source_order_index or 0):
-                if row.source_work_product_version_id is not None:
-                    filmstrip_by_work_product.setdefault(row.source_work_product_version_id, []).append(row.id)
+            for unit_row in sorted(content_unit_rows, key=lambda item: item.source_order_index or 0):
+                if unit_row.source_work_product_version_id is not None:
+                    filmstrip_by_work_product.setdefault(unit_row.source_work_product_version_id, []).append(
+                        unit_row.id
+                    )
             self.work_product_versions.update(
                 {
                     row.id: WorkProductVersion(
@@ -492,7 +614,8 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
     ) -> list[RankedResult]:
         include_content_units = not object_types or bool(object_types.intersection(CONTENT_UNIT_SEARCH_TYPES))
         include_work_products = not object_types or bool(object_types.intersection(WORK_PRODUCT_SEARCH_TYPES))
-        if not include_content_units and not include_work_products:
+        include_content_blocks = not object_types or bool(object_types.intersection(CONTENT_BLOCK_SEARCH_TYPES))
+        if not include_content_units and not include_work_products and not include_content_blocks:
             return []
 
         query_text = query.text.strip()
@@ -501,6 +624,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
             include_content_units=include_content_units,
             include_work_products=include_work_products,
             include_restricted=include_restricted,
+            include_content_blocks=include_content_blocks,
         )
         params = {
             "query_text": query_text,
@@ -771,6 +895,71 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     row.linked_by = variant.linked_by
                     row.linked_confidence = variant.linked_confidence
                     row.latest_version_id = variant.latest_version_id
+
+    def save_content_block(self, block: ContentBlockVersion) -> None:
+        self.content_blocks[block.id] = block
+        variant_id = self._content_block_variant_id(block.family_id)
+        with self._session() as session:
+            session.merge(
+                ContentBlockFamilyRow(
+                    id=block.family_id,
+                    title=block.title,
+                    summary=block.summary,
+                    block_type=block.block_type,
+                    canonical_variant_id=variant_id,
+                    taxonomy={},
+                    created_at=block.created_at,
+                    updated_at=block.created_at,
+                )
+            )
+            session.merge(
+                ContentBlockVariantRow(
+                    id=variant_id,
+                    family_id=block.family_id,
+                    variant_label="Canonical",
+                    variant_type=block.block_type,
+                    is_canonical=True,
+                    linked_by="manual",
+                    linked_confidence=1.0,
+                    latest_version_id=block.id,
+                    created_at=block.created_at,
+                    updated_at=block.created_at,
+                )
+            )
+            session.merge(
+                ContentBlockVersionRow(
+                    id=block.id,
+                    variant_id=variant_id,
+                    version_number="v1.0",
+                    summary=block.summary,
+                    restricted=block.restricted,
+                    provenance_id=None,
+                    approval_state=block.approval_state,
+                    freshness_state="fresh",
+                    created_by=None,
+                    created_at=block.created_at,
+                    supersedes_version_id=None,
+                )
+            )
+            session.execute(
+                delete(ContentBlockMemberRow).where(ContentBlockMemberRow.block_version_id == block.id)
+            )
+            for member in sorted(block.members, key=lambda item: item.order_index):
+                session.merge(
+                    ContentBlockMemberRow(
+                        id=member.id,
+                        block_version_id=block.id,
+                        member_type=member.member_type,
+                        member_id=member.member_id,
+                        order_index=member.order_index,
+                        role=member.role,
+                        is_required=member.is_required,
+                        notes=member.notes,
+                    )
+                )
+
+    def _content_block_variant_id(self, family_id: UUID) -> UUID:
+        return uuid5(NAMESPACE_URL, f"boxbrain:content-block-variant:{family_id}")
 
     def save_embedding(self, embedding: EmbeddingRecord) -> None:
         self.embeddings[embedding.id] = embedding

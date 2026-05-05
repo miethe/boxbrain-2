@@ -749,10 +749,11 @@ class BoxBrainUseCases:
             members=sorted(members, key=lambda item: item.order_index),
             created_at=now_utc(),
         )
-        self.repository.content_blocks[block.id] = block
+        self._save_content_block(block)
         return p.content_block_model(block)
 
     def list_content_blocks(self, actor: Actor) -> list[s.ContentBlockVersionDetail]:
+        self._refresh_repository()
         blocks = sorted(
             (
                 block
@@ -764,6 +765,7 @@ class BoxBrainUseCases:
         return [p.content_block_model(block) for block in blocks]
 
     def get_content_block(self, block_id: UUID, actor: Actor) -> s.ContentBlockVersionDetail:
+        self._refresh_repository()
         block = self.repository.content_blocks.get(block_id)
         if block is None or not self._can_access_block(block, actor):
             raise NotFoundError("ContentBlock not found.")
@@ -1268,9 +1270,6 @@ class BoxBrainUseCases:
         filtered_restricted = self._restricted_search_candidate_count(requested_types, actor)
         items = self._search_items_from_ranked_results(hybrid_results, result_mode, actor)
 
-        if not requested_types or "content_block" in requested_types or "content_blocks" in requested_types:
-            items.extend(self._content_block_search_items(request, actor))
-
         if request.profile == "approved_only":
             items = [item for item in items if item.statusChips.approvalState == "approved"]
 
@@ -1444,6 +1443,58 @@ class BoxBrainUseCases:
                         is_restricted=wp_family.restricted or wp_version.restricted,
                     )
                 )
+        include_content_blocks = not requested_types or bool(
+            requested_types.intersection(
+                {
+                    "content_block",
+                    "content_blocks",
+                    "content_block_family",
+                    "content_block_variant",
+                    "content_block_version",
+                }
+            )
+        )
+        if include_content_blocks:
+            for block in self.repository.content_blocks.values():
+                if not self._can_access_block(block, actor):
+                    continue
+                documents.append(
+                    SearchDocument(
+                        id=str(block.id),
+                        object_type="content_block_version",
+                        title=block.title,
+                        summary=block.summary or "",
+                        text=" ".join(
+                            part
+                            for part in (
+                                block.title,
+                                block.summary or "",
+                                block.block_type,
+                                " ".join(member.role or "" for member in block.members),
+                                " ".join(member.notes or "" for member in block.members),
+                            )
+                            if part
+                        ),
+                        taxonomy={},
+                        metadata={
+                            "familyId": str(block.family_id),
+                            "variantId": str(block.family_id),
+                            "versionId": str(block.id),
+                            "familyTitle": block.title,
+                            "familySummary": block.summary,
+                            "blockType": block.block_type,
+                            "versionNumber": "v1.0",
+                            "memberCount": len(block.members),
+                            "isCanonical": True,
+                            "linkSource": "manual",
+                            "previewUri": None,
+                        },
+                        approval_state=block.approval_state,
+                        freshness_state="fresh",
+                        updated_at=block.created_at,
+                        is_restricted=block.restricted,
+                    )
+                )
         return documents
 
     def _passes_search_relevance(self, query: SearchQuery, result: RankedResult) -> bool:
@@ -1494,6 +1545,8 @@ class BoxBrainUseCases:
             if result_mode == "versions":
                 return ("work_product_version", str(metadata.get("versionId") or document.id))
             return ("work_product_family", str(metadata.get("familyId") or ""))
+        if document.object_type == "content_block_version":
+            return ("content_block_version", str(metadata.get("versionId") or document.id))
         return None
 
     def _search_item_from_result(
@@ -1575,6 +1628,30 @@ class BoxBrainUseCases:
                 score=round(score, 6),
                 explanationChips=chips,
                 statusChips=p.work_product_status(wp_family, wp_version),
+            )
+        if document.object_type == "content_block_version":
+            block_id = UUID(str(metadata.get("versionId") or document.id))
+            block = self.repository.content_blocks.get(block_id)
+            if block is None or not self._can_access_block(block, actor):
+                return None
+            if "ordered composition" not in chips:
+                chips.append("ordered composition")
+            return s.SearchResultItem(
+                objectType="content_block_version",
+                objectId=block.id,
+                resultGrain="block",
+                title=block.title,
+                summary=block.summary,
+                previewUri=None,
+                score=round(score, 6),
+                explanationChips=chips,
+                statusChips=s.StatusChips(
+                    approvalState=cast(s.ApprovalState, block.approval_state),
+                    freshnessState="fresh",
+                    isCanonical=True,
+                    isRestricted=block.restricted,
+                    linkSource="manual",
+                ),
             )
         return None
 
@@ -2536,6 +2613,12 @@ class BoxBrainUseCases:
         save = getattr(self.repository, "save_content_unit_variants", None)
         if callable(save):
             save(variants)
+
+    def _save_content_block(self, block: ContentBlockVersion) -> None:
+        self.repository.content_blocks[block.id] = block
+        save = getattr(self.repository, "save_content_block", None)
+        if callable(save):
+            save(block)
 
     def _save_embedding(self, embedding: EmbeddingRecord) -> None:
         self.repository.embeddings[embedding.id] = embedding

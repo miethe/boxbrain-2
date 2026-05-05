@@ -452,6 +452,9 @@ class InMemoryBoxBrainRepository:
         self.audit_events.append(event)
         return event
 
+    def save_content_block(self, block: ContentBlockVersion) -> None:
+        self.content_blocks[block.id] = block
+
     def freeze_storyboard_snapshot(
         self,
         storyboard: Storyboard,

@@ -1186,7 +1186,23 @@ components:
           default: general
         objectTypes:
           type: array
-          items: { type: string }
+          items:
+            type: string
+            enum:
+              - content_unit
+              - content_units
+              - content_unit_family
+              - content_unit_variant
+              - content_unit_version
+              - work_product
+              - work_products
+              - work_product_family
+              - work_product_version
+              - content_block
+              - content_blocks
+              - content_block_family
+              - content_block_variant
+              - content_block_version
         filters:
           type: object
           additionalProperties: true
@@ -1239,7 +1255,7 @@ components:
       required: [title, members]
       properties:
         title: { type: string }
-        summary: { type: string }
+        summary: { type: string, nullable: true }
         blockType: { type: string, default: sequence }
         members:
           type: array

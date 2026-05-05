@@ -200,6 +200,64 @@ class ContentUnitVersionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ContentBlockFamilyRow(Base):
+    __tablename__ = "content_block_families"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    block_type: Mapped[str] = mapped_column(Text, nullable=False, default="sequence")
+    canonical_variant_id: Mapped[UUID | None]
+    taxonomy: Mapped[JsonDict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContentBlockVariantRow(Base):
+    __tablename__ = "content_block_variants"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    family_id: Mapped[UUID] = mapped_column(ForeignKey("content_block_families.id"), nullable=False)
+    variant_label: Mapped[str] = mapped_column(Text, nullable=False)
+    variant_type: Mapped[str] = mapped_column(Text, nullable=False, default="other")
+    is_canonical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    linked_by: Mapped[str] = mapped_column(LinkSourceEnum, nullable=False, default="manual")
+    linked_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    latest_version_id: Mapped[UUID | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContentBlockVersionRow(Base):
+    __tablename__ = "content_block_versions"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    variant_id: Mapped[UUID] = mapped_column(ForeignKey("content_block_variants.id"), nullable=False)
+    version_number: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    provenance_id: Mapped[UUID | None] = mapped_column(ForeignKey("provenance_records.id"))
+    approval_state: Mapped[str] = mapped_column(ApprovalStateEnum, nullable=False, default="draft")
+    freshness_state: Mapped[str | None] = mapped_column(FreshnessStateEnum, default="fresh")
+    created_by: Mapped[UUID | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    supersedes_version_id: Mapped[UUID | None] = mapped_column(ForeignKey("content_block_versions.id"))
+
+
+class ContentBlockMemberRow(Base):
+    __tablename__ = "content_block_members"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    block_version_id: Mapped[UUID] = mapped_column(ForeignKey("content_block_versions.id"), nullable=False)
+    member_type: Mapped[str] = mapped_column(Text, nullable=False)
+    member_id: Mapped[UUID] = mapped_column(nullable=False)
+    order_index: Mapped[int] = mapped_column(nullable=False)
+    role: Mapped[str | None] = mapped_column(Text)
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class IngestionJobRow(Base):
     __tablename__ = "ingestion_jobs"
 

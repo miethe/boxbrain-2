@@ -516,6 +516,13 @@ ALTER TABLE work_product_versions
 
 CREATE INDEX IF NOT EXISTS idx_work_product_versions_search ON work_product_versions USING GIN (search_vector);
 
+ALTER TABLE content_block_versions
+  ADD COLUMN IF NOT EXISTS search_vector tsvector GENERATED ALWAYS AS (
+    setweight(to_tsvector('english', coalesce(summary, '')), 'A')
+  ) STORED;
+
+CREATE INDEX IF NOT EXISTS idx_content_block_versions_search ON content_block_versions USING GIN (search_vector);
+
 -- -----------------------------------------------------------------------------
 -- Collections
 -- -----------------------------------------------------------------------------
