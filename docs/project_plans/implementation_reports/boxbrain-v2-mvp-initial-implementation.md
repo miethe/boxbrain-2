@@ -1,11 +1,11 @@
 # BoxBrain v2 MVP Implementation Report
 
 **Date:** 2026-05-05
-**Status:** Milestone 5 ContentBlocks and Storyboard core complete as an MVP foundation; broader MVP still in progress
+**Status:** Milestone 6 MVP hardening and pilot-readiness foundation complete; broader production pilot work still in progress
 
 ## Summary
 
-The repository has advanced from a seed-data MVP scaffold into a production-shaped foundation with completed PPTX-first Milestone 1 ingestion, Milestone 2 governed graph browsing/detail foundations, Milestone 3 hybrid search/Ask BoxBrain, Milestone 4 Reviews Hub/governance workflows, and Milestone 5 ContentBlocks/Storyboard composition core. It now includes a Next.js frontend, FastAPI backend, deterministic worker helpers, OpenAPI contract assets, Alembic migration wiring, SQLAlchemy persistence scaffolding, S3-compatible artifact storage adapters, Redis/RQ queue scaffolding, multipart PPTX upload, deterministic PPTX validation/extraction, ordered render output persistence, stage telemetry, WorkProduct filmstrip output, baseline restricted visibility, ContentUnit family/variant/version APIs, comments/notes persistence in database mode, API-backed Library, ContentUnit detail write controls, database-backed hybrid search including ContentBlocks, API-backed Ask BoxBrain, deterministic review candidate generation, API-backed Reviews Hub compare/actions, SQL-backed review queue and similarity-edge persistence, SQL-backed ContentBlocks and Storyboard drafts/snapshots, API-backed composition pages, tests, and verification scripts.
+The repository has advanced from a seed-data MVP scaffold into a production-shaped foundation with completed PPTX-first Milestone 1 ingestion, Milestone 2 governed graph browsing/detail foundations, Milestone 3 hybrid search/Ask BoxBrain, Milestone 4 Reviews Hub/governance workflows, Milestone 5 ContentBlocks/Storyboard composition core, and a Milestone 6 pilot-readiness hardening slice. It now includes a Next.js frontend, FastAPI backend, deterministic worker helpers, OpenAPI contract assets, Alembic migration wiring, SQLAlchemy persistence scaffolding, S3-compatible artifact storage adapters, Redis/RQ queue scaffolding, multipart PPTX upload, deterministic PPTX validation/extraction, ordered render output persistence, stage telemetry, WorkProduct filmstrip output, baseline restricted visibility, ContentUnit family/variant/version APIs, comments/notes persistence in database mode, API-backed Library, ContentUnit detail write controls, database-backed hybrid search including ContentBlocks, API-backed Ask BoxBrain, deterministic review candidate generation, API-backed Reviews Hub compare/actions, SQL-backed review queue and similarity-edge persistence, SQL-backed ContentBlocks and Storyboard drafts/snapshots, API-backed composition pages, API-backed admin readiness telemetry, a core-flow E2E suite, pilot runbooks, tests, and verification scripts.
 
 This is still not a completed production pilot. The current state is a credible MVP foundation: memory mode remains the default for fast local tests, while database/storage/worker integration mode is runnable, migration-verified locally, and live-verified for ingestion plus database-backed search.
 
@@ -13,9 +13,9 @@ This is still not a completed production pilot. The current state is a credible 
 
 **Basis:** This mapping is aligned to the MVP scope and release definition in `docs/project_plans/init/01_BoxBrain_v2_Final_PRD.md`, the milestone sequence in `docs/project_plans/init/02_Initial_Implementation_Plan.md`, and the architecture/data/API blueprint in `docs/project_plans/init/03_Architecture_Data_API_Guide.md`.
 
-**Estimated MVP completion:** 72% `[##############------]`
+**Estimated MVP completion:** 78% `[################----]`
 
-This is an execution estimate against the product MVP definition, not a test coverage metric. The foundation, contracts, local app shell, ingestion path, graph library/detail APIs, baseline visibility safeguards, API-backed catalog/detail/search/review/composition frontend surfaces, PostgreSQL/pgvector hybrid search path, first governed review workflow, and SQL-backed composition core are in place. The remaining work is mostly about source-aware permissions, AI enrichment, generated clients, and pilot operations.
+This is an execution estimate against the product MVP definition, not a test coverage metric. The foundation, contracts, local app shell, ingestion path, graph library/detail APIs, baseline visibility safeguards, API-backed catalog/detail/search/review/composition/admin frontend surfaces, PostgreSQL/pgvector hybrid search path, first governed review workflow, SQL-backed composition core, pilot telemetry, core-flow E2E coverage, and pilot runbooks are in place. The remaining work is mostly about source-aware permissions, AI enrichment, generated clients, live pilot-scale operations, and production identity.
 
 | MVP release item | Current status | Progress | What is complete | What remains for MVP |
 |---|---:|---:|---|---|
@@ -28,7 +28,7 @@ This is an execution estimate against the product MVP definition, not a test cov
 | Storyboards with sections, slots, gaps, inserted units/blocks, comments, snapshots | Milestone 5 foundation complete | 65% | SQL-backed mutable draft sections/slots, immutable snapshot copies, create/edit APIs, insert/swap forms, anchored comments, diagnostics panel, snapshot history/detail, restricted filtering, Playwright composition coverage | Snapshot restore UX/API if needed, richer tray search/recommendations, visual assembly preview, build-manifest-compatible export workflow |
 | Reviews Hub duplicate/variant/stale/approval flows | Milestone 4 foundation complete | 60% | Reviewer-gated queue/list/detail APIs, deterministic duplicate/variant/similarity/stale/approval candidate generation, API-backed Reviews Hub with compare panel and action states, generic accept/reject/request-changes controls, audited graph/trust mutations, SQL-backed review item and similarity-edge persistence, AI suggestions remain reviewable | Richer candidate scoring from ingestion/search signals, AI output row status linkage, side-by-side visual diffing, persisted reviewer assignment/SLAs, review E2E coverage |
 | AI suggestions traceable and reviewable | Early scaffold | 20% | AI outputs table scaffolding and guardrail-oriented domain behavior | Enrichment workers, prompt/model versioning, summary/taxonomy/candidate records, human override state, review routing, provenance on AI metadata |
-| Job status, audit logs, and admin controls | Partially complete | 55% | Ingestion job list/detail/retry, stage telemetry, admin health, audit event model/use cases, local role model, audit writes for canonical/approval/freshness/note actions, reviewer/admin-only search debug | Queue aging/failure dashboards, persisted audit views, full RBAC enforcement, SSO/OIDC-ready identity integration |
+| Job status, audit logs, and admin controls | Milestone 6 foundation complete | 65% | Ingestion job list/detail/retry, stage telemetry, nested admin health/readiness telemetry, local browser CORS for web API calls, API-backed Admin dashboard, audit event model/use cases, local role model, audit writes for canonical/approval/freshness/note actions, reviewer/admin-only search debug | Live queue aging/failure dashboards in RQ mode, persisted audit views, full RBAC enforcement, SSO/OIDC-ready identity integration |
 
 ## Milestone Status Against Initial Implementation Plan
 
@@ -40,7 +40,7 @@ This is an execution estimate against the product MVP definition, not a test cov
 | Milestone 3 - Search and Ask BoxBrain | Explainable grouped catalog search | Complete foundation | Memory-compatible search path, SQLAlchemy database hybrid search over PostgreSQL FTS + pgvector for ContentUnit, WorkProduct, and ContentBlock versions, persisted embedding vectors, family/variant/version grouping, component explanation chips, reviewer/admin debug, API-backed Ask UI with filters and local saved-search skeleton, live database search probe | Persisted saved searches, eval corpus, ranking tuning, broader search E2E coverage |
 | Milestone 4 - Reviews Hub and governance workflows | Reviewable duplicate/variant/stale/approval workflows | Complete foundation | Reviewer-gated review queue/list/detail APIs, deterministic candidate generation across duplicate/variant/similarity/stale/approval queues, API-backed Reviews Hub compare/action UI, generic accept endpoint, audited accept/reject/request-changes graph/trust mutations, SQL-backed review item and similarity-edge persistence | Ingestion-stage candidate creation, AI output status linkage, richer visual compare/diff, reviewer assignment/SLA workflow, broader E2E coverage |
 | Milestone 5 - ContentBlocks and Storyboard core | Compose reusable mini-stories and Storyboards with snapshots | Complete foundation | SQL-backed ContentBlocks and Storyboard drafts/snapshots, ContentBlock search, API-backed create/insert/swap UI, anchored comments, diagnostics, snapshot history/detail, restricted filtering, Playwright composition flow | Rich visual assembly UX, generated clients, build/export manifests, source-aware permissions |
-| Milestone 6 - MVP hardening and pilot readiness | Stable pilot with tests, docs, observability, demo data | Partial foundation | `pnpm verify`, e2e, backend/frontend tests, live ingestion integration test | Core-flow E2E suite, pilot demo corpus, observability dashboard, performance/search evals, admin/curator/builder docs |
+| Milestone 6 - MVP hardening and pilot readiness | Stable pilot with tests, docs, observability, demo data | Complete foundation | `pnpm verify`, 5-test core-flow E2E suite, backend/frontend tests, API-backed Admin observability dashboard, nested admin health telemetry, deterministic search eval summary, pilot demo/workflow docs, live ingestion integration test | Pilot-scale performance/search evals against a real corpus, live RQ queue aging dashboards, production auth/RBAC, target-environment demo rehearsal |
 
 ## Work Completed vs. Work To Do
 
@@ -55,7 +55,7 @@ This is an execution estimate against the product MVP definition, not a test cov
 | Comments and notes | Domain/use-case distinction between review comments, persistent comments, and notes; SQLAlchemy persistence and visibility-filtered list/create APIs; ContentUnit detail can create persistent comments and pinned notes; Storyboard UI can create anchored persistent comments against sections/slots/snapshots | Edit/resolution flows, searchability, richer pinned note UX |
 | Storyboard and ContentBlocks | SQL-backed ContentBlocks, mutable Storyboard drafts, immutable snapshot copies, create/edit APIs, insert/swap from block tray/forms, diagnostics, anchored comments, and E2E composition coverage | Richer visual assembly, snapshot restore if needed, source-aware visibility, build-manifest-compatible records |
 | Security and access control | Header-driven local/dev actor model; viewer restricted filtering for search, library/detail, thumbnails, similar, where-used, comments/notes, WorkProducts, ContentBlocks, and Storyboards | Tenant/org membership, object/source visibility tables, full RBAC enforcement, OIDC/SSO integration path |
-| Operations and pilot readiness | Local infra compose, Makefile commands, verification scripts, live ingestion test | Observability dashboard, queue aging/failure metrics, pilot demo dataset, performance pass, deployment docs, admin/curator/builder workflow docs |
+| Operations and pilot readiness | Local infra compose, Makefile commands, verification scripts, live ingestion test, nested admin readiness telemetry, API-backed Admin dashboard, deterministic search eval summary, core-flow E2E, pilot runbooks and walkthrough docs | Live RQ queue aging dashboards, pilot-corpus performance pass, deployment docs, target-environment rehearsal, production auth/RBAC |
 
 ## Recommended Execution Order
 
@@ -64,7 +64,7 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 | Order | Slice | Why now | Main dependencies | Exit gate |
 |---:|---|---|---|---|
 | 1 | Source-aware visibility and identity hardening | Baseline role-based filtering is in place; pilot content needs source/org policy before real client data | Local actor model, restricted flags, graph/search/review/composition APIs | Tenant/org membership, object/source visibility tables, and RBAC enforcement apply across outputs |
-| 2 | Pilot readiness hardening | Stabilize after core composition behavior exists | Core flows above | E2E suite, observability dashboard, demo corpus, search evals, workflow docs, performance targets |
+| 2 | Pilot readiness hardening | Completed as a controlled pilot foundation after core composition behavior landed | Core flows above | API-backed Admin dashboard, E2E suite, pilot runbooks, deterministic search eval summary, and validation gates are in place; real-corpus performance targets remain |
 | 3 | AI enrichment worker integration | Review workflow now exists, so candidate creation can move from deterministic on-demand scans into ingestion/enrichment stages | Review item APIs, AI outputs table, worker stages | Ingestion/enrichment emits suggested AI outputs and review items without auto-applying graph changes |
 | 4 | Generated frontend client and remaining demo route replacement | API surface is broad enough that hand-rolled client drift is now a risk | OpenAPI contract, current `apps/web/lib/api.ts` | Generated/checked client path replaces manual route-by-route DTO drift |
 | 5 | Build/export manifest and composition publishing path | Storyboard snapshots now exist and can become build inputs | Storyboard snapshots, WorkProducts, storage | Snapshot-driven build manifest records produce governed package/export previews |
@@ -256,8 +256,38 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
   - Added Playwright coverage for API-backed ContentBlock creation, Storyboard section/slot composition, snapshot reload, restricted API reads, and malformed identifier error states.
   - Updated Playwright to start the FastAPI server and Next.js production server together for API-backed E2E coverage.
 
+## Milestone 6 MVP Hardening and Pilot Readiness Slice Completed
+
+- `d4c6e42` - `feat(admin): add pilot readiness telemetry`
+  - Expanded `GET /api/admin/health` into nested observability summaries for ingestion jobs, queue state, stage telemetry, catalog/search index counts, review/audit state, composition counts, and deterministic search eval results.
+  - Added local browser CORS middleware for localhost/127.0.0.1 web origins so API-backed client routes can run in local pilot/E2E mode.
+  - Updated the OpenAPI contract and added focused backend coverage for admin telemetry, failed/retried jobs, stage failures, search eval readiness, and local browser API access.
+- `2369e29` - `feat(web): surface pilot readiness dashboard`
+  - Replaced the static Admin page with an API-backed pilot readiness dashboard that loads Admin health and ingestion jobs, handles restricted/error states, shows readiness checks, and keeps the ingestion workspace embedded.
+  - Added typed frontend Admin health helpers, a loading state, local CORS-backed Ask UI E2E coverage, stable `data-testid` support for shared Cards, and a broader Playwright core-flow spec across Ask, Library, ingestion, Reviews, Admin, ContentBlocks, and Storyboards.
+  - Updated Playwright config to use configurable web/API ports for local E2E runs when default ports are occupied.
+- `eaa6c9e` - `docs(pilot): add milestone 6 readiness runbooks`
+  - Added `docs/pilot-readiness/` with route map, admin/curator/builder workflows, a scripted demo walkthrough, demo corpus expectations, search eval expectations, validation commands, and current pilot caveats.
+
 ## Verification
 
+- Focused Milestone 6 backend validation passed:
+  - `cd services/api && uv run pytest -q tests/test_admin_health.py tests/test_hybrid_search_backend.py`
+  - Result: 8 passed.
+  - `cd services/api && uv run ruff check app tests/test_admin_health.py`
+  - Result: all checks passed.
+  - `cd services/api && uv run mypy --explicit-package-bases app`
+  - Result: no issues found in 46 source files.
+- Focused Milestone 6 frontend validation passed:
+  - `pnpm --filter @boxbrain/web test`
+  - Result: 25 passed across 3 test files.
+  - `pnpm --filter @boxbrain/web lint` passed.
+  - `pnpm --filter @boxbrain/web typecheck` passed after a fresh build regenerated `.next/types`.
+  - `NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:18080 pnpm --filter @boxbrain/web build` passed.
+  - `BOXBRAIN_WEB_E2E_PORT=3301 BOXBRAIN_API_E2E_PORT=18080 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:18080 pnpm --filter @boxbrain/web e2e` passed: 5 Playwright tests.
+- Full local verification passed:
+  - `pnpm verify`
+  - Result: OpenAPI check, frontend lint/typecheck/test, backend lint/typecheck/test all passed; frontend result was 25 passed, backend result was 62 passed and 3 gated tests skipped.
 - Focused Milestone 5 backend validation passed:
   - `cd services/api && uv run pytest -q tests/test_content_blocks_backend.py tests/test_storyboards_and_blocks.py tests/test_hybrid_search_backend.py`
   - Result: 12 passed.
@@ -362,8 +392,8 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 
 - SQLAlchemy read/write coverage now includes ingestion, comments/notes, restricted graph metadata, ContentUnit/WorkProduct/ContentBlock search, review items, similarity edges, ContentBlocks, and Storyboard drafts/snapshots, but high-volume graph browsing still mostly flows through in-memory-compatible read models.
 - Live LibreOffice visual rendering has not been verified on this host because `soffice` is not installed; install LibreOffice and run the gated render test before pilot visual fidelity signoff.
-- The worker queue is runnable and live-verified for deterministic PPTX ingestion, but richer queue aging/failure dashboards and long-running worker operations are still pending.
-- Frontend remains demo-backed for Publish/Package, Admin, Plays, and Opportunities; Ask, Library, ingestion, WorkProduct detail, ContentUnit detail, Reviews, ContentBlocks, and Storyboards now have API-backed foundations.
+- The worker queue is runnable and live-verified for deterministic PPTX ingestion, and Admin health now exposes adapter-aware queue/job telemetry, but live RQ queue aging dashboards and long-running worker operations are still pending.
+- Frontend remains demo-backed for Publish/Package, Plays, and Opportunities; Ask, Library, ingestion, WorkProduct detail, ContentUnit detail, Reviews, ContentBlocks, Storyboards, and Admin now have API-backed foundations.
 - Auth/RBAC is local/dev header based, not OIDC/SSO backed.
 - Tenant/org membership and object/source visibility tables are still needed before pilot content; current visibility is conservative role-based restricted filtering.
 - OpenAPI route alignment is improved, but generated client automation is not yet implemented.
@@ -376,8 +406,8 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 3. Add build/export manifest workflows from immutable Storyboard snapshots into governed package/publish previews.
 4. Move candidate creation into ingestion/enrichment worker stages while keeping AI suggestions suggested-only until review.
 5. Add AI output status linkage for accepted/rejected/generated review candidates.
-6. Expand Playwright coverage for upload, job detail, search-to-detail, review action, Storyboard snapshot, and restricted viewer flows.
-7. Add admin ingestion/search/review/composition health telemetry, job duration by stage, failure counts, and queue aging.
+6. Expand Playwright coverage for real file upload, job detail retry, search-to-detail navigation, review action mutations, and target-environment demo rehearsal.
+7. Add live RQ queue aging dashboards, job duration charts by stage, and persisted operator-facing audit views.
 8. Install LibreOffice on a verification host and run `BOXBRAIN_RUN_RENDER_TESTS=1 uv run pytest -q tests/test_live_rendering.py` for live visual fidelity signoff.
 9. Add production auth integration planning for OIDC/SSO while preserving local header-driven development mode.
 10. Add richer visual Storyboard assembly, tray search/recommendations, and snapshot restore only if pilot workflows need explicit rollback.
