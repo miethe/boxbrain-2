@@ -19,6 +19,14 @@ make worker-ingest
 
 `make db-migrate`, `make api-db`, and `make worker-ingest` load the repo env file selected by the root Makefile. To reuse an existing PostgreSQL database safely, set `DATABASE_URL` for that database and set `BOXBRAIN_DB_SCHEMA=boxbrain` so BoxBrain tables and `alembic_version` are isolated from other applications.
 
+Run the API as part of the full containerized stack:
+
+```bash
+make app-up
+```
+
+The app stack uses `services/api/Dockerfile` for the API, migration, and worker services, with database/S3/RQ mode enabled by `infra/docker-compose.app.yml`.
+
 Run tests:
 
 ```bash

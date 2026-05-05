@@ -1,4 +1,5 @@
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const SERVER_API_BASE_URL = process.env.BOXBRAIN_SERVER_API_BASE_URL ?? API_BASE_URL;
 
 export type IngestionJobStatus = "queued" | "running" | "failed" | "complete";
 
@@ -594,7 +595,8 @@ export class ApiError extends Error {
 }
 
 function apiUrl(path: string) {
-  return `${API_BASE_URL}${path}`;
+  const baseUrl = typeof window === "undefined" ? SERVER_API_BASE_URL : API_BASE_URL;
+  return `${baseUrl}${path}`;
 }
 
 function queryString(params: Record<string, string | number | undefined>) {

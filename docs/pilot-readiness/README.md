@@ -24,6 +24,7 @@ Milestone 6 in `docs/project_plans/init/02_Initial_Implementation_Plan.md` calls
 
 - `workflows.md`: role-based admin, curator, and builder workflow runbooks.
 - `demo-and-validation.md`: demo walkthrough, demo corpus/search eval expectations, validation commands, and caveats.
+- `../deployment/containerized-quick-start.md`: full-stack Compose quick start for web, API, worker, PostgreSQL/pgvector, Redis, and MinIO.
 
 ## Pilot Readiness Position
 

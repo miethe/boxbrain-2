@@ -126,6 +126,13 @@ cd services/api && BOXBRAIN_REPOSITORY=database BOXBRAIN_STORAGE=s3 BOXBRAIN_ENQ
 make worker-ingest
 ```
 
+Full-stack containerized mode:
+
+```bash
+make app-up
+make app-ps
+```
+
 If Docker-compatible local infra is unavailable, use:
 
 ```bash

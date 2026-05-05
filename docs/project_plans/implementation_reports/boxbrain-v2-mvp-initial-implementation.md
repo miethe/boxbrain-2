@@ -5,7 +5,7 @@
 
 ## Summary
 
-The repository has advanced from a seed-data MVP scaffold into a production-shaped foundation with completed PPTX-first Milestone 1 ingestion, Milestone 2 governed graph browsing/detail foundations, Milestone 3 hybrid search/Ask BoxBrain, Milestone 4 Reviews Hub/governance workflows, Milestone 5 ContentBlocks/Storyboard composition core, and a Milestone 6 pilot-readiness hardening slice. It now includes a Next.js frontend, FastAPI backend, deterministic worker helpers, OpenAPI contract assets, Alembic migration wiring, SQLAlchemy persistence scaffolding, S3-compatible artifact storage adapters, Redis/RQ queue scaffolding, multipart PPTX upload, deterministic PPTX validation/extraction, ordered render output persistence, stage telemetry, WorkProduct filmstrip output, baseline restricted visibility, ContentUnit family/variant/version APIs, comments/notes persistence in database mode, API-backed Library, ContentUnit detail write controls, database-backed hybrid search including ContentBlocks, API-backed Ask BoxBrain, deterministic review candidate generation, API-backed Reviews Hub compare/actions, SQL-backed review queue and similarity-edge persistence, SQL-backed ContentBlocks and Storyboard drafts/snapshots, API-backed composition pages, API-backed admin readiness telemetry, a core-flow E2E suite, pilot runbooks, tests, and verification scripts.
+The repository has advanced from a seed-data MVP scaffold into a production-shaped foundation with completed PPTX-first Milestone 1 ingestion, Milestone 2 governed graph browsing/detail foundations, Milestone 3 hybrid search/Ask BoxBrain, Milestone 4 Reviews Hub/governance workflows, Milestone 5 ContentBlocks/Storyboard composition core, and a Milestone 6 pilot-readiness hardening slice. It now includes a Next.js frontend, FastAPI backend, deterministic worker helpers, OpenAPI contract assets, Alembic migration wiring, SQLAlchemy persistence scaffolding, S3-compatible artifact storage adapters, Redis/RQ queue scaffolding, multipart PPTX upload, deterministic PPTX validation/extraction, ordered render output persistence, stage telemetry, WorkProduct filmstrip output, baseline restricted visibility, ContentUnit family/variant/version APIs, comments/notes persistence in database mode, API-backed Library, ContentUnit detail write controls, database-backed hybrid search including ContentBlocks, API-backed Ask BoxBrain, deterministic review candidate generation, API-backed Reviews Hub compare/actions, SQL-backed review queue and similarity-edge persistence, SQL-backed ContentBlocks and Storyboard drafts/snapshots, API-backed composition pages, API-backed admin readiness telemetry, full-stack local Compose deployment artifacts, a core-flow E2E suite, pilot runbooks, tests, and verification scripts.
 
 This is still not a completed production pilot. The current state is a credible MVP foundation: memory mode remains the default for fast local tests, while database/storage/worker integration mode is runnable, migration-verified locally, and live-verified for ingestion plus database-backed search.
 
@@ -55,7 +55,7 @@ This is an execution estimate against the product MVP definition, not a test cov
 | Comments and notes | Domain/use-case distinction between review comments, persistent comments, and notes; SQLAlchemy persistence and visibility-filtered list/create APIs; ContentUnit detail can create persistent comments and pinned notes; Storyboard UI can create anchored persistent comments against sections/slots/snapshots | Edit/resolution flows, searchability, richer pinned note UX |
 | Storyboard and ContentBlocks | SQL-backed ContentBlocks, mutable Storyboard drafts, immutable snapshot copies, create/edit APIs, insert/swap from block tray/forms, diagnostics, anchored comments, and E2E composition coverage | Richer visual assembly, snapshot restore if needed, source-aware visibility, build-manifest-compatible records |
 | Security and access control | Header-driven local/dev actor model; viewer restricted filtering for search, library/detail, thumbnails, similar, where-used, comments/notes, WorkProducts, ContentBlocks, and Storyboards | Tenant/org membership, object/source visibility tables, full RBAC enforcement, OIDC/SSO integration path |
-| Operations and pilot readiness | Local infra compose, Makefile commands, verification scripts, live ingestion test, nested admin readiness telemetry, API-backed Admin dashboard, deterministic search eval summary, core-flow E2E, pilot runbooks and walkthrough docs | Live RQ queue aging dashboards, pilot-corpus performance pass, deployment docs, target-environment rehearsal, production auth/RBAC |
+| Operations and pilot readiness | Local infra compose, full-stack app compose, Makefile commands, container quickstart docs, verification scripts, live ingestion test, nested admin readiness telemetry, API-backed Admin dashboard, deterministic search eval summary, core-flow E2E, pilot runbooks and walkthrough docs | Live RQ queue aging dashboards, pilot-corpus performance pass, target-environment rehearsal, production auth/RBAC |
 
 ## Recommended Execution Order
 
@@ -88,6 +88,8 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 - `services/worker`: deterministic ingestion/search helper package plus an RQ-compatible ingestion job entrypoint.
 - `contracts/openapi/boxbrain.v2.yaml`: MVP API contract aligned with implemented route paths and methods.
 - `infra/docker-compose.local.yml`: local PostgreSQL/pgvector, Redis, and MinIO services. Database schema initialization now flows through Alembic instead of Docker init SQL.
+- `infra/docker-compose.app.yml`: full-stack local Compose deployment for web, API, migration, RQ worker, PostgreSQL/pgvector, Redis, MinIO, and optional OpenSearch.
+- `apps/web/Dockerfile` and `services/api/Dockerfile`: production-shaped local container images for the Next.js web app and shared API/migration/worker runtime.
 - Root scripts: `pnpm verify`, `pnpm e2e`, `make infra-up`, `make db-migrate`, `make api-db`, `make worker-ingest`, OpenAPI checks, backend lint/typecheck/test commands.
 
 ## Frontend Features Completed
@@ -176,6 +178,8 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 - `BOXBRAIN_DB_SCHEMA` isolates BoxBrain tables and the Alembic version table in a dedicated PostgreSQL schema for safer reuse of an existing PostgreSQL database.
 - `make api-db` runs FastAPI in PostgreSQL/S3/RQ mode.
 - `make worker-ingest` runs the local RQ worker against the `boxbrain-ingestion` queue with the import path and integration-mode environment configured.
+- `make app-up`, `make app-build`, `make app-ps`, `make app-logs`, `make app-migrate`, and `make app-down` manage the full containerized stack through `infra/docker-compose.app.yml`.
+- `docs/deployment/containerized-quick-start.md` documents the web/API/worker/PostgreSQL/Redis/MinIO quick start, port overrides, rebuild behavior, smoke checks, and current deployment caveats.
 - Database-mode ingestion list/detail/retry/process paths refresh the SQLAlchemy read model before reading jobs, so API and worker processes can see each other's persisted state.
 - Multipart upload creates:
   - `stored_objects` record
@@ -291,6 +295,20 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 - Full local verification passed:
   - `pnpm verify`
   - Result: OpenAPI check, frontend lint/typecheck/test, backend lint/typecheck/test all passed; frontend result was 25 passed, backend result was 63 passed and 3 gated tests skipped.
+- Containerized deployment static validation passed:
+  - `docker-compose --env-file .env.example -f infra/docker-compose.app.yml config`
+  - Result: full-stack Compose configuration rendered successfully for web, API, migration, worker, PostgreSQL/pgvector, Redis, MinIO, and bucket setup.
+- Container image and alternate-port live smoke validation passed:
+  - `pnpm --filter @boxbrain/web test -- lib/api.test.ts`
+  - Result: 25 passed across 3 test files because Vitest also picked up the existing demo data and search result card tests.
+  - `pnpm --filter @boxbrain/web typecheck` passed.
+  - `cd services/api && uv run alembic upgrade head --sql` passed.
+  - `pnpm --filter @boxbrain/web build` passed with Next.js standalone output enabled.
+  - `docker-compose --env-file .env.example -f infra/docker-compose.app.yml build web` passed.
+  - `docker-compose --env-file .env.example -f infra/docker-compose.app.yml build api` passed; the shared API image includes LibreOffice for the renderer adapter.
+  - `API_PORT=18082 WEB_PORT=3302 POSTGRES_PORT=55433 REDIS_PORT=16380 MINIO_API_PORT=19002 MINIO_CONSOLE_PORT=19003 NEXT_PUBLIC_API_BASE_URL=http://localhost:18082 docker-compose --env-file .env.example -f infra/docker-compose.app.yml up -d --build` passed.
+  - Runtime smoke checks passed: `curl -fsS http://localhost:18082/api/health` returned `{"status":"ok","service":"boxbrain-api"}`, `curl -fsSI http://localhost:3302` returned HTTP 200, `curl -fsSI http://localhost:3302/library` returned HTTP 200, and `docker-compose ... ps web` showed the web service healthy.
+  - The alternate-port app stack was stopped with `docker-compose --env-file .env.example -f infra/docker-compose.app.yml down` after validation.
 - Focused Milestone 5 backend validation passed:
   - `cd services/api && uv run pytest -q tests/test_content_blocks_backend.py tests/test_storyboards_and_blocks.py tests/test_hybrid_search_backend.py`
   - Result: 12 passed.
@@ -382,6 +400,7 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 - A parallel `pnpm --filter @boxbrain/web build` and `pnpm e2e` run caused a transient `.next` build artifact conflict; removing generated `.next` and rerunning build before E2E passed.
 - LibreOffice is not currently installed on `PATH`, so live visual rendering remains unverified on this host. The renderer adapter and missing-renderer failure path are covered by automated tests, and live render verification is gated behind `BOXBRAIN_RUN_RENDER_TESTS=1`.
 - The local compose stack is currently running after verification.
+- Default app-stack host ports `3000`, `8000`, `5432`, `6379`, and `9000` were already in use during the containerized deployment smoke, so live validation used alternate ports and rebuilt the web image with `NEXT_PUBLIC_API_BASE_URL=http://localhost:18082`.
 
 ### Milestone 1 Closeout Commits
 

@@ -45,6 +45,19 @@ BoxBrain v2 is a governed enterprise slide and content catalog for decomposing b
 
 Local infrastructure starts PostgreSQL with pgvector, Redis, and MinIO. Database schema creation flows through Alembic. Set `BOXBRAIN_DB_SCHEMA=boxbrain` to keep BoxBrain tables and its Alembic version table in a dedicated PostgreSQL schema, which is the safe option when pointing `DATABASE_URL` at an existing PostgreSQL database.
 
+## Containerized Quickstart
+
+Run the full local app stack through Compose:
+
+```bash
+cp .env.example .env
+make app-up
+```
+
+This builds and starts the web app, API, RQ worker, PostgreSQL/pgvector, Redis, MinIO, MinIO bucket setup, and Alembic migration service. Open `http://localhost:3000` for the app and `http://localhost:8000/api/health` for API health.
+
+See `docs/deployment/containerized-quick-start.md` for ports, rebuilds, logs, teardown, and caveats.
+
 ## Useful Commands
 
 ```bash
@@ -56,6 +69,9 @@ pnpm test
 pnpm verify
 make infra-up
 make db-migrate
+make app-up
+make app-ps
+make app-down
 make infra-down
 make infra-logs
 ```
