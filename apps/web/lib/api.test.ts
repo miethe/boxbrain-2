@@ -322,6 +322,146 @@ describe("content unit graph api", () => {
   });
 });
 
+describe("composition api", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches and creates ContentBlocks through typed endpoints", async () => {
+    const block = {
+      id: "block-1",
+      familyId: "block-family-1",
+      title: "Ordered ROI block",
+      blockType: "sequence",
+      approvalState: "draft",
+      members: [{ id: "member-1", memberType: "content_unit_version", memberId: "version-1", orderIndex: 0, isRequired: true }],
+      createdAt: "2026-05-05T10:00:00.000Z"
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [block], nextCursor: null }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => block })
+      .mockResolvedValueOnce({ ok: true, json: async () => block });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.listContentBlocks()).resolves.toEqual({ items: [block], nextCursor: null });
+    await expect(boxbrainApi.getContentBlock("block/1")).resolves.toEqual(block);
+    await expect(
+      boxbrainApi.createContentBlock({
+        title: "Ordered ROI block",
+        members: [{ memberType: "content_unit_version", memberId: "version-1", orderIndex: 0 }]
+      })
+    ).resolves.toEqual(block);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/content-blocks",
+      "http://localhost:8000/api/content-blocks/block%2F1",
+      "http://localhost:8000/api/content-blocks"
+    ]);
+    expect((fetchMock.mock.calls[2][1] as RequestInit).body).toBe(
+      JSON.stringify({
+        title: "Ordered ROI block",
+        blockType: "sequence",
+        members: [{ memberType: "content_unit_version", memberId: "version-1", orderIndex: 0, isRequired: true }]
+      })
+    );
+  });
+
+  it("uses Storyboard sections, slots, snapshots, diagnostics, and comments endpoints", async () => {
+    const storyboard = {
+      id: "storyboard-1",
+      mode: "work_product",
+      title: "Board story",
+      currentSnapshotId: null,
+      createdAt: "2026-05-05T10:00:00.000Z",
+      updatedAt: "2026-05-05T10:00:00.000Z",
+      draftSections: []
+    };
+    const section = { id: "section-1", storyboardId: "storyboard-1", title: "Economic case", orderIndex: 0, slots: [] };
+    const slot = {
+      id: "slot-1",
+      sectionId: "section-1",
+      slotType: "content_block",
+      selectedObjectType: "content_block_version",
+      selectedObjectId: "block-1",
+      orderIndex: 0,
+      isRequired: true,
+      aiRecommended: false
+    };
+    const snapshot = {
+      id: "snapshot-1",
+      storyboardId: "storyboard-1",
+      versionLabel: "v1",
+      approvalState: "draft",
+      narrativeScore: 0.9,
+      sections: [{ ...section, slots: [slot] }],
+      createdAt: "2026-05-05T10:05:00.000Z"
+    };
+    const diagnostics = { narrativeScore: 0.9, warnings: [] };
+    const comment = {
+      id: "comment-1",
+      kind: "persistent_comment",
+      targetType: "storyboard",
+      targetId: "storyboard-1",
+      anchor: { slotId: "slot-1" },
+      body: "Tighten this slot.",
+      status: "open"
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [storyboard], nextCursor: null }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => storyboard })
+      .mockResolvedValueOnce({ ok: true, json: async () => section })
+      .mockResolvedValueOnce({ ok: true, json: async () => slot })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...slot, purpose: "Updated" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => [snapshot] })
+      .mockResolvedValueOnce({ ok: true, json: async () => snapshot })
+      .mockResolvedValueOnce({ ok: true, json: async () => snapshot })
+      .mockResolvedValueOnce({ ok: true, json: async () => diagnostics })
+      .mockResolvedValueOnce({ ok: true, json: async () => comment });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.listStoryboards()).resolves.toEqual({ items: [storyboard], nextCursor: null });
+    await expect(boxbrainApi.getStoryboard("storyboard-1")).resolves.toEqual(storyboard);
+    await expect(boxbrainApi.createStoryboardSection("storyboard-1", { title: "Economic case", orderIndex: 0 })).resolves.toEqual(section);
+    await expect(
+      boxbrainApi.createStoryboardSlot("section-1", {
+        slotType: "content_block",
+        selectedObjectType: "content_block_version",
+        selectedObjectId: "block-1"
+      })
+    ).resolves.toEqual(slot);
+    await expect(boxbrainApi.updateStoryboardSlot("slot-1", { purpose: "Updated" })).resolves.toMatchObject({ purpose: "Updated" });
+    await expect(boxbrainApi.listStoryboardSnapshots("storyboard-1")).resolves.toEqual([snapshot]);
+    await expect(boxbrainApi.createStoryboardSnapshot("storyboard-1", "v1")).resolves.toEqual(snapshot);
+    await expect(boxbrainApi.getStoryboardSnapshot("snapshot-1")).resolves.toEqual(snapshot);
+    await expect(boxbrainApi.analyzeStoryboard("storyboard-1")).resolves.toEqual(diagnostics);
+    await expect(
+      boxbrainApi.createComment({
+        kind: "persistent_comment",
+        targetType: "storyboard",
+        targetId: "storyboard-1",
+        anchor: { slotId: "slot-1" },
+        body: "Tighten this slot."
+      })
+    ).resolves.toEqual(comment);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/storyboards",
+      "http://localhost:8000/api/storyboards/storyboard-1",
+      "http://localhost:8000/api/storyboards/storyboard-1/sections",
+      "http://localhost:8000/api/storyboard-sections/section-1/slots",
+      "http://localhost:8000/api/storyboard-slots/slot-1",
+      "http://localhost:8000/api/storyboards/storyboard-1/snapshots",
+      "http://localhost:8000/api/storyboards/storyboard-1/snapshots",
+      "http://localhost:8000/api/storyboard-snapshots/snapshot-1",
+      "http://localhost:8000/api/storyboards/storyboard-1/analyze",
+      "http://localhost:8000/api/comments"
+    ]);
+  });
+});
+
 describe("review api", () => {
   afterEach(() => {
     vi.restoreAllMocks();

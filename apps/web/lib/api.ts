@@ -1,5 +1,3 @@
-import { storyboardSections } from "@/features/demo/data";
-
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export type IngestionJobStatus = "queued" | "running" | "failed" | "complete";
@@ -249,6 +247,139 @@ export type WorkProductVersionDetail = {
   [key: string]: unknown;
 };
 
+export type ContentBlockMemberType = "content_unit_variant" | "content_unit_version";
+
+export type ContentBlockMember = {
+  id: string;
+  memberType: ContentBlockMemberType | string;
+  memberId: string;
+  orderIndex: number;
+  role?: string | null;
+  isRequired: boolean;
+  notes?: string | null;
+  [key: string]: unknown;
+};
+
+export type ContentBlockVersionDetail = {
+  id: string;
+  familyId: string;
+  title: string;
+  summary?: string | null;
+  blockType: string;
+  approvalState: ApprovalState;
+  members: ContentBlockMember[];
+  createdAt: string;
+  [key: string]: unknown;
+};
+
+export type CreateContentBlockMemberInput = {
+  memberType: ContentBlockMemberType;
+  memberId: string;
+  orderIndex: number;
+  role?: string | null;
+  isRequired?: boolean;
+  notes?: string | null;
+};
+
+export type CreateContentBlockInput = {
+  title: string;
+  summary?: string | null;
+  blockType?: string;
+  members: CreateContentBlockMemberInput[];
+};
+
+export type StoryboardMode = "work_product" | "play" | "opportunity";
+export type StoryboardSlotType = "content_unit" | "content_block" | "work_product_ref" | "gap";
+export type StoryboardSelectedObjectType = "content_unit_version" | "content_block_version" | "work_product_version";
+
+export type Storyboard = {
+  id: string;
+  mode: StoryboardMode | string;
+  title: string;
+  currentSnapshotId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  [key: string]: unknown;
+};
+
+export type StoryboardSlot = {
+  id: string;
+  sectionId: string;
+  slotType: StoryboardSlotType;
+  selectedObjectType?: string | null;
+  selectedObjectId?: string | null;
+  orderIndex: number;
+  purpose?: string | null;
+  isRequired: boolean;
+  aiRecommended: boolean;
+  [key: string]: unknown;
+};
+
+export type StoryboardSection = {
+  id: string;
+  snapshotId?: string | null;
+  storyboardId: string;
+  title: string;
+  summary?: string | null;
+  orderIndex: number;
+  slots: StoryboardSlot[];
+  [key: string]: unknown;
+};
+
+export type StoryboardSnapshot = {
+  id: string;
+  storyboardId: string;
+  versionLabel?: string | null;
+  approvalState: ApprovalState;
+  narrativeScore?: number | null;
+  sections: StoryboardSection[];
+  createdAt: string;
+  [key: string]: unknown;
+};
+
+export type StoryboardDetail = Storyboard & {
+  draftSections: StoryboardSection[];
+  currentSnapshot?: StoryboardSnapshot | null;
+};
+
+export type CreateStoryboardInput = {
+  title: string;
+  mode?: StoryboardMode;
+  parentType?: string | null;
+  parentId?: string | null;
+};
+
+export type CreateStoryboardSectionInput = {
+  title: string;
+  summary?: string | null;
+  orderIndex?: number;
+};
+
+export type CreateStoryboardSlotInput = {
+  slotType: StoryboardSlotType;
+  selectedObjectType?: StoryboardSelectedObjectType | string | null;
+  selectedObjectId?: string | null;
+  orderIndex?: number;
+  purpose?: string | null;
+  isRequired?: boolean;
+};
+
+export type UpdateStoryboardSlotInput = Partial<CreateStoryboardSlotInput>;
+
+export type StoryboardDiagnosticWarning = {
+  code: string;
+  severity: "info" | "warning" | "critical";
+  message: string;
+  targetType: string;
+  targetId?: string | null;
+  [key: string]: unknown;
+};
+
+export type StoryboardDiagnostics = {
+  narrativeScore?: number | null;
+  warnings: StoryboardDiagnosticWarning[];
+};
+
 export type ListContentUnitFamiliesInput = {
   cursor?: string;
   limit?: number;
@@ -402,20 +533,6 @@ function defaultHeaders(initHeaders?: HeadersInit, hasJsonBody = false) {
   headers.set("x-boxbrain-user", headers.get("x-boxbrain-user") ?? "admin");
   if (hasJsonBody && !headers.has("content-type")) headers.set("content-type", "application/json");
   return headers;
-}
-
-async function apiFetch<T>(path: string, fallback: T, init?: RequestInit): Promise<T> {
-  try {
-    const response = await fetch(apiUrl(path), {
-      ...init,
-      headers: defaultHeaders(init?.headers, Boolean(init?.body)),
-      cache: "no-store"
-    });
-    if (!response.ok) return fallback;
-    return (await response.json()) as T;
-  } catch {
-    return fallback;
-  }
 }
 
 async function requestJson<T>(path: string, init: RequestJsonOptions = {}): Promise<T> {
@@ -637,6 +754,113 @@ export async function listWorkProductFamilies(): Promise<PageEnvelope<WorkProduc
   return requestJson<PageEnvelope<WorkProductFamilyCard>>("/api/work-products/families");
 }
 
+export async function listContentBlocks(): Promise<PageEnvelope<ContentBlockVersionDetail>> {
+  return requestJson<PageEnvelope<ContentBlockVersionDetail>>("/api/content-blocks");
+}
+
+export async function getContentBlock(blockId: string): Promise<ContentBlockVersionDetail> {
+  return requestJson<ContentBlockVersionDetail>(`/api/content-blocks/${encodeURIComponent(blockId)}`);
+}
+
+export async function createContentBlock(input: CreateContentBlockInput): Promise<ContentBlockVersionDetail> {
+  return requestJson<ContentBlockVersionDetail>("/api/content-blocks", {
+    method: "POST",
+    json: {
+      title: input.title,
+      summary: input.summary ?? undefined,
+      blockType: input.blockType ?? "sequence",
+      members: input.members.map((member) => ({
+        memberType: member.memberType,
+        memberId: member.memberId,
+        orderIndex: member.orderIndex,
+        role: member.role ?? undefined,
+        isRequired: member.isRequired ?? true,
+        notes: member.notes ?? undefined
+      }))
+    }
+  });
+}
+
+export async function listStoryboards(): Promise<PageEnvelope<Storyboard>> {
+  return requestJson<PageEnvelope<Storyboard>>("/api/storyboards");
+}
+
+export async function createStoryboard(input: CreateStoryboardInput): Promise<Storyboard> {
+  return requestJson<Storyboard>("/api/storyboards", {
+    method: "POST",
+    json: {
+      title: input.title,
+      mode: input.mode ?? "work_product",
+      parentType: input.parentType ?? undefined,
+      parentId: input.parentId ?? undefined
+    }
+  });
+}
+
+export async function getStoryboard(storyboardId: string): Promise<StoryboardDetail> {
+  return requestJson<StoryboardDetail>(`/api/storyboards/${encodeURIComponent(storyboardId)}`);
+}
+
+export async function listStoryboardSnapshots(storyboardId: string): Promise<StoryboardSnapshot[]> {
+  return requestJson<StoryboardSnapshot[]>(`/api/storyboards/${encodeURIComponent(storyboardId)}/snapshots`);
+}
+
+export async function createStoryboardSnapshot(storyboardId: string, versionLabel?: string | null): Promise<StoryboardSnapshot> {
+  return requestJson<StoryboardSnapshot>(`/api/storyboards/${encodeURIComponent(storyboardId)}/snapshots`, {
+    method: "POST",
+    json: versionLabel?.trim() ? { versionLabel: versionLabel.trim() } : {}
+  });
+}
+
+export async function getStoryboardSnapshot(snapshotId: string): Promise<StoryboardSnapshot> {
+  return requestJson<StoryboardSnapshot>(`/api/storyboard-snapshots/${encodeURIComponent(snapshotId)}`);
+}
+
+export async function createStoryboardSection(storyboardId: string, input: CreateStoryboardSectionInput): Promise<StoryboardSection> {
+  return requestJson<StoryboardSection>(`/api/storyboards/${encodeURIComponent(storyboardId)}/sections`, {
+    method: "POST",
+    json: {
+      title: input.title,
+      summary: input.summary ?? undefined,
+      orderIndex: input.orderIndex
+    }
+  });
+}
+
+export async function createStoryboardSlot(sectionId: string, input: CreateStoryboardSlotInput): Promise<StoryboardSlot> {
+  return requestJson<StoryboardSlot>(`/api/storyboard-sections/${encodeURIComponent(sectionId)}/slots`, {
+    method: "POST",
+    json: {
+      slotType: input.slotType,
+      selectedObjectType: input.selectedObjectType ?? undefined,
+      selectedObjectId: input.selectedObjectId ?? undefined,
+      orderIndex: input.orderIndex,
+      purpose: input.purpose ?? undefined,
+      isRequired: input.isRequired ?? true
+    }
+  });
+}
+
+export async function updateStoryboardSlot(slotId: string, input: UpdateStoryboardSlotInput): Promise<StoryboardSlot> {
+  return requestJson<StoryboardSlot>(`/api/storyboard-slots/${encodeURIComponent(slotId)}`, {
+    method: "PATCH",
+    json: {
+      slotType: input.slotType,
+      selectedObjectType: input.selectedObjectType ?? undefined,
+      selectedObjectId: input.selectedObjectId ?? undefined,
+      orderIndex: input.orderIndex,
+      purpose: input.purpose ?? undefined,
+      isRequired: input.isRequired
+    }
+  });
+}
+
+export async function analyzeStoryboard(storyboardId: string): Promise<StoryboardDiagnostics> {
+  return requestJson<StoryboardDiagnostics>(`/api/storyboards/${encodeURIComponent(storyboardId)}/analyze`, {
+    method: "POST"
+  });
+}
+
 export async function listReviewQueues(): Promise<ReviewQueueSummary[]> {
   return requestJson<ReviewQueueSummary[]>("/api/reviews/queues");
 }
@@ -786,18 +1010,25 @@ export const boxbrainApi = {
   createNote,
   listWorkProducts: listWorkProductFamilies,
   listWorkProductFamilies,
+  listContentBlocks,
+  getContentBlock,
+  createContentBlock,
+  listStoryboards,
+  createStoryboard,
+  getStoryboard,
+  listStoryboardSnapshots,
+  createStoryboardSnapshot,
+  getStoryboardSnapshot,
+  createStoryboardSection,
+  createStoryboardSlot,
+  updateStoryboardSlot,
+  analyzeStoryboard,
   listReviewQueues,
   listReviewItems,
   getReviewItem,
   runReviewAction,
   generateReviewCandidates,
   listReviews: listReviewItems,
-  getStoryboard: () =>
-    apiFetch("/api/storyboards/sb-cloud-modernization", {
-      id: "sb-cloud-modernization",
-      title: "Cloud Modernization Executive Storyboard",
-      sections: storyboardSections
-    }),
   ask: (query: string) => askBoxBrain({ query }),
   uploadArtifact,
   listIngestionJobs,
