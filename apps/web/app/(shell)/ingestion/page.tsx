@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui";
 
 export default function IngestionPage() {
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="ingestion-page">
       <PageHeader
         eyebrow="Ingestion"
         title="Upload and job monitor"

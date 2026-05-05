@@ -13,7 +13,12 @@ export function SearchResultCard({ item, showDebug = false }: { item: SearchResu
   const status = item.statusChips;
 
   return (
-    <Link href={href} className="card grid gap-4 p-3 hover:bg-slate-50 md:grid-cols-[170px_minmax(0,1fr)]" aria-label={`Open ${restricted ? "restricted result" : item.title}`}>
+    <Link
+      href={href}
+      className="card grid gap-4 p-3 hover:bg-slate-50 md:grid-cols-[170px_minmax(0,1fr)]"
+      aria-label={`Open ${restricted ? "restricted result" : item.title}`}
+      data-testid="search-result-card"
+    >
       {restricted ? (
         <div className="grid aspect-video place-items-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700">
           <ShieldAlert size={22} />

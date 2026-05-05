@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const apiPort = process.env.BOXBRAIN_API_E2E_PORT ?? "18080";
+const webPort = process.env.BOXBRAIN_WEB_E2E_PORT ?? "3300";
+const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+const webBaseUrl = `http://127.0.0.1:${webPort}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
@@ -7,19 +12,19 @@ export default defineConfig({
     timeout: 5_000
   },
   use: {
-    baseURL: "http://127.0.0.1:3300",
+    baseURL: webBaseUrl,
     trace: "on-first-retry"
   },
   webServer: [
     {
-      command: "cd ../../services/api && uv run uvicorn app.main:app --host 127.0.0.1 --port 18080",
-      url: "http://127.0.0.1:18080/api/health",
+      command: `cd ../../services/api && uv run uvicorn app.main:app --host 127.0.0.1 --port ${apiPort}`,
+      url: `${apiBaseUrl}/api/health`,
       reuseExistingServer: false,
       timeout: 30_000
     },
     {
-      command: "NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:18080 next start --hostname 127.0.0.1 --port 3300",
-      url: "http://127.0.0.1:3300",
+      command: `NEXT_PUBLIC_API_BASE_URL=${apiBaseUrl} next start --hostname 127.0.0.1 --port ${webPort}`,
+      url: webBaseUrl,
       reuseExistingServer: false,
       timeout: 30_000
     }

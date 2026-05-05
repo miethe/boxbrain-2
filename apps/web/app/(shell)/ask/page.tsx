@@ -159,7 +159,7 @@ export default function AskPage() {
   }
 
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="ask-page">
       <PageHeader
         eyebrow="Ask BoxBrain"
         title="Ask and search governed content"
@@ -176,10 +176,11 @@ export default function AskPage() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 aria-label="Ask BoxBrain query"
+                data-testid="ask-query-input"
               />
             </label>
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" variant="primary" disabled={loadState === "loading"}>
+              <Button type="submit" variant="primary" disabled={loadState === "loading"} data-testid="ask-search-submit">
                 <Search size={15} /> {loadState === "loading" ? "Searching" : "Search"}
               </Button>
               <Button type="button" onClick={saveCurrentSearch}>

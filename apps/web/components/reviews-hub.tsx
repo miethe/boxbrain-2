@@ -202,7 +202,7 @@ export function ReviewsHub() {
   }
 
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="reviews-page">
       <PageHeader
         eyebrow="Reviews and governance"
         title="Review AI suggestions before graph changes"
@@ -225,7 +225,7 @@ export function ReviewsHub() {
             <h2 className="m-0 text-sm font-bold">Queues</h2>
             <StatusBadge tone={selectedQueueOpenCount > 0 ? "warn" : "ok"}>{selectedQueueOpenCount} open</StatusBadge>
           </div>
-          <div className="mt-3 grid gap-2">
+          <div className="mt-3 grid gap-2" data-testid="reviews-queue-list">
             <QueueButton active={selectedQueue === "all"} label="All open reviews" count={queues.reduce((total, queue) => total + queue.openCount, 0)} onClick={() => void selectQueue("all")} />
             {queues.map((queue) => (
               <QueueButton
@@ -244,7 +244,7 @@ export function ReviewsHub() {
           {queuesState === "restricted" && <RestrictedCopy compact />}
         </Card>
 
-        <div className="grid content-start gap-3">
+        <div className="grid content-start gap-3" data-testid="reviews-item-list">
           <Card className="p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -364,7 +364,8 @@ function DecisionPanel({
   const compareObjects = detail.compareObjects.length ? detail.compareObjects : detail.targetRefs.map(targetRefToCompareObject);
 
   return (
-    <Card className="p-4">
+    <div data-testid="reviews-decision-panel">
+      <Card className="p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-bold">
           <ShieldCheck size={16} color="var(--ok)" /> Decision panel
@@ -414,7 +415,8 @@ function DecisionPanel({
           <GitBranch size={14} /> Request changes
         </Button>
       </div>
-    </Card>
+      </Card>
+    </div>
   );
 }
 

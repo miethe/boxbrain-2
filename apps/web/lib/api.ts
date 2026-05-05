@@ -501,6 +501,84 @@ export type GeneratedReviewCandidate = {
   persisted: boolean;
 };
 
+export type AdminHealth = {
+  status: string;
+  ingestion?: {
+    totalJobs?: number;
+    statusCounts?: Partial<Record<IngestionJobStatus, number>>;
+    failedJobs?: number;
+    retriedJobs?: number;
+    retryableFailures?: number;
+    recentFailures?: unknown[];
+    [key: string]: unknown;
+  };
+  queue?: {
+    status?: string;
+    adapter?: string;
+    queueName?: string | null;
+    enqueuedJobCount?: number;
+    queuedJobCount?: number;
+    runningJobCount?: number;
+    failedJobCount?: number;
+    retryQueuedJobCount?: number;
+    notes?: string[];
+    [key: string]: unknown;
+  };
+  catalog?: {
+    contentUnitFamilies?: number;
+    contentUnitVariants?: number;
+    contentUnitVersions?: number;
+    workProductFamilies?: number;
+    workProductVersions?: number;
+    contentBlocks?: number;
+    storyboards?: number;
+    storyboardSnapshots?: number;
+    storedObjects?: number;
+    provenanceRecords?: number;
+    [key: string]: unknown;
+  };
+  searchIndex?: {
+    backend?: string;
+    searchableContentUnitVersions?: number;
+    searchableWorkProductVersions?: number;
+    searchableContentBlocks?: number;
+    restrictedContentUnitVersions?: number;
+    restrictedWorkProductVersions?: number;
+    restrictedContentBlocks?: number;
+    [key: string]: unknown;
+  };
+  reviewAudit?: {
+    reviewItems?: number;
+    openReviewItems?: number;
+    reviewItemsByStatus?: Record<string, number>;
+    reviewItemsByQueue?: Record<string, number>;
+    auditEvents?: number;
+    auditEventsByAction?: Record<string, number>;
+    comments?: number;
+    notes?: number;
+    [key: string]: unknown;
+  };
+  composition?: {
+    contentBlocks?: number;
+    contentBlockMembers?: number;
+    storyboards?: number;
+    storyboardDraftSections?: number;
+    storyboardDraftSlots?: number;
+    storyboardSnapshots?: number;
+    storyboardSnapshotSections?: number;
+    storyboardSnapshotSlots?: number;
+    [key: string]: unknown;
+  };
+  searchEval?: {
+    status?: string;
+    totalCases?: number;
+    passedCases?: number;
+    failedCases?: number;
+    cases?: unknown[];
+    [key: string]: unknown;
+  };
+};
+
 type RequestJsonOptions = RequestInit & {
   json?: unknown;
 };
@@ -627,6 +705,10 @@ export async function uploadArtifact(input: UploadArtifactInput): Promise<Ingest
 export async function listIngestionJobs(): Promise<IngestionJobsResult> {
   const payload = await requestJson<IngestionJob[] | { items?: IngestionJob[]; jobs?: IngestionJob[] }>("/api/ingestion-jobs");
   return { items: normalizeIngestionJobsResponse(payload) };
+}
+
+export async function getAdminHealth(): Promise<AdminHealth> {
+  return requestJson<AdminHealth>("/api/admin/health");
 }
 
 export async function getIngestionJob(id: string): Promise<IngestionJob> {
@@ -1030,6 +1112,7 @@ export const boxbrainApi = {
   generateReviewCandidates,
   listReviews: listReviewItems,
   ask: (query: string) => askBoxBrain({ query }),
+  getAdminHealth,
   uploadArtifact,
   listIngestionJobs,
   getIngestionJob,

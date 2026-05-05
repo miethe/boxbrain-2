@@ -100,6 +100,58 @@ describe("ingestion api", () => {
   });
 });
 
+describe("admin api", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches pilot readiness health from the typed Admin endpoint", async () => {
+    const health = {
+      status: "ok",
+      ingestion: {
+        totalJobs: 2,
+        statusCounts: { complete: 1, failed: 1 },
+        failedJobs: 1
+      },
+      queue: {
+        status: "healthy",
+        adapter: "NoopIngestionQueue"
+      },
+      catalog: {
+        contentUnitFamilies: 2,
+        contentUnitVersions: 4,
+        workProductVersions: 1,
+        contentBlocks: 1,
+        storyboards: 1
+      },
+      reviewAudit: {
+        reviewItems: 2,
+        openReviewItems: 1,
+        auditEvents: 3
+      },
+      composition: {
+        contentBlocks: 1,
+        storyboards: 1
+      },
+      searchEval: {
+        status: "pass",
+        totalCases: 3,
+        passedCases: 3,
+        failedCases: 0
+      }
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => health
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.getAdminHealth()).resolves.toEqual(health);
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8000/api/admin/health", expect.objectContaining({ cache: "no-store" }));
+  });
+});
+
 describe("content unit graph api", () => {
   afterEach(() => {
     vi.restoreAllMocks();

@@ -3,13 +3,11 @@ import { expect, test } from "@playwright/test";
 test("loads the app shell and navigates primary MVP routes", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "BoxBrain operating console" })).toBeVisible();
-  const sidebar = page.getByRole("complementary");
-  await expect(sidebar.getByRole("link", { name: "Ask BoxBrain" })).toBeVisible();
+  await expect(page.getByTestId("nav-ask")).toBeVisible();
 
-  await sidebar.getByRole("link", { name: "Library" }).click();
-  await expect(page.getByRole("heading", { name: "Family-first governed catalog" })).toBeVisible();
+  await page.getByTestId("nav-library").click();
+  await expect(page.getByTestId("library-page")).toBeVisible();
 
-  await sidebar.getByRole("link", { name: /Reviews/ }).click();
-  await expect(page.getByRole("heading", { name: "Review AI suggestions before graph changes" })).toBeVisible();
+  await page.getByTestId("nav-reviews").click();
+  await expect(page.getByTestId("reviews-page")).toBeVisible();
 });

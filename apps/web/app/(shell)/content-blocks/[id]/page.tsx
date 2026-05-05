@@ -48,7 +48,7 @@ export default async function ContentBlockPage({ params }: { params: Promise<{ i
   if (result.status === "error") return <ContentBlockError message={result.message} />;
 
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="content-block-page">
       <PageHeader
         eyebrow="ContentBlock"
         title={result.block.title}
@@ -275,7 +275,7 @@ function CreateContentBlockForm() {
 
 function ContentBlockNotFound({ id, storyboards }: { id: string; storyboards: Storyboard[] }) {
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="content-block-not-found">
       <PageHeader eyebrow="ContentBlock" title="ContentBlock not found" description={`No visible ContentBlock was returned for ${id}.`} />
       <div className="two-col">
         <EmptyState title="No detail available" body="The API returned 404 or filtered this block out of the visible catalog." />
@@ -305,7 +305,7 @@ function ContentBlockNotFound({ id, storyboards }: { id: string; storyboards: St
 
 function ContentBlockError({ message }: { message: string }) {
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="content-block-error">
       <PageHeader eyebrow="ContentBlock" title="ContentBlock request failed" description="The live ContentBlock API could not be loaded." />
       <Card className="border-red-200 bg-red-50 p-5 text-red-900">
         <div className="flex items-start gap-3">
@@ -322,7 +322,7 @@ function ContentBlockError({ message }: { message: string }) {
 
 function RestrictedContentBlock() {
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="content-block-restricted">
       <PageHeader eyebrow="ContentBlock" title="Restricted ContentBlock" description="The current user cannot access this ordered composition." />
       <Card className="border-amber-200 bg-amber-50 p-5 text-amber-900">
         <div className="flex items-start gap-3">

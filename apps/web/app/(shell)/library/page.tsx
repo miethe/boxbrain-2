@@ -29,7 +29,7 @@ export default async function LibraryPage() {
   }
 
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="library-page">
       <PageHeader
         eyebrow="Library"
         title="Family-first governed catalog"
@@ -53,7 +53,7 @@ export default async function LibraryPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.5fr)_360px]">
-        <div className="grid content-start gap-4">
+        <div className="grid content-start gap-4" data-testid="library-content-unit-families">
           {result.families.length === 0 ? (
             <EmptyState
               title="No ContentUnit families returned"
@@ -64,7 +64,7 @@ export default async function LibraryPage() {
           )}
         </div>
 
-        <div className="grid content-start gap-4">
+        <div className="grid content-start gap-4" data-testid="library-work-products">
           <Card className="p-4">
             <div className="mb-3 flex items-center gap-2 text-sm font-bold">
               <Grid2X2 size={15} /> WorkProducts
@@ -106,7 +106,8 @@ function FamilyCard({ family }: { family: ContentUnitFamilyCard }) {
   const qualityScore = scoreFromStatus(status);
 
   return (
-    <Card className="overflow-hidden">
+    <div data-testid="library-family-card">
+      <Card className="overflow-hidden">
       <div className="grid gap-4 p-4 md:grid-cols-[190px_minmax(0,1fr)_150px]">
         {previewUri ? <RenderedPreview uri={previewUri} title={family.familyTitle} /> : <SlideThumb title={family.familyTitle} variant="light" />}
         <div className="min-w-0">
@@ -133,13 +134,14 @@ function FamilyCard({ family }: { family: ContentUnitFamilyCard }) {
       <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         Canonical preview {previewUri ? "available" : "pending"} · link source {status?.linkSource ?? "unknown"} · family {family.id}
       </div>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
 function WorkProductLink({ workProduct }: { workProduct: WorkProductFamilyCard }) {
   return (
-    <Link href={`/work-products/${workProduct.id}`} className="rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+    <Link href={`/work-products/${workProduct.id}`} className="rounded-lg border border-slate-200 p-3 hover:bg-slate-50" data-testid="library-work-product-card">
       {workProduct.previewUri ? <RenderedPreview uri={workProduct.previewUri} title={workProduct.title} /> : <SlideThumb title={workProduct.title} variant="dark" />}
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="min-w-0 truncate text-sm font-bold">{workProduct.title}</div>

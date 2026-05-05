@@ -55,7 +55,7 @@ export default async function StoryboardPage({
   if (result.status === "error") return <StoryboardError message={result.message} />;
 
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="storyboard-page">
       <PageHeader
         eyebrow="Storyboard workspace"
         title={result.storyboard.title}
@@ -535,7 +535,7 @@ function CommentList({ comments }: { comments: Comment[] }) {
 
 function StoryboardNotFound({ id, storyboards }: { id: string; storyboards: Storyboard[] }) {
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="storyboard-not-found">
       <PageHeader eyebrow="Storyboard" title="Storyboard not found" description={`No visible Storyboard was returned for ${id}.`} />
       <div className="two-col">
         <Card className="p-4">
@@ -575,7 +575,7 @@ function StoryboardNotFound({ id, storyboards }: { id: string; storyboards: Stor
 
 function StoryboardError({ message }: { message: string }) {
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="storyboard-error">
       <PageHeader eyebrow="Storyboard" title="Storyboard request failed" description="The live Storyboard API could not be loaded." />
       <Card className="border-red-200 bg-red-50 p-5 text-red-900">
         <div className="flex items-start gap-3">
@@ -592,7 +592,7 @@ function StoryboardError({ message }: { message: string }) {
 
 function RestrictedStoryboard() {
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="storyboard-restricted">
       <PageHeader eyebrow="Storyboard" title="Restricted Storyboard" description="The current user cannot access this composition workspace." />
       <Card className="border-amber-200 bg-amber-50 p-5 text-amber-900">
         <div className="flex items-start gap-3">

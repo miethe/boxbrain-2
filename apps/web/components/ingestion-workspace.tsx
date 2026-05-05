@@ -149,7 +149,7 @@ export function IngestionWorkspace() {
   const summary = useMemo(() => summarizeJobs(jobs), [jobs]);
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-5" data-testid="ingestion-workspace">
       <Card className="overflow-hidden">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 p-4">
           <div>
@@ -201,7 +201,7 @@ export function IngestionWorkspace() {
         )}
       </Card>
 
-      <div className="grid-auto">
+      <div className="grid-auto" data-testid="ingestion-status-metrics">
         <MetricCard label="Queued" value={summary.queued} tone="neutral" />
         <MetricCard label="Running" value={summary.running} tone="warn" />
         <MetricCard label="Complete" value={summary.complete} tone="ok" />
@@ -226,7 +226,7 @@ export function IngestionWorkspace() {
             <h2 className="m-0 text-base font-bold">Ingestion jobs</h2>
             <p className="m-0 text-sm text-slate-500">Live job list from `/api/ingestion-jobs`.</p>
           </div>
-          <div className="grid gap-2 p-3">
+          <div className="grid gap-2 p-3" data-testid="ingestion-job-list">
             {isLoadingJobs ? (
               <LoadingRows />
             ) : jobs.length === 0 ? (

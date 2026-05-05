@@ -17,8 +17,12 @@ export function Button({
   );
 }
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={clsx("card", className)}>{children}</section>;
+export function Card({ children, className, ...props }: React.HTMLAttributes<HTMLElement> & { children: ReactNode }) {
+  return (
+    <section className={clsx("card", className)} {...props}>
+      {children}
+    </section>
+  );
 }
 
 export function PageHeader({

@@ -14,7 +14,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { favoriteItems, navItems, secondaryNav } from "@/features/demo/data";
+import { favoriteItems, navItems, secondaryNav, type NavItem } from "@/features/demo/data";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -42,9 +42,9 @@ function Sidebar() {
         <ChevronDown size={12} />
       </button>
 
-      <NavGroup items={navItems} pathname={pathname} />
+      <NavGroup items={navItems} pathname={pathname} testIdPrefix="nav" />
       <div className="px-4 pt-4 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--sidebar-ink-3)]">Operations</div>
-      <NavGroup items={secondaryNav} pathname={pathname} />
+      <NavGroup items={secondaryNav} pathname={pathname} testIdPrefix="operations-nav" />
 
       <div className="px-4 pt-4 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--sidebar-ink-3)]">Favorites</div>
       <nav className="flex flex-col gap-1 px-2 py-2">
@@ -74,7 +74,7 @@ function Sidebar() {
   );
 }
 
-function NavGroup({ items, pathname }: { items: typeof navItems; pathname: string }) {
+function NavGroup({ items, pathname, testIdPrefix }: { items: NavItem[]; pathname: string; testIdPrefix: string }) {
   return (
     <nav className="flex flex-col gap-1 px-2 py-3">
       {items.map(({ href, label, icon: Icon, count, preview }) => {
@@ -83,6 +83,7 @@ function NavGroup({ items, pathname }: { items: typeof navItems; pathname: strin
           <Link
             href={href}
             key={href}
+            data-testid={`${testIdPrefix}-${href === "/" ? "home" : href.slice(1).replaceAll("/", "-")}`}
             className={clsx(
               "flex min-h-9 items-center gap-2 rounded-md px-3 text-[13px] transition",
               isActive ? "bg-[var(--sidebar-active)] text-white" : "text-[var(--sidebar-ink-2)] hover:bg-white/5 hover:text-white"
