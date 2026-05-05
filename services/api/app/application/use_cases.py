@@ -781,9 +781,11 @@ class BoxBrainUseCases:
             updated_at=now_utc(),
         )
         self.repository.storyboards[storyboard.id] = storyboard
+        self._save_storyboard(storyboard)
         return p.storyboard_model(storyboard)
 
     def list_storyboards(self, actor: Actor) -> list[s.Storyboard]:
+        self._refresh_repository()
         return [
             p.storyboard_model(storyboard)
             for storyboard in sorted(self.repository.storyboards.values(), key=lambda item: item.title)
@@ -791,6 +793,7 @@ class BoxBrainUseCases:
         ]
 
     def get_storyboard(self, storyboard_id: UUID, actor: Actor) -> s.StoryboardDetail:
+        self._refresh_repository()
         storyboard = self._get_storyboard(storyboard_id)
         if not self._can_access_storyboard(storyboard, actor):
             raise NotFoundError("Storyboard not found.")
@@ -808,6 +811,7 @@ class BoxBrainUseCases:
         actor: Actor,
     ) -> s.StoryboardSnapshot:
         require_role(actor, "contributor")
+        self._refresh_repository()
         storyboard = self._get_storyboard(storyboard_id)
         if not self._can_access_storyboard(storyboard, actor):
             raise NotFoundError("Storyboard not found.")
@@ -815,6 +819,7 @@ class BoxBrainUseCases:
         return p.storyboard_snapshot_model(snapshot)
 
     def list_storyboard_snapshots(self, storyboard_id: UUID, actor: Actor) -> list[s.StoryboardSnapshot]:
+        self._refresh_repository()
         storyboard = self._get_storyboard(storyboard_id)
         if not self._can_access_storyboard(storyboard, actor):
             raise NotFoundError("Storyboard not found.")
@@ -830,6 +835,7 @@ class BoxBrainUseCases:
         ]
 
     def get_storyboard_snapshot(self, snapshot_id: UUID, actor: Actor) -> s.StoryboardSnapshot:
+        self._refresh_repository()
         snapshot = self.repository.storyboard_snapshots.get(snapshot_id)
         if snapshot is None or not self._can_access_storyboard_snapshot(snapshot, actor):
             raise NotFoundError("Storyboard snapshot not found.")
@@ -842,6 +848,7 @@ class BoxBrainUseCases:
         actor: Actor,
     ) -> s.StoryboardSection:
         require_role(actor, "contributor")
+        self._refresh_repository()
         storyboard = self._get_storyboard(storyboard_id)
         if not self._can_access_storyboard(storyboard, actor):
             raise NotFoundError("Storyboard not found.")
@@ -858,6 +865,7 @@ class BoxBrainUseCases:
         storyboard.draft_sections.append(section)
         storyboard.draft_sections.sort(key=lambda item: item.order_index)
         storyboard.updated_at = now_utc()
+        self._save_storyboard(storyboard)
         return p.storyboard_section_model(section)
 
     def update_storyboard_section(
@@ -867,6 +875,7 @@ class BoxBrainUseCases:
         actor: Actor,
     ) -> s.StoryboardSection:
         require_role(actor, "contributor")
+        self._refresh_repository()
         section = self._get_draft_section(section_id)
         parent = self._get_storyboard(section.storyboard_id)
         if not self._can_access_storyboard(parent, actor):
@@ -876,6 +885,7 @@ class BoxBrainUseCases:
         if request.orderIndex is not None:
             section.order_index = request.orderIndex
         self._touch_storyboard(section.storyboard_id)
+        self._save_storyboard(parent)
         return p.storyboard_section_model(section)
 
     def create_storyboard_slot(
@@ -885,6 +895,7 @@ class BoxBrainUseCases:
         actor: Actor,
     ) -> s.StoryboardSlot:
         require_role(actor, "contributor")
+        self._refresh_repository()
         section = self._get_draft_section(section_id)
         parent = self._get_storyboard(section.storyboard_id)
         if not self._can_access_storyboard(parent, actor):
@@ -911,6 +922,7 @@ class BoxBrainUseCases:
         section.slots.append(slot)
         section.slots.sort(key=lambda item: item.order_index)
         self._touch_storyboard(section.storyboard_id)
+        self._save_storyboard(parent)
         return p.storyboard_slot_model(slot)
 
     def update_storyboard_slot(
@@ -920,6 +932,7 @@ class BoxBrainUseCases:
         actor: Actor,
     ) -> s.StoryboardSlot:
         require_role(actor, "contributor")
+        self._refresh_repository()
         slot, section = self._get_draft_slot(slot_id)
         parent = self._get_storyboard(section.storyboard_id)
         if not self._can_access_storyboard(parent, actor):
@@ -943,9 +956,11 @@ class BoxBrainUseCases:
             slot.is_required = request.isRequired
         section.slots.sort(key=lambda item: item.order_index)
         self._touch_storyboard(section.storyboard_id)
+        self._save_storyboard(parent)
         return p.storyboard_slot_model(slot)
 
     def analyze_storyboard(self, storyboard_id: UUID, actor: Actor) -> s.StoryboardDiagnostics:
+        self._refresh_repository()
         storyboard = self._get_storyboard(storyboard_id)
         if not self._can_access_storyboard(storyboard, actor):
             raise NotFoundError("Storyboard not found.")
@@ -2619,6 +2634,12 @@ class BoxBrainUseCases:
         save = getattr(self.repository, "save_content_block", None)
         if callable(save):
             save(block)
+
+    def _save_storyboard(self, storyboard: Storyboard) -> None:
+        self.repository.storyboards[storyboard.id] = storyboard
+        save = getattr(self.repository, "save_storyboard", None)
+        if callable(save):
+            save(storyboard)
 
     def _save_embedding(self, embedding: EmbeddingRecord) -> None:
         self.repository.embeddings[embedding.id] = embedding

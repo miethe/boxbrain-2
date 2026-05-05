@@ -37,6 +37,10 @@ from app.domain.models import (
     ReviewItem,
     SimilarityEdge,
     StoredObject,
+    Storyboard,
+    StoryboardSection,
+    StoryboardSlot,
+    StoryboardSnapshot,
     WorkProductFamily,
     WorkProductVersion,
     now_utc,
@@ -58,6 +62,10 @@ from app.infrastructure.db_models import (
     ReviewItemRow,
     SimilarityEdgeRow,
     StoredObjectRow,
+    StoryboardRow,
+    StoryboardSectionRow,
+    StoryboardSlotRow,
+    StoryboardSnapshotRow,
     WorkProductFamilyRow,
     WorkProductVariantRow,
     WorkProductVersionRow,
@@ -466,6 +474,81 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                     if family is not None
                 }
             )
+            storyboard_snapshot_rows = list(session.scalars(select(StoryboardSnapshotRow)))
+            storyboard_snapshots_by_id = {row.id: row for row in storyboard_snapshot_rows}
+            slots_by_section: dict[UUID, list[StoryboardSlot]] = {}
+            for slot_row in session.scalars(select(StoryboardSlotRow)):
+                slots_by_section.setdefault(slot_row.section_id, []).append(
+                    StoryboardSlot(
+                        id=slot_row.id,
+                        section_id=slot_row.section_id,
+                        slot_type=slot_row.slot_type,
+                        selected_object_type=slot_row.selected_object_type,
+                        selected_object_id=slot_row.selected_object_id,
+                        order_index=slot_row.order_index,
+                        purpose=slot_row.purpose,
+                        is_required=slot_row.is_required,
+                        ai_recommended=slot_row.ai_recommended,
+                    )
+                )
+            draft_sections_by_storyboard: dict[UUID, list[StoryboardSection]] = {}
+            snapshot_sections_by_snapshot: dict[UUID, list[StoryboardSection]] = {}
+            for section_row in session.scalars(select(StoryboardSectionRow)):
+                section_storyboard_id = section_row.storyboard_id
+                if section_storyboard_id is None and section_row.snapshot_id is not None:
+                    snapshot_storyboard = storyboard_snapshots_by_id.get(section_row.snapshot_id)
+                    section_storyboard_id = snapshot_storyboard.storyboard_id if snapshot_storyboard else None
+                if section_storyboard_id is None:
+                    continue
+                section = StoryboardSection(
+                    id=section_row.id,
+                    storyboard_id=section_storyboard_id,
+                    title=section_row.title,
+                    summary=section_row.summary,
+                    order_index=section_row.order_index,
+                    slots=sorted(
+                        slots_by_section.get(section_row.id, []),
+                        key=lambda item: item.order_index,
+                    ),
+                )
+                if section_row.row_kind == "draft":
+                    draft_sections_by_storyboard.setdefault(section_storyboard_id, []).append(section)
+                elif section_row.snapshot_id is not None:
+                    snapshot_sections_by_snapshot.setdefault(section_row.snapshot_id, []).append(section)
+            self.storyboard_snapshots = {
+                row.id: StoryboardSnapshot(
+                    id=row.id,
+                    storyboard_id=row.storyboard_id,
+                    version_label=row.version_label,
+                    approval_state=row.approval_state,
+                    narrative_score=float(row.narrative_score)
+                    if row.narrative_score is not None
+                    else None,
+                    sections=tuple(
+                        sorted(
+                            snapshot_sections_by_snapshot.get(row.id, []),
+                            key=lambda item: item.order_index,
+                        )
+                    ),
+                    created_at=row.created_at,
+                )
+                for row in storyboard_snapshot_rows
+            }
+            self.storyboards = {
+                row.id: Storyboard(
+                    id=row.id,
+                    mode=row.mode,
+                    title=row.title,
+                    draft_sections=sorted(
+                        draft_sections_by_storyboard.get(row.id, []),
+                        key=lambda item: item.order_index,
+                    ),
+                    current_snapshot_id=row.current_snapshot_id,
+                    created_at=row.created_at,
+                    updated_at=row.updated_at,
+                )
+                for row in session.scalars(select(StoryboardRow))
+            }
             self.work_product_families.update(
                 {
                     row.id: WorkProductFamily(
@@ -955,6 +1038,152 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                         role=member.role,
                         is_required=member.is_required,
                         notes=member.notes,
+                    )
+                )
+
+    def save_storyboard(self, storyboard: Storyboard) -> None:
+        self.storyboards[storyboard.id] = storyboard
+        with self._session() as session:
+            session.merge(
+                StoryboardRow(
+                    id=storyboard.id,
+                    mode=storyboard.mode,
+                    title=storyboard.title,
+                    current_snapshot_id=storyboard.current_snapshot_id,
+                    created_at=storyboard.created_at,
+                    updated_at=storyboard.updated_at,
+                )
+            )
+            session.execute(
+                delete(StoryboardSectionRow).where(
+                    StoryboardSectionRow.storyboard_id == storyboard.id,
+                    StoryboardSectionRow.row_kind == "draft",
+                )
+            )
+            self._merge_storyboard_sections(
+                session,
+                storyboard.draft_sections,
+                storyboard_id=storyboard.id,
+                snapshot_id=None,
+                row_kind="draft",
+            )
+
+    def freeze_storyboard_snapshot(
+        self,
+        storyboard: Storyboard,
+        version_label: str | None = None,
+    ) -> StoryboardSnapshot:
+        snapshot_sections = self._copy_sections_for_snapshot(storyboard.draft_sections)
+        snapshot = StoryboardSnapshot(
+            id=uuid4(),
+            storyboard_id=storyboard.id,
+            version_label=version_label,
+            approval_state="draft",
+            narrative_score=None,
+            sections=snapshot_sections,
+            created_at=now_utc(),
+        )
+        storyboard.current_snapshot_id = snapshot.id
+        storyboard.updated_at = now_utc()
+        self.storyboard_snapshots[snapshot.id] = snapshot
+        self.storyboards[storyboard.id] = storyboard
+        with self._session() as session:
+            session.merge(
+                StoryboardSnapshotRow(
+                    id=snapshot.id,
+                    storyboard_id=storyboard.id,
+                    version_label=version_label,
+                    approval_state=snapshot.approval_state,
+                    narrative_score=snapshot.narrative_score,
+                    created_at=snapshot.created_at,
+                )
+            )
+            self._merge_storyboard_sections(
+                session,
+                snapshot.sections,
+                storyboard_id=storyboard.id,
+                snapshot_id=snapshot.id,
+                row_kind="snapshot",
+            )
+            session.merge(
+                StoryboardRow(
+                    id=storyboard.id,
+                    mode=storyboard.mode,
+                    title=storyboard.title,
+                    current_snapshot_id=storyboard.current_snapshot_id,
+                    created_at=storyboard.created_at,
+                    updated_at=storyboard.updated_at,
+                )
+            )
+        return snapshot
+
+    def _copy_sections_for_snapshot(
+        self,
+        draft_sections: list[StoryboardSection],
+    ) -> tuple[StoryboardSection, ...]:
+        copied_sections: list[StoryboardSection] = []
+        for draft_section in sorted(draft_sections, key=lambda item: item.order_index):
+            section_id = uuid4()
+            copied_slots = [
+                StoryboardSlot(
+                    id=uuid4(),
+                    section_id=section_id,
+                    slot_type=slot.slot_type,
+                    selected_object_type=slot.selected_object_type,
+                    selected_object_id=slot.selected_object_id,
+                    order_index=slot.order_index,
+                    purpose=slot.purpose,
+                    is_required=slot.is_required,
+                    ai_recommended=slot.ai_recommended,
+                )
+                for slot in sorted(draft_section.slots, key=lambda item: item.order_index)
+            ]
+            copied_sections.append(
+                StoryboardSection(
+                    id=section_id,
+                    storyboard_id=draft_section.storyboard_id,
+                    title=draft_section.title,
+                    summary=draft_section.summary,
+                    order_index=draft_section.order_index,
+                    slots=copied_slots,
+                )
+            )
+        return tuple(copied_sections)
+
+    def _merge_storyboard_sections(
+        self,
+        session: Session,
+        sections: list[StoryboardSection] | tuple[StoryboardSection, ...],
+        *,
+        storyboard_id: UUID,
+        snapshot_id: UUID | None,
+        row_kind: str,
+    ) -> None:
+        for section in sorted(sections, key=lambda item: item.order_index):
+            session.merge(
+                StoryboardSectionRow(
+                    id=section.id,
+                    storyboard_id=storyboard_id,
+                    snapshot_id=snapshot_id,
+                    row_kind=row_kind,
+                    title=section.title,
+                    summary=section.summary,
+                    order_index=section.order_index,
+                )
+            )
+            for slot in sorted(section.slots, key=lambda item: item.order_index):
+                session.merge(
+                    StoryboardSlotRow(
+                        id=slot.id,
+                        section_id=section.id,
+                        slot_type=slot.slot_type,
+                        selected_object_type=slot.selected_object_type,
+                        selected_object_id=slot.selected_object_id,
+                        order_index=slot.order_index,
+                        purpose=slot.purpose,
+                        is_required=slot.is_required,
+                        ai_recommended=slot.ai_recommended,
+                        metadata_={},
                     )
                 )
 

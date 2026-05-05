@@ -464,7 +464,7 @@ paths:
                 $ref: '#/components/schemas/Storyboard'
   /api/storyboards/{storyboard_id}:
     get:
-      summary: Get storyboard with current snapshot
+      summary: Get storyboard draft and current snapshot
       operationId: getStoryboard
       parameters:
         - $ref: '#/components/parameters/storyboardId'
@@ -526,7 +526,7 @@ paths:
                 $ref: '#/components/schemas/StoryboardSnapshot'
   /api/storyboards/{storyboard_id}/sections:
     post:
-      summary: Add section to current storyboard snapshot
+      summary: Add section to storyboard draft
       operationId: createStoryboardSection
       parameters:
         - $ref: '#/components/parameters/storyboardId'
@@ -1334,6 +1334,7 @@ components:
         createdAt: { type: string, format: date-time }
     StoryboardSection:
       type: object
+      description: Draft sections have a null snapshotId; snapshot sections are immutable frozen copies.
       properties:
         id: { type: string, format: uuid }
         snapshotId: { type: string, format: uuid, nullable: true }

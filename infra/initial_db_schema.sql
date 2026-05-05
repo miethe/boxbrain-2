@@ -304,15 +304,36 @@ ALTER TABLE storyboards
 
 CREATE TABLE IF NOT EXISTS storyboard_sections (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  snapshot_id UUID NOT NULL REFERENCES storyboard_snapshots(id) ON DELETE CASCADE,
+  snapshot_id UUID REFERENCES storyboard_snapshots(id) ON DELETE CASCADE,
+  storyboard_id UUID NOT NULL REFERENCES storyboards(id) ON DELETE CASCADE,
+  row_kind TEXT NOT NULL DEFAULT 'snapshot', -- draft, snapshot
   title TEXT NOT NULL,
   summary TEXT,
   order_index INTEGER NOT NULL,
   section_type TEXT,
   estimated_read_time_minutes NUMERIC(5,2),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (snapshot_id, order_index)
+  CONSTRAINT storyboard_sections_scope_check CHECK (
+    (
+      row_kind = 'draft'
+      AND storyboard_id IS NOT NULL
+      AND snapshot_id IS NULL
+    )
+    OR (
+      row_kind = 'snapshot'
+      AND storyboard_id IS NOT NULL
+      AND snapshot_id IS NOT NULL
+    )
+  )
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_storyboard_sections_draft_order
+  ON storyboard_sections (storyboard_id, order_index)
+  WHERE row_kind = 'draft';
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_storyboard_sections_snapshot_order
+  ON storyboard_sections (snapshot_id, order_index)
+  WHERE row_kind = 'snapshot';
 
 CREATE TABLE IF NOT EXISTS storyboard_slots (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

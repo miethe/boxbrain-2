@@ -258,6 +258,66 @@ class ContentBlockMemberRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class StoryboardRow(Base):
+    __tablename__ = "storyboards"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    mode: Mapped[str] = mapped_column(Text, nullable=False, default="work_product")
+    parent_type: Mapped[str | None] = mapped_column(Text)
+    parent_id: Mapped[UUID | None]
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    current_snapshot_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("storyboard_snapshots.id", deferrable=True, initially="DEFERRED")
+    )
+    created_by: Mapped[UUID | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StoryboardSnapshotRow(Base):
+    __tablename__ = "storyboard_snapshots"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    storyboard_id: Mapped[UUID] = mapped_column(ForeignKey("storyboards.id"), nullable=False)
+    version_label: Mapped[str | None] = mapped_column(Text)
+    derived_from_snapshot_id: Mapped[UUID | None] = mapped_column(ForeignKey("storyboard_snapshots.id"))
+    approval_state: Mapped[str] = mapped_column(ApprovalStateEnum, nullable=False, default="draft")
+    narrative_score: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    created_by: Mapped[UUID | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StoryboardSectionRow(Base):
+    __tablename__ = "storyboard_sections"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    storyboard_id: Mapped[UUID | None] = mapped_column(ForeignKey("storyboards.id"))
+    snapshot_id: Mapped[UUID | None] = mapped_column(ForeignKey("storyboard_snapshots.id"))
+    row_kind: Mapped[str] = mapped_column(Text, nullable=False, default="snapshot")
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    order_index: Mapped[int] = mapped_column(nullable=False)
+    section_type: Mapped[str | None] = mapped_column(Text)
+    estimated_read_time_minutes: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StoryboardSlotRow(Base):
+    __tablename__ = "storyboard_slots"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    section_id: Mapped[UUID] = mapped_column(ForeignKey("storyboard_sections.id"), nullable=False)
+    slot_type: Mapped[str] = mapped_column(Text, nullable=False, default="gap")
+    selected_object_type: Mapped[str | None] = mapped_column(Text)
+    selected_object_id: Mapped[UUID | None]
+    order_index: Mapped[int] = mapped_column(nullable=False)
+    purpose: Mapped[str | None] = mapped_column(Text)
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ai_recommended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    metadata_: Mapped[JsonDict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class IngestionJobRow(Base):
     __tablename__ = "ingestion_jobs"
 
