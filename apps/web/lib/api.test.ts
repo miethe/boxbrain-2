@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boxbrainApi, normalizeIngestionJobsResponse, type IngestionJob } from "./api";
+import { boxbrainApi, normalizeIngestionJobsResponse, normalizeReviewAction, normalizeReviewItemsResponse, type IngestionJob, type ReviewItem } from "./api";
 
 const queuedJob: IngestionJob = {
   id: "job-1",
@@ -319,5 +319,174 @@ describe("content unit graph api", () => {
         body: JSON.stringify({ query: "cloud roi", context: { savedSearch: false } })
       })
     );
+  });
+});
+
+describe("review api", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const reviewItem: ReviewItem = {
+    id: "review-1",
+    queueType: "variant_candidate",
+    status: "open",
+    confidence: 0.86,
+    rationale: "AI detected shared ROI structure.",
+    suggestedAction: "mark_variant",
+    targetRefs: [{ objectType: "content_unit_version", id: "version-1" }],
+    source: "ai",
+    createdAt: "2026-05-04T12:00:00.000Z"
+  };
+
+  it("normalizes review item envelopes and suggested actions", () => {
+    expect(normalizeReviewItemsResponse([reviewItem])).toEqual([reviewItem]);
+    expect(normalizeReviewItemsResponse({ items: [reviewItem] })).toEqual([reviewItem]);
+    expect(normalizeReviewItemsResponse({ items: [] })).toEqual([]);
+    expect(normalizeReviewAction("mark_variant")).toBe("mark-variant");
+    expect(normalizeReviewAction("request-changes")).toBe("request-changes");
+    expect(normalizeReviewAction("deprecate")).toBe("accept");
+    expect(normalizeReviewAction("unknown")).toBe("accept");
+  });
+
+  it("fetches queues, items, and detail from typed review endpoints", async () => {
+    const queues = [{ queueType: "variant_candidate", openCount: 1, oldestCreatedAt: "2026-05-04T12:00:00.000Z" }];
+    const detail = {
+      ...reviewItem,
+      compareObjects: [{ title: "Executive ROI", versionId: "version-1" }],
+      auditPreview: { action: "review_mark_variant", requiresRole: "reviewer" }
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => queues })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [reviewItem], nextCursor: null }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => detail });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.listReviewQueues()).resolves.toEqual(queues);
+    await expect(boxbrainApi.listReviewItems({ queueType: "variant_candidate", status: "open", limit: 25 })).resolves.toEqual({
+      items: [reviewItem],
+      nextCursor: null
+    });
+    await expect(boxbrainApi.getReviewItem("review-1")).resolves.toEqual(detail);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/reviews/queues",
+      "http://localhost:8000/api/reviews/items?queueType=variant_candidate&status=open&limit=25",
+      "http://localhost:8000/api/reviews/items/review-1"
+    ]);
+  });
+
+  it("posts review actions with reviewer reasons", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ reviewItemId: "review-1", auditEventId: "audit-1", status: "accepted" })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.runReviewAction("review-1", "mark-variant", { reason: "Looks like a reusable variant." })).resolves.toEqual({
+      reviewItemId: "review-1",
+      auditEventId: "audit-1",
+      status: "accepted"
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/reviews/items/review-1/mark-variant",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ reason: "Looks like a reusable variant." })
+      })
+    );
+    expect(new Headers((fetchMock.mock.calls[0][1] as RequestInit).headers).get("content-type")).toBe("application/json");
+  });
+
+  it("uses the compatible generation route when available", async () => {
+    const generated = [
+      {
+        id: "candidate-1",
+        queueType: "similarity_candidate",
+        title: "Similarity Candidate",
+        confidence: 0.8,
+        targetRefs: [],
+        compareObjects: [],
+        suggestedAction: "accept",
+        source: "ai",
+        createdAt: "2026-05-04T12:00:00.000Z",
+        persisted: true
+      }
+    ];
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ candidates: generated })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.generateReviewCandidates({ queueType: "similarity_candidate", limit: 4 })).resolves.toEqual(generated);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/reviews/candidates/generate",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ queueType: "similarity_candidate", limit: 4 })
+      })
+    );
+  });
+
+  it("falls back to a search-based candidate scan when generation is not implemented", async () => {
+    const searchResponse = {
+      query: "similar",
+      interpretedIntent: "review_candidates",
+      items: [
+        {
+          objectType: "content_unit_version",
+          objectId: "version-1",
+          resultGrain: "version",
+          title: "Executive ROI",
+          score: 0.84,
+          previewUri: "/seed/roi.png",
+          statusChips: { approvalState: "approved", freshnessState: "fresh" }
+        },
+        {
+          objectType: "content_unit_version",
+          objectId: "version-2",
+          resultGrain: "version",
+          title: "Board ROI",
+          score: 0.81,
+          statusChips: { approvalState: "review", freshnessState: "aging" }
+        },
+        {
+          objectType: "content_unit_version",
+          objectId: "version-3",
+          resultGrain: "version",
+          title: "Restricted ROI",
+          score: 0.9,
+          statusChips: { approvalState: "approved", freshnessState: "fresh", isRestricted: true }
+        }
+      ]
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({ detail: "Not found" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => searchResponse });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const candidates = await boxbrainApi.generateReviewCandidates({ queueType: "similarity_candidate", query: "similar", limit: 6 });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      queueType: "similarity_candidate",
+      source: "search_helper",
+      persisted: false,
+      suggestedAction: "mark-similar"
+    });
+    expect(candidates[0].targetRefs.map((target) => target.id)).toEqual(["version-1", "version-2"]);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["http://localhost:8000/api/reviews/candidates/generate", "http://localhost:8000/api/search"]);
+    expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)).toMatchObject({
+      query: "similar",
+      profile: "similarity_review",
+      objectTypes: ["content_unit", "work_product"],
+      resultMode: "versions",
+      limit: 6
+    });
   });
 });

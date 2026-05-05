@@ -62,6 +62,15 @@ CommentKindEnum = ENUM(
     name="comment_kind",
     create_type=False,
 )
+ReviewStatusEnum = ENUM(
+    "open",
+    "accepted",
+    "rejected",
+    "snoozed",
+    "resolved",
+    name="review_status",
+    create_type=False,
+)
 
 
 class StoredObjectRow(Base):
@@ -248,6 +257,41 @@ class NoteRow(Base):
     is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SimilarityEdgeRow(Base):
+    __tablename__ = "similarity_edges"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    source_object_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_object_id: Mapped[UUID] = mapped_column(nullable=False)
+    target_object_type: Mapped[str] = mapped_column(Text, nullable=False)
+    target_object_id: Mapped[UUID] = mapped_column(nullable=False)
+    similarity_type: Mapped[str] = mapped_column(Text, nullable=False, default="hybrid")
+    score: Mapped[float] = mapped_column(Numeric(6, 5), nullable=False)
+    created_by: Mapped[str] = mapped_column(Text, nullable=False, default="ai")
+    explanation: Mapped[str | None] = mapped_column(Text)
+    metadata_: Mapped[JsonDict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReviewItemRow(Base):
+    __tablename__ = "review_items"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    queue_type: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(ReviewStatusEnum, nullable=False, default="open")
+    target_refs: Mapped[JsonList] = mapped_column(JSONB, default=list, nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Numeric(5, 4))
+    rationale: Mapped[str | None] = mapped_column(Text)
+    suggested_action: Mapped[str | None] = mapped_column(Text)
+    assigned_to: Mapped[UUID | None]
+    created_by: Mapped[str] = mapped_column(Text, nullable=False, default="system")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_by: Mapped[UUID | None]
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_notes: Mapped[str | None] = mapped_column(Text)
+    metadata_: Mapped[JsonDict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
 
 
 class EmbeddingRow(Base):

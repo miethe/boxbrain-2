@@ -735,6 +735,19 @@ paths:
                   nextCursor:
                     type: string
                     nullable: true
+  /api/reviews/candidates/generate:
+    post:
+      summary: Generate deterministic review candidates
+      operationId: generateReviewCandidates
+      responses:
+        '200':
+          description: Newly generated review candidates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReviewItem'
   /api/reviews/items/{review_item_id}:
     get:
       summary: Get review item detail
@@ -762,8 +775,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/ReviewActionResponse'
   /api/reviews/items/{review_item_id}/mark-similar:
     post:
       summary: Accept review item as similarity edge
@@ -778,8 +790,22 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/ReviewActionResponse'
+  /api/reviews/items/{review_item_id}/accept:
+    post:
+      summary: Accept review item using its suggested action
+      operationId: acceptReviewItem
+      parameters:
+        - $ref: '#/components/parameters/reviewItemId'
+      requestBody:
+        $ref: '#/components/requestBodies/ReviewAction'
+      responses:
+        '200':
+          description: Review accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewActionResponse'
   /api/reviews/items/{review_item_id}/merge-versions:
     post:
       summary: Merge review item versions
@@ -794,8 +820,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/ReviewActionResponse'
   /api/reviews/items/{review_item_id}/set-canonical:
     post:
       summary: Set canonical variant from review item
@@ -810,8 +835,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/ReviewActionResponse'
   /api/reviews/items/{review_item_id}/approve:
     post:
       summary: Approve review item
@@ -826,8 +850,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/ReviewActionResponse'
   /api/reviews/items/{review_item_id}/reject:
     post:
       summary: Reject review item
@@ -842,8 +865,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/ReviewActionResponse'
   /api/reviews/items/{review_item_id}/request-changes:
     post:
       summary: Request changes for review item
@@ -858,8 +880,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/ReviewActionResponse'
   /api/admin/health:
     get:
       summary: Get admin health summary
@@ -1434,6 +1455,18 @@ components:
         reason: { type: string, nullable: true }
         targetVariantId: { type: string, format: uuid, nullable: true }
         targetVersionId: { type: string, format: uuid, nullable: true }
+    ReviewActionResponse:
+      type: object
+      properties:
+        reviewItemId: { type: string, format: uuid }
+        auditEventId: { type: string, format: uuid }
+        status: { type: string, enum: [open, accepted, rejected, snoozed, resolved] }
+        action: { type: string }
+        queueType: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true
+      required: [reviewItemId, auditEventId, status, action, queueType, metadata]
     ReviewQueueSummary:
       type: object
       properties:

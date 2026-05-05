@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from typing import Any, cast
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from app.application import presenters as p
 from app.application.pptx_processor import extract_pptx_slides
@@ -1082,7 +1082,39 @@ class BoxBrainUseCases:
         ]
         return [p.note_model(note) for note in sorted(notes, key=lambda item: item.created_at)]
 
-    def review_queues(self) -> list[s.ReviewQueueSummary]:
+    def generate_review_candidates(self, actor: Actor) -> list[s.ReviewItem]:
+        require_review_actor(actor)
+        self._refresh_repository()
+        created: list[ReviewItem] = []
+        for item in self._deterministic_review_candidates():
+            if self._review_candidate_exists(item):
+                continue
+            self.repository.review_items[item.id] = item
+            self._save_review_item(item)
+            created.append(item)
+            self.repository.record_audit(
+                action="review_candidate_generated",
+                actor_id=actor.user_id,
+                target_type="review_item",
+                target_id=item.id,
+                prior_state={},
+                new_state={
+                    "queueType": item.queue_type,
+                    "status": item.status,
+                    "suggestedAction": item.suggested_action,
+                },
+                reason="Deterministic review candidate generation",
+                metadata={
+                    "source": item.source,
+                    "targetRefs": item.target_refs,
+                    "confidence": item.confidence,
+                },
+            )
+        return [p.review_item_model(item) for item in sorted(created, key=lambda item: item.created_at)]
+
+    def review_queues(self, actor: Actor) -> list[s.ReviewQueueSummary]:
+        require_review_actor(actor)
+        self._refresh_repository()
         grouped: dict[str, list[ReviewItem]] = defaultdict(list)
         for item in self.repository.review_items.values():
             if item.status == "open":
@@ -1098,9 +1130,12 @@ class BoxBrainUseCases:
 
     def list_review_items(
         self,
+        actor: Actor,
         queue_type: str | None = None,
         status: str = "open",
     ) -> list[s.ReviewItem]:
+        require_review_actor(actor)
+        self._refresh_repository()
         items = list(self.repository.review_items.values())
         if queue_type:
             items = [item for item in items if item.queue_type == queue_type]
@@ -1108,7 +1143,9 @@ class BoxBrainUseCases:
             items = [item for item in items if item.status == status]
         return [p.review_item_model(item) for item in sorted(items, key=lambda item: item.created_at)]
 
-    def get_review_item(self, review_item_id: UUID) -> s.ReviewItemDetail:
+    def get_review_item(self, review_item_id: UUID, actor: Actor) -> s.ReviewItemDetail:
+        require_review_actor(actor)
+        self._refresh_repository()
         return p.review_item_detail_model(self._get_review_item(review_item_id))
 
     def review_action(
@@ -1117,15 +1154,17 @@ class BoxBrainUseCases:
         action: str,
         request: s.ReviewActionRequest,
         actor: Actor,
-    ) -> dict[str, Any]:
+    ) -> s.ReviewActionResponse:
         require_review_actor(actor)
+        self._refresh_repository()
         item = self._get_review_item(review_item_id)
         if item.status != "open":
             raise ConflictError("Review item is not open.")
         prior = {"status": item.status}
         metadata: dict[str, Any] = {"queueType": item.queue_type}
+        resolved_action = self._resolve_review_action(item, action)
 
-        if action == "mark-similar":
+        if resolved_action == "mark-similar":
             left, right = self._review_target_version_ids(item)
             edge = SimilarityEdge(
                 id=uuid4(),
@@ -1137,34 +1176,62 @@ class BoxBrainUseCases:
                 created_at=now_utc(),
             )
             self.repository.similarity_edges[edge.id] = edge
+            self._save_similarity_edge(edge)
             item.status = "accepted"
             metadata["similarityEdgeId"] = str(edge.id)
-        elif action == "mark-variant":
+        elif resolved_action == "mark-variant":
+            left, right = self._review_target_version_ids(item)
+            moved_variant = self._link_versions_as_variants(left, right, actor, request.reason, item.confidence)
             item.status = "accepted"
             metadata["relationship"] = "variant_candidate_accepted"
-        elif action == "merge-versions":
+            metadata["variantId"] = str(moved_variant.id)
+        elif resolved_action == "merge-versions":
+            left, right = self._review_target_version_ids(item)
+            self._merge_duplicate_versions(left, right, actor, request.reason)
             item.status = "accepted"
             metadata["relationship"] = "version_merge_queued"
-        elif action == "set-canonical":
+            metadata["survivingVersionId"] = str(left)
+            metadata["deprecatedVersionId"] = str(right)
+        elif resolved_action == "set-canonical":
             variant_id = request.targetVariantId or self._variant_id_from_review(item)
             self._set_canonical_variant_unchecked(variant_id, actor, request.reason)
             item.status = "accepted"
             metadata["canonicalVariantId"] = str(variant_id)
-        elif action == "approve":
-            version_id = request.targetVersionId or self._review_target_version_ids(item)[0]
+        elif resolved_action == "approve":
+            version_id = request.targetVersionId or self._first_review_version_id(item)
+            if version_id is None:
+                raise ConflictError("Review action requires a ContentUnit version target.")
             self.update_content_unit_approval(version_id, "approved", actor, request.reason)
             item.status = "accepted"
             metadata["approvedVersionId"] = str(version_id)
-        elif action == "reject":
+        elif resolved_action == "deprecate":
+            version_id = request.targetVersionId or self._first_review_version_id(item)
+            if version_id is None:
+                raise ConflictError("Review action requires a ContentUnit version target.")
+            self.update_content_unit_approval(version_id, "deprecated", actor, request.reason)
+            item.status = "accepted"
+            metadata["deprecatedVersionId"] = str(version_id)
+        elif resolved_action == "reject":
+            if item.queue_type == "approval":
+                version_id = request.targetVersionId or self._first_review_version_id(item)
+                if version_id is None:
+                    raise ConflictError("Review action requires a ContentUnit version target.")
+                self.update_content_unit_approval(version_id, "deprecated", actor, request.reason)
+                metadata["rejectedVersionId"] = str(version_id)
             item.status = "rejected"
-        elif action == "request-changes":
+        elif resolved_action == "request-changes":
+            version_id = self._first_review_version_id(item)
+            if version_id is not None:
+                self.update_content_unit_approval(version_id, "review", actor, request.reason)
+                metadata["changesRequestedVersionId"] = str(version_id)
             item.status = "resolved"
         else:
             raise NotFoundError("Review action not found.")
 
         item.resolved_at = now_utc()
+        self._save_review_item(item, resolved_by=actor.user_id, resolution_notes=request.reason)
         audit_event = self.repository.record_audit(
-            action=f"review_{action.replace('-', '_')}",
+            action=f"review_{resolved_action.replace('-', '_')}",
             actor_id=actor.user_id,
             target_type="review_item",
             target_id=item.id,
@@ -1173,11 +1240,14 @@ class BoxBrainUseCases:
             reason=request.reason,
             metadata=metadata,
         )
-        payload = p.review_item_model(item).model_dump(mode="json")
-        payload.update(p.audit_event_model(audit_event).model_dump(mode="json"))
-        payload["reviewItemId"] = str(item.id)
-        payload["auditEventId"] = str(audit_event.id)
-        return payload
+        return s.ReviewActionResponse(
+            reviewItemId=item.id,
+            auditEventId=audit_event.id,
+            status=cast(Any, item.status),
+            action=resolved_action,
+            queueType=item.queue_type,
+            metadata=metadata,
+        )
 
     def search(self, request: s.SearchRequest, actor: Actor) -> s.SearchResponse:
         self._refresh_repository()
@@ -1689,6 +1759,184 @@ class BoxBrainUseCases:
         if item is None:
             raise NotFoundError("Review item not found.")
         return item
+
+    def _deterministic_review_candidates(self) -> list[ReviewItem]:
+        versions = sorted(
+            self.repository.content_unit_versions.values(),
+            key=lambda item: (item.created_at, str(item.id)),
+        )
+        candidates: list[ReviewItem] = []
+
+        for index, left in enumerate(versions):
+            for right in versions[index + 1 :]:
+                score = self._version_text_similarity(left, right)
+                left_variant = self.repository.content_unit_variants.get(left.variant_id)
+                right_variant = self.repository.content_unit_variants.get(right.variant_id)
+                if left_variant is None or right_variant is None:
+                    continue
+                same_family = left_variant.family_id == right_variant.family_id
+                exact_duplicate = (
+                    self._normalized_review_text(left) == self._normalized_review_text(right)
+                    and bool(self._normalized_review_text(left))
+                )
+                if exact_duplicate:
+                    candidates.append(
+                        self._build_review_candidate(
+                            queue_type="duplicate",
+                            suggested_action="merge_versions",
+                            target_versions=[left, right],
+                            confidence=1.0,
+                            rationale="Deterministic text fingerprint matched exactly; reviewer must confirm before graph mutation.",
+                        )
+                    )
+                    continue
+                if same_family and left.variant_id != right.variant_id and score >= 0.2:
+                    candidates.append(
+                        self._build_review_candidate(
+                            queue_type="variant",
+                            suggested_action="mark_variant",
+                            target_versions=[left, right],
+                            confidence=score,
+                            rationale="Versions are already near the same family and share enough text to review variant linkage.",
+                        )
+                    )
+                elif not same_family and score >= 0.65:
+                    candidates.append(
+                        self._build_review_candidate(
+                            queue_type="variant",
+                            suggested_action="mark_variant",
+                            target_versions=[left, right],
+                            confidence=score,
+                            rationale="Different families have high text overlap; reviewer can link them as variants if conceptually aligned.",
+                        )
+                    )
+                elif not same_family and score >= 0.25:
+                    candidates.append(
+                        self._build_review_candidate(
+                            queue_type="similarity",
+                            suggested_action="mark_similar",
+                            target_versions=[left, right],
+                            confidence=score,
+                            rationale="Different families have overlapping text signals; reviewer can record similarity without merging families.",
+                        )
+                    )
+
+        for version in versions:
+            if version.freshness_state in {"aging", "stale"}:
+                candidates.append(
+                    self._build_review_candidate(
+                        queue_type="stale",
+                        suggested_action="deprecate",
+                        target_versions=[version],
+                        confidence=0.9 if version.freshness_state == "stale" else 0.7,
+                        rationale=f"ContentUnit version is marked {version.freshness_state}; review before reuse.",
+                    )
+                )
+            if version.approval_state in {"draft", "review"}:
+                candidates.append(
+                    self._build_review_candidate(
+                        queue_type="approval",
+                        suggested_action="approve",
+                        target_versions=[version],
+                        confidence=0.8 if version.approval_state == "review" else 0.55,
+                        rationale=f"ContentUnit version is in {version.approval_state} state and needs human approval review.",
+                    )
+                )
+
+        candidates.sort(key=lambda item: (item.queue_type, item.suggested_action or "", str(item.id)))
+        return candidates
+
+    def _build_review_candidate(
+        self,
+        *,
+        queue_type: str,
+        suggested_action: str,
+        target_versions: list[ContentUnitVersion],
+        confidence: float,
+        rationale: str,
+    ) -> ReviewItem:
+        target_refs = [
+            {"objectType": "content_unit_version", "id": str(version.id)}
+            for version in target_versions
+        ]
+        candidate_key = "|".join(
+            [
+                queue_type,
+                suggested_action,
+                *sorted(str(version.id) for version in target_versions),
+            ]
+        )
+        action_name = suggested_action.replace("_", "-")
+        return ReviewItem(
+            id=uuid5(NAMESPACE_URL, f"boxbrain-review-candidate:{candidate_key}"),
+            queue_type=queue_type,
+            status="open",
+            confidence=round(max(0.0, min(1.0, confidence)), 4),
+            rationale=rationale,
+            suggested_action=suggested_action,
+            target_refs=target_refs,
+            compare_objects=[self._review_compare_object(version) for version in target_versions],
+            source="deterministic_ai",
+            audit_preview={
+                "action": f"review_{action_name.replace('-', '_')}",
+                "requiresRole": "reviewer",
+                "autoApplied": False,
+            },
+            created_at=now_utc(),
+        )
+
+    def _review_candidate_exists(self, candidate: ReviewItem) -> bool:
+        candidate_signature = self._review_candidate_signature(candidate)
+        return any(
+            self._review_candidate_signature(item) == candidate_signature
+            for item in self.repository.review_items.values()
+        )
+
+    def _review_candidate_signature(self, item: ReviewItem) -> tuple[str, str | None, tuple[str, ...]]:
+        return (
+            item.queue_type,
+            item.suggested_action,
+            tuple(
+                sorted(
+                    f"{ref.get('objectType')}:{ref.get('id')}"
+                    for ref in item.target_refs
+                )
+            ),
+        )
+
+    def _review_compare_object(self, version: ContentUnitVersion) -> dict[str, Any]:
+        variant = self.repository.content_unit_variants.get(version.variant_id)
+        family = self.repository.content_unit_families.get(variant.family_id) if variant else None
+        return {
+            "objectType": "content_unit_version",
+            "id": str(version.id),
+            "title": family.family_title if family else "Untitled ContentUnit",
+            "variantLabel": variant.variant_label if variant else None,
+            "versionNumber": version.version_number,
+            "approvalState": version.approval_state,
+            "freshnessState": version.freshness_state,
+            "summary": version.summary,
+            "previewUri": version.thumbnail_uri or version.render_uri,
+            "provenanceId": str(version.provenance_id),
+            "restricted": version.restricted or bool(family and family.restricted),
+        }
+
+    def _version_text_similarity(
+        self,
+        left: ContentUnitVersion,
+        right: ContentUnitVersion,
+    ) -> float:
+        left_tokens = set(tokenize(self._review_text(left)))
+        right_tokens = set(tokenize(self._review_text(right)))
+        if not left_tokens or not right_tokens:
+            return 0.0
+        return round(len(left_tokens & right_tokens) / len(left_tokens | right_tokens), 4)
+
+    def _review_text(self, version: ContentUnitVersion) -> str:
+        return " ".join(part for part in (version.extracted_text, version.summary) if part)
+
+    def _normalized_review_text(self, version: ContentUnitVersion) -> str:
+        return " ".join(tokenize(self._review_text(version)))
 
     def _variants_for_family(self, family_id: UUID):
         return [
@@ -2312,6 +2560,49 @@ class BoxBrainUseCases:
         if callable(save):
             save(version)
 
+    def _save_review_item(
+        self,
+        item: ReviewItem,
+        *,
+        resolved_by: str | None = None,
+        resolution_notes: str | None = None,
+    ) -> None:
+        self.repository.review_items[item.id] = item
+        save = getattr(self.repository, "save_review_item", None)
+        if callable(save):
+            save(item, resolved_by=resolved_by, resolution_notes=resolution_notes)
+
+    def _save_similarity_edge(self, edge: SimilarityEdge) -> None:
+        self.repository.similarity_edges[edge.id] = edge
+        save = getattr(self.repository, "save_similarity_edge", None)
+        if callable(save):
+            save(edge)
+
+    def _resolve_review_action(self, item: ReviewItem, action: str) -> str:
+        if action != "accept":
+            return action
+        suggested = (item.suggested_action or "").replace("_", "-")
+        if suggested in {
+            "mark-variant",
+            "mark-similar",
+            "merge-versions",
+            "set-canonical",
+            "approve",
+            "deprecate",
+        }:
+            return suggested
+        if item.queue_type == "duplicate":
+            return "merge-versions"
+        if item.queue_type in {"variant", "variant_candidate", "variant_linking"}:
+            return "mark-variant"
+        if item.queue_type in {"similarity", "similarity_candidate"}:
+            return "mark-similar"
+        if item.queue_type == "stale":
+            return "deprecate"
+        if item.queue_type == "approval":
+            return "approve"
+        raise ConflictError("Review item does not have an accepted action.")
+
     def _review_target_version_ids(self, item: ReviewItem) -> tuple[UUID, UUID]:
         version_ids = [
             UUID(str(ref["id"]))
@@ -2322,9 +2613,87 @@ class BoxBrainUseCases:
             raise ConflictError("Review action requires two ContentUnit version targets.")
         return version_ids[0], version_ids[1]
 
+    def _first_review_version_id(self, item: ReviewItem) -> UUID | None:
+        for ref in item.target_refs:
+            if ref.get("objectType") == "content_unit_version":
+                return UUID(str(ref["id"]))
+        return None
+
     def _variant_id_from_review(self, item: ReviewItem) -> UUID:
         version_id = self._review_target_version_ids(item)[0]
         return self._get_content_unit_version(version_id).variant_id
+
+    def _link_versions_as_variants(
+        self,
+        source_version_id: UUID,
+        target_version_id: UUID,
+        actor: Actor,
+        reason: str | None,
+        confidence: float | None,
+    ) -> ContentUnitVariant:
+        source_version = self._get_content_unit_version(source_version_id)
+        target_version = self._get_content_unit_version(target_version_id)
+        source_variant = self._get_content_unit_variant(source_version.variant_id)
+        target_variant = self._get_content_unit_variant(target_version.variant_id)
+        prior = {
+            "variantId": str(target_variant.id),
+            "familyId": str(target_variant.family_id),
+            "linkedBy": target_variant.linked_by,
+            "linkedConfidence": target_variant.linked_confidence,
+        }
+        target_variant.family_id = source_variant.family_id
+        target_variant.linked_by = "hybrid"
+        target_variant.linked_confidence = confidence
+        target_variant.latest_version_id = target_variant.latest_version_id or target_version.id
+        self._save_content_unit_variants([target_variant])
+        self.repository.record_audit(
+            action="variant_link_change",
+            actor_id=actor.user_id,
+            target_type="content_unit_variant",
+            target_id=target_variant.id,
+            prior_state=prior,
+            new_state={
+                "variantId": str(target_variant.id),
+                "familyId": str(target_variant.family_id),
+                "linkedBy": target_variant.linked_by,
+                "linkedConfidence": target_variant.linked_confidence,
+            },
+            reason=reason,
+            metadata={
+                "sourceVersionId": str(source_version.id),
+                "targetVersionId": str(target_version.id),
+            },
+        )
+        return target_variant
+
+    def _merge_duplicate_versions(
+        self,
+        surviving_version_id: UUID,
+        duplicate_version_id: UUID,
+        actor: Actor,
+        reason: str | None,
+    ) -> None:
+        surviving_version = self._get_content_unit_version(surviving_version_id)
+        duplicate_version = self._get_content_unit_version(duplicate_version_id)
+        prior = {"approvalState": duplicate_version.approval_state}
+        duplicate_version.approval_state = "deprecated"
+        self._save_content_unit_version(duplicate_version)
+        duplicate_variant = self._get_content_unit_variant(duplicate_version.variant_id)
+        if duplicate_variant.latest_version_id == duplicate_version.id:
+            duplicate_variant.latest_version_id = surviving_version.id
+            self._save_content_unit_variants([duplicate_variant])
+        self.repository.record_audit(
+            action="duplicate_version_merge",
+            actor_id=actor.user_id,
+            target_type="content_unit_version",
+            target_id=duplicate_version.id,
+            prior_state=prior,
+            new_state={
+                "approvalState": duplicate_version.approval_state,
+                "supersededByVersionId": str(surviving_version.id),
+            },
+            reason=reason,
+        )
 
     def _block_is_restricted(self, block: ContentBlockVersion) -> bool:
         if block.restricted:

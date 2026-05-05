@@ -1,4 +1,4 @@
-import { reviewItems, storyboardSections } from "@/features/demo/data";
+import { storyboardSections } from "@/features/demo/data";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -275,6 +275,101 @@ export type CreateNoteInput = {
   isPinned?: boolean;
 };
 
+export type ReviewStatus = "open" | "accepted" | "rejected" | "snoozed" | "resolved";
+export type ReviewActionKind = "accept" | "mark-variant" | "mark-similar" | "merge-versions" | "set-canonical" | "approve" | "reject" | "request-changes";
+
+export type ReviewTargetRef = {
+  objectType?: string;
+  id?: string;
+  title?: string;
+  versionId?: string;
+  familyId?: string;
+  variantId?: string;
+  isRestricted?: boolean;
+  [key: string]: unknown;
+};
+
+export type ReviewCompareObject = {
+  title?: string;
+  subtitle?: string;
+  versionId?: string;
+  familyId?: string;
+  variantId?: string;
+  renderUri?: string | null;
+  thumbnailUri?: string | null;
+  previewUri?: string | null;
+  summary?: string | null;
+  extractedText?: string | null;
+  speakerNotes?: string | null;
+  statusChips?: Partial<StatusChips>;
+  isRestricted?: boolean;
+  [key: string]: unknown;
+};
+
+export type ReviewItem = {
+  id: string;
+  queueType: string;
+  status: ReviewStatus;
+  confidence?: number | null;
+  rationale?: string | null;
+  suggestedAction?: string | null;
+  targetRefs: ReviewTargetRef[];
+  source: string;
+  createdAt: string;
+};
+
+export type ReviewItemDetail = ReviewItem & {
+  compareObjects: ReviewCompareObject[];
+  auditPreview: Record<string, unknown>;
+};
+
+export type ReviewQueueSummary = {
+  queueType: string;
+  openCount: number;
+  oldestCreatedAt?: string | null;
+};
+
+export type ListReviewItemsInput = {
+  queueType?: string;
+  status?: ReviewStatus;
+  cursor?: string;
+  limit?: number;
+};
+
+export type ReviewActionInput = {
+  reason?: string | null;
+  targetVariantId?: string | null;
+  targetVersionId?: string | null;
+};
+
+export type ReviewActionResult = {
+  reviewItemId?: string;
+  auditEventId?: string;
+  status?: ReviewStatus;
+  action?: string;
+  [key: string]: unknown;
+};
+
+export type GenerateReviewCandidatesInput = {
+  queueType?: string;
+  query?: string;
+  limit?: number;
+};
+
+export type GeneratedReviewCandidate = {
+  id: string;
+  queueType: string;
+  title: string;
+  confidence?: number | null;
+  rationale?: string | null;
+  suggestedAction?: ReviewActionKind;
+  targetRefs: ReviewTargetRef[];
+  compareObjects: ReviewCompareObject[];
+  source: string;
+  createdAt: string;
+  persisted: boolean;
+};
+
 type RequestJsonOptions = RequestInit & {
   json?: unknown;
 };
@@ -347,9 +442,56 @@ async function requestJson<T>(path: string, init: RequestJsonOptions = {}): Prom
   return (await response.json()) as T;
 }
 
+async function postOptionalJson<T>(path: string, init: RequestJsonOptions = {}): Promise<T | null> {
+  const { json, headers, ...requestInit } = init;
+  const body = json === undefined ? requestInit.body : JSON.stringify(json);
+  const response = await fetch(apiUrl(path), {
+    ...requestInit,
+    body,
+    headers: defaultHeaders(headers, json !== undefined),
+    cache: "no-store"
+  });
+
+  if (response.status === 404 || response.status === 405) return null;
+  if (!response.ok) {
+    let message = `Request failed with status ${response.status}`;
+    try {
+      const payload = (await response.json()) as { detail?: string; error?: string; message?: string };
+      message = payload.detail ?? payload.error ?? payload.message ?? message;
+    } catch {
+      // Keep the status-based message when the error response is not JSON.
+    }
+    throw new ApiError(response.status, message);
+  }
+  return (await response.json()) as T;
+}
+
 export function normalizeIngestionJobsResponse(payload: IngestionJob[] | { items?: IngestionJob[]; jobs?: IngestionJob[] }): IngestionJob[] {
   if (Array.isArray(payload)) return payload;
   return payload.items ?? payload.jobs ?? [];
+}
+
+export function normalizeReviewItemsResponse(payload: ReviewItem[] | PageEnvelope<ReviewItem>): ReviewItem[] {
+  if (Array.isArray(payload)) return payload;
+  return payload.items ?? [];
+}
+
+export function normalizeReviewAction(action?: string | null): ReviewActionKind {
+  const normalized = action?.replaceAll("_", "-");
+  if (
+    normalized === "accept" ||
+    normalized === "mark-variant" ||
+    normalized === "mark-similar" ||
+    normalized === "merge-versions" ||
+    normalized === "set-canonical" ||
+    normalized === "approve" ||
+    normalized === "reject" ||
+    normalized === "request-changes"
+  ) {
+    return normalized;
+  }
+  if (normalized === "deprecate") return "accept";
+  return "accept";
 }
 
 export async function uploadArtifact(input: UploadArtifactInput): Promise<IngestionJob> {
@@ -495,6 +637,135 @@ export async function listWorkProductFamilies(): Promise<PageEnvelope<WorkProduc
   return requestJson<PageEnvelope<WorkProductFamilyCard>>("/api/work-products/families");
 }
 
+export async function listReviewQueues(): Promise<ReviewQueueSummary[]> {
+  return requestJson<ReviewQueueSummary[]>("/api/reviews/queues");
+}
+
+export async function listReviewItems(input: ListReviewItemsInput = {}): Promise<PageEnvelope<ReviewItem>> {
+  const payload = await requestJson<ReviewItem[] | PageEnvelope<ReviewItem>>(
+    `/api/reviews/items${queryString({
+      queueType: input.queueType,
+      status: input.status ?? "open",
+      cursor: input.cursor,
+      limit: input.limit
+    })}`
+  );
+  return { items: normalizeReviewItemsResponse(payload), nextCursor: Array.isArray(payload) ? null : payload.nextCursor };
+}
+
+export async function getReviewItem(reviewItemId: string): Promise<ReviewItemDetail> {
+  return requestJson<ReviewItemDetail>(`/api/reviews/items/${encodeURIComponent(reviewItemId)}`);
+}
+
+export async function runReviewAction(reviewItemId: string, action: ReviewActionKind, input: ReviewActionInput = {}): Promise<ReviewActionResult> {
+  return requestJson<ReviewActionResult>(`/api/reviews/items/${encodeURIComponent(reviewItemId)}/${action}`, {
+    method: "POST",
+    json: {
+      reason: input.reason?.trim() ? input.reason.trim() : undefined,
+      targetVariantId: input.targetVariantId ?? undefined,
+      targetVersionId: input.targetVersionId ?? undefined
+    }
+  });
+}
+
+export async function generateReviewCandidates(input: GenerateReviewCandidatesInput = {}): Promise<GeneratedReviewCandidate[]> {
+  const payload = await postOptionalJson<
+    | GeneratedReviewCandidate[]
+    | {
+        items?: GeneratedReviewCandidate[];
+        candidates?: GeneratedReviewCandidate[];
+        generated?: GeneratedReviewCandidate[];
+      }
+  >("/api/reviews/candidates/generate", {
+    method: "POST",
+    json: {
+      queueType: input.queueType,
+      query: input.query,
+      limit: input.limit
+    }
+  });
+
+  if (payload) {
+    const candidates = Array.isArray(payload) ? payload : payload.items ?? payload.candidates ?? payload.generated ?? [];
+    return candidates.map(normalizeGeneratedReviewCandidate);
+  }
+
+  return generateReviewCandidatesFromSearch(input);
+}
+
+function normalizeGeneratedReviewCandidate(candidate: GeneratedReviewCandidate): GeneratedReviewCandidate {
+  return {
+    ...candidate,
+    title: candidate.title ?? queueTitle(candidate.queueType),
+    suggestedAction: normalizeReviewAction(candidate.suggestedAction),
+    targetRefs: candidate.targetRefs ?? [],
+    compareObjects: candidate.compareObjects ?? [],
+    persisted: candidate.persisted ?? true
+  };
+}
+
+async function generateReviewCandidatesFromSearch(input: GenerateReviewCandidatesInput): Promise<GeneratedReviewCandidate[]> {
+  const queueType = input.queueType && input.queueType !== "all" ? input.queueType : "similarity_candidate";
+  const profile: SearchProfile = queueType.includes("duplicate") ? "duplicate_review" : "similarity_review";
+  const response = await searchBoxBrain({
+    query: input.query?.trim() || reviewCandidateQuery(queueType),
+    profile,
+    objectTypes: ["content_unit", "work_product"],
+    resultMode: "versions",
+    limit: input.limit ?? 8
+  });
+  const usableItems = response.items.filter((item) => !item.statusChips?.isRestricted);
+  const candidates: GeneratedReviewCandidate[] = [];
+  for (let index = 0; index < usableItems.length - 1; index += 2) {
+    const left = usableItems[index];
+    const right = usableItems[index + 1];
+    candidates.push({
+      id: `generated-${queueType}-${left.objectId}-${right.objectId}`,
+      queueType,
+      title: queueTitle(queueType),
+      confidence: Math.min(0.99, Math.max(left.score, right.score)),
+      rationale: `Search profile ${profile} found nearby governed results: ${left.title} and ${right.title}.`,
+      suggestedAction: queueType.includes("duplicate") ? "merge-versions" : "mark-similar",
+      targetRefs: [
+        { objectType: left.objectType, id: left.objectId, title: left.title },
+        { objectType: right.objectType, id: right.objectId, title: right.title }
+      ],
+      compareObjects: [
+        {
+          title: left.title,
+          previewUri: left.previewUri,
+          summary: left.summary,
+          statusChips: left.statusChips
+        },
+        {
+          title: right.title,
+          previewUri: right.previewUri,
+          summary: right.summary,
+          statusChips: right.statusChips
+        }
+      ],
+      source: "search_helper",
+      createdAt: new Date().toISOString(),
+      persisted: false
+    });
+  }
+  return candidates;
+}
+
+function reviewCandidateQuery(queueType: string) {
+  if (queueType.includes("duplicate")) return "duplicate content units with overlapping executive ROI claims";
+  if (queueType.includes("variant")) return "variant candidates in the same content family";
+  if (queueType.includes("stale")) return "stale aging content with fresher approved replacements";
+  if (queueType.includes("approval")) return "content waiting for approval review";
+  return "similar content units that may require reviewer judgment";
+}
+
+function queueTitle(queueType: string) {
+  return queueType
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
 export const boxbrainApi = {
   listContentFamilies: listContentUnitFamilies,
   listContentUnitFamilies,
@@ -515,7 +786,12 @@ export const boxbrainApi = {
   createNote,
   listWorkProducts: listWorkProductFamilies,
   listWorkProductFamilies,
-  listReviews: () => apiFetch("/api/reviews/items", { items: reviewItems }),
+  listReviewQueues,
+  listReviewItems,
+  getReviewItem,
+  runReviewAction,
+  generateReviewCandidates,
+  listReviews: listReviewItems,
   getStoryboard: () =>
     apiFetch("/api/storyboards/sb-cloud-modernization", {
       id: "sb-cloud-modernization",

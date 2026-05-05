@@ -431,6 +431,15 @@ class ReviewActionRequest(BaseModel):
     targetVersionId: UUID | None = None
 
 
+class ReviewActionResponse(BaseModel):
+    reviewItemId: UUID
+    auditEventId: UUID
+    status: Literal["open", "accepted", "rejected", "snoozed", "resolved"]
+    action: str
+    queueType: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ReviewQueueSummary(BaseModel):
     queueType: str
     openCount: int

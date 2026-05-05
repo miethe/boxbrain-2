@@ -32,6 +32,8 @@ from app.domain.models import (
     IngestionJob,
     Note,
     ProvenanceRecord,
+    ReviewItem,
+    SimilarityEdge,
     StoredObject,
     WorkProductFamily,
     WorkProductVersion,
@@ -47,6 +49,8 @@ from app.infrastructure.db_models import (
     IngestionJobRow,
     NoteRow,
     ProvenanceRecordRow,
+    ReviewItemRow,
+    SimilarityEdgeRow,
     StoredObjectRow,
     WorkProductFamilyRow,
     WorkProductVariantRow,
@@ -431,6 +435,37 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                 )
                 for row in session.scalars(select(NoteRow))
             }
+            self.similarity_edges = {
+                row.id: SimilarityEdge(
+                    id=row.id,
+                    source_version_id=row.source_object_id,
+                    target_version_id=row.target_object_id,
+                    score=float(row.score),
+                    rationale=row.explanation,
+                    confirmed_by=row.created_by if row.created_by != "ai" else None,
+                    created_at=row.created_at,
+                )
+                for row in session.scalars(select(SimilarityEdgeRow))
+                if row.source_object_type == "content_unit_version"
+                and row.target_object_type == "content_unit_version"
+            }
+            self.review_items = {
+                row.id: ReviewItem(
+                    id=row.id,
+                    queue_type=row.queue_type,
+                    status=row.status,
+                    confidence=float(row.confidence) if row.confidence is not None else None,
+                    rationale=row.rationale,
+                    suggested_action=row.suggested_action,
+                    target_refs=list(row.target_refs),
+                    compare_objects=list(row.metadata_.get("compareObjects", [])),
+                    source=str(row.metadata_.get("source", row.created_by)),
+                    audit_preview=dict(row.metadata_.get("auditPreview", {})),
+                    created_at=row.created_at,
+                    resolved_at=row.resolved_at,
+                )
+                for row in session.scalars(select(ReviewItemRow))
+            }
             self.embeddings = {
                 row.id: EmbeddingRecord(
                     id=row.id,
@@ -728,7 +763,13 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
             for variant in variants:
                 row = session.get(ContentUnitVariantRow, variant.id)
                 if row is not None:
+                    row.family_id = variant.family_id
+                    row.variant_label = variant.variant_label
+                    row.variant_type = variant.variant_type
+                    row.variant_dimensions = variant.variant_dimensions
                     row.is_canonical = variant.is_canonical
+                    row.linked_by = variant.linked_by
+                    row.linked_confidence = variant.linked_confidence
                     row.latest_version_id = variant.latest_version_id
 
     def save_embedding(self, embedding: EmbeddingRecord) -> None:
@@ -813,6 +854,60 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                 if family_row is not None:
                     family_row.summary = family.summary
                     family_row.restricted = family.restricted
+
+    def save_review_item(
+        self,
+        item: ReviewItem,
+        *,
+        resolved_by: str | None = None,
+        resolution_notes: str | None = None,
+    ) -> None:
+        self.review_items[item.id] = item
+        metadata = {
+            "source": item.source,
+            "compareObjects": item.compare_objects,
+            "auditPreview": item.audit_preview,
+        }
+        if resolved_by is not None:
+            metadata["resolvedBy"] = resolved_by
+        with self._session() as session:
+            session.merge(
+                ReviewItemRow(
+                    id=item.id,
+                    queue_type=item.queue_type,
+                    status=item.status,
+                    target_refs=item.target_refs,
+                    confidence=item.confidence,
+                    rationale=item.rationale,
+                    suggested_action=item.suggested_action,
+                    assigned_to=None,
+                    created_by=item.source,
+                    created_at=item.created_at,
+                    resolved_by=None,
+                    resolved_at=item.resolved_at,
+                    resolution_notes=resolution_notes,
+                    metadata_=metadata,
+                )
+            )
+
+    def save_similarity_edge(self, edge: SimilarityEdge) -> None:
+        self.similarity_edges[edge.id] = edge
+        with self._session() as session:
+            session.merge(
+                SimilarityEdgeRow(
+                    id=edge.id,
+                    source_object_type="content_unit_version",
+                    source_object_id=edge.source_version_id,
+                    target_object_type="content_unit_version",
+                    target_object_id=edge.target_version_id,
+                    similarity_type="hybrid",
+                    score=edge.score,
+                    created_by=edge.confirmed_by or "ai",
+                    explanation=edge.rationale,
+                    metadata_={},
+                    created_at=edge.created_at,
+                )
+            )
 
     def record_audit(
         self,

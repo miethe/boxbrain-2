@@ -1,11 +1,11 @@
 # BoxBrain v2 MVP Implementation Report
 
-**Date:** 2026-05-04
-**Status:** Milestone 3 search and Ask BoxBrain foundation complete; broader MVP still in progress
+**Date:** 2026-05-05
+**Status:** Milestone 4 Reviews Hub and governance workflow foundation complete; broader MVP still in progress
 
 ## Summary
 
-The repository has advanced from a seed-data MVP scaffold into a production-shaped foundation with completed PPTX-first Milestone 1 ingestion, Milestone 2 governed graph browsing/detail foundations, and a Milestone 3 hybrid search/Ask BoxBrain foundation. It now includes a Next.js frontend, FastAPI backend, deterministic worker helpers, OpenAPI contract assets, Alembic migration wiring, SQLAlchemy persistence scaffolding, S3-compatible artifact storage adapters, Redis/RQ queue scaffolding, multipart PPTX upload, deterministic PPTX validation/extraction, ordered render output persistence, stage telemetry, WorkProduct filmstrip output, baseline restricted visibility, ContentUnit family/variant/version APIs, comments/notes persistence in database mode, API-backed Library, ContentUnit detail write controls, database-backed hybrid search, API-backed Ask BoxBrain, tests, and verification scripts.
+The repository has advanced from a seed-data MVP scaffold into a production-shaped foundation with completed PPTX-first Milestone 1 ingestion, Milestone 2 governed graph browsing/detail foundations, Milestone 3 hybrid search/Ask BoxBrain, and a Milestone 4 Reviews Hub/governance workflow foundation. It now includes a Next.js frontend, FastAPI backend, deterministic worker helpers, OpenAPI contract assets, Alembic migration wiring, SQLAlchemy persistence scaffolding, S3-compatible artifact storage adapters, Redis/RQ queue scaffolding, multipart PPTX upload, deterministic PPTX validation/extraction, ordered render output persistence, stage telemetry, WorkProduct filmstrip output, baseline restricted visibility, ContentUnit family/variant/version APIs, comments/notes persistence in database mode, API-backed Library, ContentUnit detail write controls, database-backed hybrid search, API-backed Ask BoxBrain, deterministic review candidate generation, API-backed Reviews Hub compare/actions, SQL-backed review queue and similarity-edge persistence, tests, and verification scripts.
 
 This is still not a completed production pilot. The current state is a credible MVP foundation: memory mode remains the default for fast local tests, while database/storage/worker integration mode is runnable, migration-verified locally, and live-verified for ingestion plus database-backed search.
 
@@ -13,9 +13,9 @@ This is still not a completed production pilot. The current state is a credible 
 
 **Basis:** This mapping is aligned to the MVP scope and release definition in `docs/project_plans/init/01_BoxBrain_v2_Final_PRD.md`, the milestone sequence in `docs/project_plans/init/02_Initial_Implementation_Plan.md`, and the architecture/data/API blueprint in `docs/project_plans/init/03_Architecture_Data_API_Guide.md`.
 
-**Estimated MVP completion:** 55% `[###########---------]`
+**Estimated MVP completion:** 62% `[############--------]`
 
-This is an execution estimate against the product MVP definition, not a test coverage metric. The foundation, contracts, local app shell, ingestion path, graph library/detail APIs, baseline visibility safeguards, API-backed catalog/detail/search frontend surfaces, and first PostgreSQL/pgvector hybrid search path are in place. The remaining work is mostly about making review queues, ContentBlocks, Storyboards, source-aware permissions, and pilot operations real against PostgreSQL/S3/RQ instead of demo or memory-backed surfaces.
+This is an execution estimate against the product MVP definition, not a test coverage metric. The foundation, contracts, local app shell, ingestion path, graph library/detail APIs, baseline visibility safeguards, API-backed catalog/detail/search/review frontend surfaces, first PostgreSQL/pgvector hybrid search path, and first governed review workflow are in place. The remaining work is mostly about making ContentBlocks, Storyboards, source-aware permissions, and pilot operations real against PostgreSQL/S3/RQ instead of demo or memory-backed surfaces.
 
 | MVP release item | Current status | Progress | What is complete | What remains for MVP |
 |---|---:|---:|---|---|
@@ -26,7 +26,7 @@ This is an execution estimate against the product MVP definition, not a test cov
 | Detail pages show variants, provenance, trust, comments, notes, where-used | API-backed foundation complete | 65% | ContentUnit detail now loads live family/version APIs, variants, versions, provenance, similar, where-used, comments, notes, loading/error/restricted states; write controls create persistent comments, notes, canonical variant changes, approval changes, and freshness changes; WorkProduct detail remains API-backed for generated filmstrips | Persisted activity timelines, richer compare and similar panels, source-aware permissions |
 | ContentBlocks as reusable ordered mini-stories | Scaffolded | 25% | Domain shape, seeded route, ordered membership invariant tests | Create-from-selection flow, SQL persistence, API endpoints, search/library inclusion, insert into Storyboard, block governance and where-used |
 | Storyboards with sections, slots, gaps, inserted units/blocks, comments, snapshots | Scaffolded | 35% | Storyboard workspace route, domain/use case support, snapshot immutability test, ordered sections/slots | SQL persistence, create/edit APIs, insert/swap from search/library/tray, anchored comments, diagnostics, snapshot restore/detail UX |
-| Reviews Hub duplicate/variant/stale/approval flows | Scaffolded | 30% | Reviews route, review item domain/use cases, audit events for review actions, AI suggestions remain reviewable | Candidate generation from ingestion/search signals, duplicate/variant/similarity/stale/approval queues backed by SQL, side-by-side compare, full accept/reject graph mutations |
+| Reviews Hub duplicate/variant/stale/approval flows | Milestone 4 foundation complete | 60% | Reviewer-gated queue/list/detail APIs, deterministic duplicate/variant/similarity/stale/approval candidate generation, API-backed Reviews Hub with compare panel and action states, generic accept/reject/request-changes controls, audited graph/trust mutations, SQL-backed review item and similarity-edge persistence, AI suggestions remain reviewable | Richer candidate scoring from ingestion/search signals, AI output row status linkage, side-by-side visual diffing, persisted reviewer assignment/SLAs, review E2E coverage |
 | AI suggestions traceable and reviewable | Early scaffold | 20% | AI outputs table scaffolding and guardrail-oriented domain behavior | Enrichment workers, prompt/model versioning, summary/taxonomy/candidate records, human override state, review routing, provenance on AI metadata |
 | Job status, audit logs, and admin controls | Partially complete | 55% | Ingestion job list/detail/retry, stage telemetry, admin health, audit event model/use cases, local role model, audit writes for canonical/approval/freshness/note actions, reviewer/admin-only search debug | Queue aging/failure dashboards, persisted audit views, full RBAC enforcement, SSO/OIDC-ready identity integration |
 
@@ -38,7 +38,7 @@ This is an execution estimate against the product MVP definition, not a test cov
 | Milestone 1 - WorkProduct ingestion foundation | Upload, store, process, and produce WorkProduct + ContentUnit records | Complete | Multipart upload, storage/queue abstractions, SQLAlchemy ingestion slice, PPTX validation/text extraction, relationship-based speaker notes, renderer adapter, persisted render/thumbnail URIs, ordered ContentUnits, provenance/state, deterministic embeddings, stage telemetry, retry failure detail, API-backed WorkProduct filmstrip, live DB/S3/RQ path | Gated live LibreOffice visual render verification once `soffice` is installed locally |
 | Milestone 2 - Graph library and detail pages | Browse and inspect governed content by family/variant/version | Complete foundation | API-backed ContentUnit family list/detail, variant/version expansion, typed where-used, similar, provenance, persistent comments/curated notes, canonical/approval/freshness audit actions, baseline restricted visibility, API-backed Library and ContentUnit detail pages, writeable ContentUnit detail controls, restricted direct-version leak fixed | Rich curator editing UX, saved collections, generated client automation, source-aware permissions |
 | Milestone 3 - Search and Ask BoxBrain | Explainable grouped catalog search | Complete foundation | Memory-compatible search path, SQLAlchemy database hybrid search over PostgreSQL FTS + pgvector for ContentUnit and WorkProduct versions, persisted embedding vectors, family/variant/version grouping, component explanation chips, reviewer/admin debug, API-backed Ask UI with filters and local saved-search skeleton, live database search probe | ContentBlock SQL search, persisted saved searches, eval corpus, ranking tuning, broader search E2E coverage |
-| Milestone 4 - Reviews Hub and governance workflows | Reviewable duplicate/variant/stale/approval workflows | Not started beyond scaffold | Review route/use cases, audit events, review item model | Candidate generation, compare panel, accept/reject graph updates, stale/approval queues |
+| Milestone 4 - Reviews Hub and governance workflows | Reviewable duplicate/variant/stale/approval workflows | Complete foundation | Reviewer-gated review queue/list/detail APIs, deterministic candidate generation across duplicate/variant/similarity/stale/approval queues, API-backed Reviews Hub compare/action UI, generic accept endpoint, audited accept/reject/request-changes graph/trust mutations, SQL-backed review item and similarity-edge persistence | Ingestion-stage candidate creation, AI output status linkage, richer visual compare/diff, reviewer assignment/SLA workflow, broader E2E coverage |
 | Milestone 5 - ContentBlocks and Storyboard core | Compose reusable mini-stories and Storyboards with snapshots | Not started beyond scaffold | Seeded ContentBlock and Storyboard routes, ordered membership and snapshot invariants | SQL-backed APIs, create/insert/swap UX, anchored comments, diagnostics |
 | Milestone 6 - MVP hardening and pilot readiness | Stable pilot with tests, docs, observability, demo data | Partial foundation | `pnpm verify`, e2e, backend/frontend tests, live ingestion integration test | Core-flow E2E suite, pilot demo corpus, observability dashboard, performance/search evals, admin/curator/builder docs |
 
@@ -46,12 +46,12 @@ This is an execution estimate against the product MVP definition, not a test cov
 
 | Workstream | Completed foundation | Remaining MVP work |
 |---|---|---|
-| Frontend shell and routes | Production-shaped app shell; routes for Ask, Library, WorkProduct, ContentUnit, Variation Explorer, Reviews, ContentBlock, Storyboard, Publish/Package, Admin, Ingestion; loading/empty/error states on ingestion, Library, ContentUnit detail, and Ask; write controls on ContentUnit detail | Replace remaining demo data route by route with generated/API-backed clients; deepen review and Storyboard interactions; persist saved searches; expand Playwright core flows |
-| Backend API and use cases | FastAPI app, route modules, Pydantic schemas, use-case layer, local actor roles, memory repository, ingestion/review/comment/note/storyboard/admin use cases, graph library APIs, baseline visibility enforcement, database hybrid search adapter | Complete SQL-backed repository coverage for review/storyboard/content blocks; keep routes thin; add source-aware object visibility; update OpenAPI with every API change |
-| Data model and persistence | Alembic wiring; starter schema; SQLAlchemy models for ingestion slice, stored objects, WorkProducts, ContentUnits, jobs, provenance, audit, embeddings with pgvector values, AI outputs, comments, notes, restricted flags | Fill gaps for ContentBlocks, Storyboards, review queues, similarity, source visibility, memberships, build manifests; add migrations and integration tests |
+| Frontend shell and routes | Production-shaped app shell; routes for Ask, Library, WorkProduct, ContentUnit, Variation Explorer, Reviews, ContentBlock, Storyboard, Publish/Package, Admin, Ingestion; loading/empty/error states on ingestion, Library, ContentUnit detail, Ask, and Reviews; write controls on ContentUnit detail; Reviews Hub now uses API-backed queue/detail/action calls | Replace remaining demo data route by route with generated/API-backed clients; deepen Storyboard interactions; persist saved searches; expand Playwright core flows |
+| Backend API and use cases | FastAPI app, route modules, Pydantic schemas, use-case layer, local actor roles, memory repository, ingestion/review/comment/note/storyboard/admin use cases, graph library APIs, baseline visibility enforcement, database hybrid search adapter, review candidate/action workflow | Complete SQL-backed repository coverage for storyboard/content blocks; keep routes thin; add source-aware object visibility; update OpenAPI with every API change |
+| Data model and persistence | Alembic wiring; starter schema; SQLAlchemy models for ingestion slice, stored objects, WorkProducts, ContentUnits, jobs, provenance, audit, embeddings with pgvector values, AI outputs, comments, notes, restricted flags, review items, similarity edges | Fill gaps for ContentBlocks, Storyboards, source visibility, memberships, build manifests; add migrations and integration tests |
 | Ingestion and workers | Upload-to-job path, S3 storage, RQ queue, renderer adapter, persisted thumbnails/previews, deterministic PPTX validation/text and notes extraction, atomic ordered slide unit creation, deterministic ContentUnit and WorkProduct embeddings, stage telemetry, idempotent processing, live integration test | Live LibreOffice renderer verification on a host with `soffice`, fuller layout extraction, enrichment/candidate stages, deeper retry/resume by stage |
 | Search and ranking | Memory-compatible search, PostgreSQL FTS + pgvector database path for ContentUnit and WorkProduct versions, family/variant/version grouping, metadata/trust/freshness scoring, permission pre-filtering, reviewer/admin debug, API-backed Ask UI | ContentBlock SQL search, persisted saved searches, score breakdown UX, eval set, ranking tuning |
-| Governance and reviews | Review item/use-case scaffold, audit events, seeded Reviews UI, protected AI-suggestion behavior, canonical/approval/freshness actions with audit events | Candidate queues, compare panels, full graph mutation actions, persisted audit views, reviewer workflows |
+| Governance and reviews | Reviewer-gated queue/list/detail APIs, deterministic duplicate/variant/similarity/stale/approval candidate generation, API-backed Reviews Hub compare panel, accept/reject/request-changes actions, graph/trust mutations with audit events, SQL-backed review items and similarity edges, protected AI-suggestion behavior | Persisted audit views, AI output status linkage, reviewer assignment/SLAs, visual diffing, broader review workflow E2E |
 | Comments and notes | Domain/use-case distinction between review comments, persistent comments, and notes; SQLAlchemy persistence and visibility-filtered list/create APIs; ContentUnit detail can create persistent comments and pinned notes | Edit/resolution flows, anchoring to storyboard slots/snapshots, searchability, richer pinned note UX |
 | Storyboard and ContentBlocks | Seeded routes, ordered composition invariants, immutable snapshot behavior | Create/edit Storyboards and ContentBlocks from real content; insert/swap from search/library/tray; diagnostics; anchored comments; build-manifest-compatible records |
 | Security and access control | Header-driven local/dev actor model; viewer restricted filtering for search, library/detail, thumbnails, similar, where-used, comments/notes, WorkProducts, ContentBlocks, and Storyboards | Tenant/org membership, object/source visibility tables, full RBAC enforcement, OIDC/SSO integration path |
@@ -63,11 +63,11 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 
 | Order | Slice | Why now | Main dependencies | Exit gate |
 |---:|---|---|---|---|
-| 1 | Review candidate generation and Reviews Hub actions | Hybrid search and embedding persistence are now available, so duplicate/variant/similarity/stale candidates can become governed workflow | Search/indexing, similarity/candidate tables, audit events | Duplicate/variant/similarity/stale/approval candidates can be accepted/rejected and audited |
-| 2 | ContentBlocks create/search/insert path | Blocks depend on trusted, findable ContentUnits and should become searchable/composable next | Library/search APIs, block persistence | User creates an ordered block from selected units, finds it in search, and inserts it into a Storyboard |
-| 3 | Storyboard SQL-backed composition core | Composition should follow after reusable content is available | ContentBlocks, graph detail APIs, comments | User creates sections/slots/gaps, inserts units/blocks, swaps variants, comments, snapshots, and returns later |
-| 4 | Source-aware visibility and identity hardening | Baseline role-based filtering is in place; pilot content needs source/org policy before real client data | Local actor model, restricted flags, graph/search APIs | Tenant/org membership, object/source visibility tables, and RBAC enforcement apply across outputs |
-| 5 | Pilot readiness hardening | Stabilize after core behavior exists | Core flows above | E2E suite, observability dashboard, demo corpus, search evals, workflow docs, performance targets |
+| 1 | ContentBlocks create/search/insert path | Blocks depend on trusted, findable, reviewable ContentUnits and should become searchable/composable next | Library/search/review APIs, block persistence | User creates an ordered block from selected units, finds it in search, and inserts it into a Storyboard |
+| 2 | Storyboard SQL-backed composition core | Composition should follow after reusable content is available | ContentBlocks, graph detail APIs, comments | User creates sections/slots/gaps, inserts units/blocks, swaps variants, comments, snapshots, and returns later |
+| 3 | Source-aware visibility and identity hardening | Baseline role-based filtering is in place; pilot content needs source/org policy before real client data | Local actor model, restricted flags, graph/search/review APIs | Tenant/org membership, object/source visibility tables, and RBAC enforcement apply across outputs |
+| 4 | Pilot readiness hardening | Stabilize after core behavior exists | Core flows above | E2E suite, observability dashboard, demo corpus, search evals, workflow docs, performance targets |
+| 5 | AI enrichment worker integration | Review workflow now exists, so candidate creation can move from deterministic on-demand scans into ingestion/enrichment stages | Review item APIs, AI outputs table, worker stages | Ingestion/enrichment emits suggested AI outputs and review items without auto-applying graph changes |
 
 ## Dependency Notes
 
@@ -228,11 +228,41 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 - `c3bde21` - `test(search): cover work product embeddings`
   - Updated ingestion coverage for the new WorkProduct embedding generated alongside slide ContentUnit embeddings.
 
+## Milestone 4 Reviews Hub and Governance Slice Completed
+
+- Current commit - `feat(reviews): complete governance workflow foundation`
+  - Added reviewer-gated review queue/list/detail APIs and deterministic candidate generation via `POST /api/reviews/candidates/generate`.
+  - Generated duplicate, variant, similarity, stale, and approval candidates without auto-applying AI suggestions.
+  - Added generic `POST /api/reviews/items/{review_item_id}/accept` plus typed review action responses for accept/reject/request-changes and existing action endpoints.
+  - Persisted review items and similarity edges through SQLAlchemy reload paths while preserving memory mode.
+  - Replaced the demo-backed Reviews page with an API-backed Reviews Hub that loads queues/items/detail, shows compare objects, handles loading/empty/error/restricted states, and records reviewer actions with reasons.
+  - Updated the OpenAPI contract for candidate generation, generic accept, and `ReviewActionResponse`.
+
 ## Verification
 
-- `pnpm verify` passed: frontend lint/typecheck/test plus backend lint/typecheck/test.
-  - Frontend tests: 17 passed across `features/demo/data.test.ts`, `lib/api.test.ts`, and `components/search-result-card.test.tsx`.
-  - Backend tests: 46 passed, 3 gated tests skipped by default.
+- Focused Milestone 4 backend validation passed:
+  - `cd services/api && uv run pytest -q tests/test_reviews_hub_backend.py tests/test_governance.py tests/test_api_invariants.py tests/test_milestone2_visibility_api.py tests/test_search_permissions.py`
+  - Result: 22 passed.
+  - `cd services/api && uv run pytest -q`
+  - Result: 52 passed, 3 gated tests skipped by default.
+- Focused Milestone 4 frontend validation passed:
+  - `pnpm --filter @boxbrain/web test -- api.test.ts --reporter=dot`
+  - Result: 22 passed across 3 test files because Vitest also picked up `features/demo/data.test.ts` and `components/search-result-card.test.tsx`.
+  - `pnpm --filter @boxbrain/web typecheck` passed.
+  - `pnpm --filter @boxbrain/web lint` passed.
+  - `pnpm --filter @boxbrain/web build` passed.
+- Full local verification passed:
+  - `pnpm verify`
+  - Result: OpenAPI check, frontend lint/typecheck/test, backend lint/typecheck/test all passed; backend test result was 52 passed, 3 gated tests skipped.
+  - `pnpm e2e`
+  - Result: 1 Playwright app-shell smoke test passed.
+- Backend lint/type/static migration validation passed:
+  - `cd services/api && uv run ruff check app tests/test_reviews_hub_backend.py`
+  - Result: all checks passed.
+  - `cd services/api && uv run mypy --explicit-package-bases app`
+  - Result: no issues found in 46 source files.
+  - `cd services/api && uv run alembic upgrade head --sql`
+  - Result: static SQL generation passed.
 - `pnpm openapi:check` passed.
 - `pnpm types:generate` passed with no package-specific generators configured.
 - `pnpm --filter @boxbrain/web build` passed after cleaning the generated `.next` directory.
@@ -284,11 +314,11 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 
 ## Current Known Gaps
 
-- SQLAlchemy read/write and live integration coverage now includes ingestion, comments/notes, restricted graph metadata, and ContentUnit/WorkProduct search, but review/storyboard/content-block read paths still largely use the current in-memory-compatible repository shape.
+- SQLAlchemy read/write coverage now includes ingestion, comments/notes, restricted graph metadata, ContentUnit/WorkProduct search, review items, and similarity edges, but storyboard/content-block read paths still largely use the current in-memory-compatible repository shape.
 - Live LibreOffice visual rendering has not been verified on this host because `soffice` is not installed; install LibreOffice and run the gated render test before pilot visual fidelity signoff.
 - The worker queue is runnable and live-verified for deterministic PPTX ingestion, but richer queue aging/failure dashboards and long-running worker operations are still pending.
 - ContentBlock search is still memory-backed; SQL-backed ContentBlock persistence/search remains pending.
-- Frontend remains demo-backed for Reviews, ContentBlocks, Storyboards, Publish/Package, Admin, Plays, and Opportunities; Ask, Library, ingestion, WorkProduct detail, and ContentUnit detail now have API-backed foundations.
+- Frontend remains demo-backed for ContentBlocks, Storyboards, Publish/Package, Admin, Plays, and Opportunities; Ask, Library, ingestion, WorkProduct detail, ContentUnit detail, and Reviews now have API-backed foundations.
 - Auth/RBAC is local/dev header based, not OIDC/SSO backed.
 - Tenant/org membership and object/source visibility tables are still needed before pilot content; current visibility is conservative role-based restricted filtering.
 - OpenAPI route alignment is improved, but generated client automation is not yet implemented.
@@ -296,13 +326,13 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 
 ## Recommended Next Steps
 
-1. Add review candidate generation and Reviews Hub accept/reject graph workflows now that search/indexing foundations exist.
-2. Add SQL-backed ContentBlocks with create/search/insert flows.
-3. Add Storyboard SQL-backed composition, slot insert/swap, anchored comments, diagnostics, and snapshot restore/detail UX.
-4. Add tenant/org membership and object/source visibility tables while preserving the new role-based restricted filtering behavior.
-5. Generate a typed frontend API client from OpenAPI and replace remaining demo data route by route.
-6. Expand Playwright coverage for upload, job detail, search-to-detail, review action, storyboard snapshot, and restricted viewer flows.
-7. Add admin ingestion/search health telemetry, job duration by stage, failure counts, and queue aging.
-8. Install LibreOffice on a verification host and run `BOXBRAIN_RUN_RENDER_TESTS=1 uv run pytest -q tests/test_live_rendering.py` for live visual fidelity signoff.
-9. Add production auth integration planning for OIDC/SSO while preserving local header-driven development mode.
-10. Keep AI enrichment deterministic until review-candidate persistence and accept/reject audit flows are fully wired.
+1. Add SQL-backed ContentBlocks with create/search/insert flows.
+2. Add Storyboard SQL-backed composition, slot insert/swap, anchored comments, diagnostics, and snapshot restore/detail UX.
+3. Move candidate creation into ingestion/enrichment worker stages while keeping AI suggestions suggested-only until review.
+4. Add AI output status linkage for accepted/rejected/generated review candidates.
+5. Add tenant/org membership and object/source visibility tables while preserving the new role-based restricted filtering behavior.
+6. Generate a typed frontend API client from OpenAPI and replace remaining demo data route by route.
+7. Expand Playwright coverage for upload, job detail, search-to-detail, review action, storyboard snapshot, and restricted viewer flows.
+8. Add admin ingestion/search/review health telemetry, job duration by stage, failure counts, and queue aging.
+9. Install LibreOffice on a verification host and run `BOXBRAIN_RUN_RENDER_TESTS=1 uv run pytest -q tests/test_live_rendering.py` for live visual fidelity signoff.
+10. Add production auth integration planning for OIDC/SSO while preserving local header-driven development mode.
