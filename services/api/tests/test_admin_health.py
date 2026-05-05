@@ -8,6 +8,7 @@ from app.domain.models import IngestionJob, now_utc
 from app.infrastructure.in_memory_repository import InMemoryBoxBrainRepository
 from app.infrastructure.queue import NoopIngestionQueue
 from app.main import create_app
+from .conftest import role_headers
 
 
 def test_admin_health_returns_pilot_readiness_observability_summary() -> None:
@@ -15,7 +16,7 @@ def test_admin_health_returns_pilot_readiness_observability_summary() -> None:
     app = create_app(InMemoryBoxBrainRepository(), ingestion_queue=queue)
 
     with TestClient(app) as client:
-        response = client.get("/api/admin/health")
+        response = client.get("/api/admin/health", headers=role_headers("admin"))
 
     assert response.status_code == 200
     payload = response.json()
@@ -69,7 +70,7 @@ def test_admin_health_surfaces_failed_retried_jobs_and_stage_failures() -> None:
     app = create_app(repo, ingestion_queue=queue)
 
     with TestClient(app) as client:
-        response = client.get("/api/admin/health")
+        response = client.get("/api/admin/health", headers=role_headers("admin"))
 
     assert response.status_code == 200
     payload = response.json()
@@ -85,6 +86,19 @@ def test_admin_health_surfaces_failed_retried_jobs_and_stage_failures() -> None:
     assert payload["stages"]["completedStageCounts"]["validated"] == 1
     assert payload["stages"]["failedStageCounts"]["rendered"] == 1
     assert payload["stages"]["stagesWithFailures"] == ["rendered"]
+
+
+def test_admin_health_requires_admin_actor() -> None:
+    app = create_app(InMemoryBoxBrainRepository())
+
+    with TestClient(app) as client:
+        anonymous = client.get("/api/admin/health")
+        viewer = client.get("/api/admin/health", headers=role_headers("viewer"))
+        admin = client.get("/api/admin/health", headers=role_headers("admin"))
+
+    assert anonymous.status_code == 403
+    assert viewer.status_code == 403
+    assert admin.status_code == 200
 
 
 def test_local_browser_origins_can_call_api() -> None:

@@ -9,8 +9,11 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 @router.get("/health", response_model=s.AdminHealth)
-def admin_health(use_cases: BoxBrainUseCases = Depends(get_use_cases)) -> s.AdminHealth:
-    return use_cases.admin_health()
+def admin_health(
+    use_cases: BoxBrainUseCases = Depends(get_use_cases),
+    actor: Actor = Depends(get_actor),
+) -> s.AdminHealth:
+    return use_cases.admin_health(actor)
 
 
 @router.get("/audit-events", response_model=list[s.AuditEvent])
@@ -19,4 +22,3 @@ def audit_events(
     actor: Actor = Depends(get_actor),
 ) -> list[s.AuditEvent]:
     return use_cases.audit_events(actor)
-

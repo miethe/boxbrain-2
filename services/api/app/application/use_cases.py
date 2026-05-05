@@ -79,7 +79,8 @@ class BoxBrainUseCases:
     def health(self) -> s.HealthResponse:
         return s.HealthResponse(status="ok")
 
-    def admin_health(self) -> s.AdminHealth:
+    def admin_health(self, actor: Actor) -> s.AdminHealth:
+        require_role(actor, "admin")
         self._refresh_repository()
         ingestion = self._admin_ingestion_health()
         queue = self._admin_queue_health(ingestion)
