@@ -459,12 +459,121 @@ class AuditEvent(BaseModel):
     createdAt: datetime
 
 
-class AdminHealth(BaseModel):
-    status: str
+class AdminIngestionFailure(BaseModel):
+    jobId: UUID
+    title: str | None = None
+    stage: str
+    errorCode: str | None = None
+    errorMessage: str | None = None
+    retryCount: int
+    updatedAt: datetime
+
+
+class AdminIngestionHealth(BaseModel):
+    totalJobs: int
+    statusCounts: dict[str, int] = Field(default_factory=dict)
+    stageCounts: dict[str, int] = Field(default_factory=dict)
+    failedJobs: int
+    retriedJobs: int
+    totalRetries: int
+    retryableFailures: int
+    recentFailures: list[AdminIngestionFailure] = Field(default_factory=list)
+
+
+class AdminQueueHealth(BaseModel):
+    status: Literal["idle", "active", "healthy", "degraded"]
+    adapter: str
+    queueName: str | None = None
+    enqueuedJobCount: int | None = None
+    queuedJobCount: int
+    runningJobCount: int
+    failedJobCount: int
+    retryQueuedJobCount: int
+    notes: list[str] = Field(default_factory=list)
+
+
+class AdminStageHealth(BaseModel):
+    currentStageCounts: dict[str, int] = Field(default_factory=dict)
+    completedStageCounts: dict[str, int] = Field(default_factory=dict)
+    failedStageCounts: dict[str, int] = Field(default_factory=dict)
+    stagesWithFailures: list[str] = Field(default_factory=list)
+
+
+class AdminCatalogCounts(BaseModel):
     contentUnitFamilies: int
+    contentUnitVariants: int
     contentUnitVersions: int
+    workProductFamilies: int
     workProductVersions: int
     contentBlocks: int
     storyboards: int
-    ingestionJobs: int
+    storyboardSnapshots: int
+    storedObjects: int
+    provenanceRecords: int
+
+
+class AdminSearchIndexHealth(BaseModel):
+    backend: Literal["memory", "database"]
+    searchableContentUnitVersions: int
+    searchableWorkProductVersions: int
+    searchableContentBlocks: int
+    embeddings: int
+    embeddingTargetCounts: dict[str, int] = Field(default_factory=dict)
+    restrictedContentUnitVersions: int
+    restrictedWorkProductVersions: int
+    restrictedContentBlocks: int
+
+
+class AdminReviewAuditCounts(BaseModel):
+    reviewItems: int
+    openReviewItems: int
+    reviewItemsByStatus: dict[str, int] = Field(default_factory=dict)
+    reviewItemsByQueue: dict[str, int] = Field(default_factory=dict)
     auditEvents: int
+    auditEventsByAction: dict[str, int] = Field(default_factory=dict)
+    comments: int
+    notes: int
+
+
+class AdminCompositionCounts(BaseModel):
+    contentBlocks: int
+    contentBlockMembers: int
+    storyboards: int
+    storyboardDraftSections: int
+    storyboardDraftSlots: int
+    storyboardSnapshots: int
+    storyboardSnapshotSections: int
+    storyboardSnapshotSlots: int
+
+
+class AdminSearchEvalCase(BaseModel):
+    name: str
+    query: str
+    role: Role
+    expectedTopObjectId: UUID | None = None
+    topObjectId: UUID | None = None
+    topTitle: str | None = None
+    resultCount: int
+    topScore: float | None = None
+    passed: bool
+    notes: list[str] = Field(default_factory=list)
+
+
+class AdminSearchEvalSummary(BaseModel):
+    status: Literal["pass", "warn", "fail"]
+    totalCases: int
+    passedCases: int
+    failedCases: int
+    cases: list[AdminSearchEvalCase] = Field(default_factory=list)
+
+
+class AdminHealth(BaseModel):
+    status: str
+    ingestion: AdminIngestionHealth
+    queue: AdminQueueHealth
+    stages: AdminStageHealth
+    catalog: AdminCatalogCounts
+    searchIndex: AdminSearchIndexHealth
+    reviewAudit: AdminReviewAuditCounts
+    composition: AdminCompositionCounts
+    searchEval: AdminSearchEvalSummary

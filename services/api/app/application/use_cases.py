@@ -80,16 +80,294 @@ class BoxBrainUseCases:
         return s.HealthResponse(status="ok")
 
     def admin_health(self) -> s.AdminHealth:
+        self._refresh_repository()
+        ingestion = self._admin_ingestion_health()
+        queue = self._admin_queue_health(ingestion)
+        stages = self._admin_stage_health()
+        search_eval = self._admin_search_eval_summary()
+        status = "ok"
+        if queue.status == "degraded" or search_eval.status == "fail":
+            status = "degraded"
+        elif search_eval.status == "warn":
+            status = "warn"
         return s.AdminHealth(
-            status="ok",
+            status=status,
+            ingestion=ingestion,
+            queue=queue,
+            stages=stages,
+            catalog=self._admin_catalog_counts(),
+            searchIndex=self._admin_search_index_health(),
+            reviewAudit=self._admin_review_audit_counts(),
+            composition=self._admin_composition_counts(),
+            searchEval=search_eval,
+        )
+
+    def _admin_ingestion_health(self) -> s.AdminIngestionHealth:
+        jobs = list(self.repository.ingestion_jobs.values())
+        status_counts = self._sorted_counts(job.status for job in jobs)
+        stage_counts = self._sorted_counts(job.stage for job in jobs)
+        failed_jobs = [job for job in jobs if job.status == "failed"]
+        recent_failures = sorted(failed_jobs, key=lambda item: item.updated_at, reverse=True)[:5]
+        return s.AdminIngestionHealth(
+            totalJobs=len(jobs),
+            statusCounts=status_counts,
+            stageCounts=stage_counts,
+            failedJobs=len(failed_jobs),
+            retriedJobs=sum(1 for job in jobs if job.retry_count > 0),
+            totalRetries=sum(job.retry_count for job in jobs),
+            retryableFailures=sum(1 for job in failed_jobs if job.error_code is not None),
+            recentFailures=[
+                s.AdminIngestionFailure(
+                    jobId=job.id,
+                    title=job.title,
+                    stage=job.stage,
+                    errorCode=job.error_code,
+                    errorMessage=job.error_message,
+                    retryCount=job.retry_count,
+                    updatedAt=job.updated_at,
+                )
+                for job in recent_failures
+            ],
+        )
+
+    def _admin_queue_health(self, ingestion: s.AdminIngestionHealth) -> s.AdminQueueHealth:
+        adapter = type(self.ingestion_queue).__name__
+        queue_name = None
+        notes: list[str] = []
+        enqueued_job_count = None
+        queue = getattr(self.ingestion_queue, "queue", None)
+        if queue is not None:
+            queue_name = str(getattr(queue, "name", "") or "boxbrain-ingestion")
+            try:
+                enqueued_job_count = int(getattr(queue, "count"))
+            except Exception as exc:  # pragma: no cover - depends on live Redis/RQ.
+                notes.append(f"Queue depth unavailable: {type(exc).__name__}")
+        else:
+            enqueued_ids = getattr(self.ingestion_queue, "enqueued_job_ids", None)
+            if isinstance(enqueued_ids, list):
+                enqueued_job_count = len(enqueued_ids)
+                notes.append("In-memory queue adapter records enqueue attempts only.")
+
+        queued_job_count = ingestion.statusCounts.get("queued", 0)
+        running_job_count = ingestion.statusCounts.get("running", 0)
+        failed_job_count = ingestion.statusCounts.get("failed", 0)
+        retry_queued_job_count = ingestion.stageCounts.get("retry_queued", 0)
+        if failed_job_count:
+            status: Any = "degraded"
+        elif queued_job_count or running_job_count or retry_queued_job_count:
+            status = "active"
+        elif ingestion.totalJobs:
+            status = "healthy"
+        else:
+            status = "idle"
+        return s.AdminQueueHealth(
+            status=status,
+            adapter=adapter,
+            queueName=queue_name,
+            enqueuedJobCount=enqueued_job_count,
+            queuedJobCount=queued_job_count,
+            runningJobCount=running_job_count,
+            failedJobCount=failed_job_count,
+            retryQueuedJobCount=retry_queued_job_count,
+            notes=notes,
+        )
+
+    def _admin_stage_health(self) -> s.AdminStageHealth:
+        jobs = list(self.repository.ingestion_jobs.values())
+        completed_stage_counter: Counter[str] = Counter()
+        failed_stage_counter: Counter[str] = Counter()
+        for job in jobs:
+            telemetry = job.upload_metadata.get("stageTelemetry")
+            if not isinstance(telemetry, dict):
+                continue
+            for stage, details in telemetry.items():
+                if not isinstance(details, dict):
+                    continue
+                stage_status = str(details.get("status", ""))
+                if stage_status == "failed":
+                    failed_stage_counter[str(stage)] += 1
+                elif stage_status:
+                    completed_stage_counter[str(stage)] += 1
+        return s.AdminStageHealth(
+            currentStageCounts=self._sorted_counts(job.stage for job in jobs),
+            completedStageCounts=dict(sorted(completed_stage_counter.items())),
+            failedStageCounts=dict(sorted(failed_stage_counter.items())),
+            stagesWithFailures=sorted(failed_stage_counter),
+        )
+
+    def _admin_catalog_counts(self) -> s.AdminCatalogCounts:
+        return s.AdminCatalogCounts(
             contentUnitFamilies=len(self.repository.content_unit_families),
+            contentUnitVariants=len(self.repository.content_unit_variants),
             contentUnitVersions=len(self.repository.content_unit_versions),
+            workProductFamilies=len(self.repository.work_product_families),
             workProductVersions=len(self.repository.work_product_versions),
             contentBlocks=len(self.repository.content_blocks),
             storyboards=len(self.repository.storyboards),
-            ingestionJobs=len(self.repository.ingestion_jobs),
-            auditEvents=len(self.repository.audit_events),
+            storyboardSnapshots=len(self.repository.storyboard_snapshots),
+            storedObjects=len(self.repository.stored_objects),
+            provenanceRecords=len(self.repository.provenance_records),
         )
+
+    def _admin_search_index_health(self) -> s.AdminSearchIndexHealth:
+        embedding_target_counts = self._sorted_counts(
+            embedding.target_type for embedding in self.repository.embeddings.values()
+        )
+        restricted_content_unit_versions = sum(
+            1
+            for version in self.repository.content_unit_versions.values()
+            if self._is_content_unit_version_restricted(version)
+        )
+        restricted_work_product_versions = sum(
+            1
+            for version in self.repository.work_product_versions.values()
+            if self._is_work_product_version_restricted(version)
+        )
+        return s.AdminSearchIndexHealth(
+            backend="database" if self._has_database_search() else "memory",
+            searchableContentUnitVersions=len(self.repository.content_unit_versions),
+            searchableWorkProductVersions=len(self.repository.work_product_versions),
+            searchableContentBlocks=len(self.repository.content_blocks),
+            embeddings=len(self.repository.embeddings),
+            embeddingTargetCounts=embedding_target_counts,
+            restrictedContentUnitVersions=restricted_content_unit_versions,
+            restrictedWorkProductVersions=restricted_work_product_versions,
+            restrictedContentBlocks=sum(1 for block in self.repository.content_blocks.values() if block.restricted),
+        )
+
+    def _admin_review_audit_counts(self) -> s.AdminReviewAuditCounts:
+        review_items = list(self.repository.review_items.values())
+        return s.AdminReviewAuditCounts(
+            reviewItems=len(review_items),
+            openReviewItems=sum(1 for item in review_items if item.status == "open"),
+            reviewItemsByStatus=self._sorted_counts(item.status for item in review_items),
+            reviewItemsByQueue=self._sorted_counts(item.queue_type for item in review_items),
+            auditEvents=len(self.repository.audit_events),
+            auditEventsByAction=self._sorted_counts(event.action for event in self.repository.audit_events),
+            comments=len(self.repository.comments),
+            notes=len(self.repository.notes),
+        )
+
+    def _admin_composition_counts(self) -> s.AdminCompositionCounts:
+        storyboards = list(self.repository.storyboards.values())
+        snapshots = list(self.repository.storyboard_snapshots.values())
+        return s.AdminCompositionCounts(
+            contentBlocks=len(self.repository.content_blocks),
+            contentBlockMembers=sum(len(block.members) for block in self.repository.content_blocks.values()),
+            storyboards=len(storyboards),
+            storyboardDraftSections=sum(len(storyboard.draft_sections) for storyboard in storyboards),
+            storyboardDraftSlots=sum(
+                len(section.slots)
+                for storyboard in storyboards
+                for section in storyboard.draft_sections
+            ),
+            storyboardSnapshots=len(snapshots),
+            storyboardSnapshotSections=sum(len(snapshot.sections) for snapshot in snapshots),
+            storyboardSnapshotSlots=sum(
+                len(section.slots)
+                for snapshot in snapshots
+                for section in snapshot.sections
+            ),
+        )
+
+    def _admin_search_eval_summary(self) -> s.AdminSearchEvalSummary:
+        cases = [
+            self._admin_search_eval_case(
+                name="operating_margin_retrieval",
+                query="operating margin payback",
+                role="viewer",
+                require_results=True,
+            ),
+            self._admin_search_eval_case(
+                name="technical_architecture_retrieval",
+                query="technical architecture migration",
+                role="viewer",
+                require_results=True,
+            ),
+            self._admin_search_eval_case(
+                name="restricted_viewer_exclusion",
+                query="client-sensitive operating margin bridge",
+                role="viewer",
+                require_no_restricted_results=True,
+            ),
+        ]
+        passed_cases = sum(1 for case in cases if case.passed)
+        failed_cases = len(cases) - passed_cases
+        if failed_cases == 0:
+            status: Any = "pass"
+        elif passed_cases:
+            status = "warn"
+        else:
+            status = "fail"
+        return s.AdminSearchEvalSummary(
+            status=status,
+            totalCases=len(cases),
+            passedCases=passed_cases,
+            failedCases=failed_cases,
+            cases=cases,
+        )
+
+    def _admin_search_eval_case(
+        self,
+        *,
+        name: str,
+        query: str,
+        role: s.Role,
+        require_results: bool = False,
+        require_no_restricted_results: bool = False,
+    ) -> s.AdminSearchEvalCase:
+        actor = Actor(user_id=f"admin-health-{role}", role=role)
+        response = self.search(
+            s.SearchRequest(query=query, resultMode="versions", limit=5),
+            actor,
+        )
+        restricted_ids = self._restricted_search_result_ids()
+        top = response.items[0] if response.items else None
+        returned_ids = {item.objectId for item in response.items}
+        notes: list[str] = []
+        passed = True
+        if require_results and not response.items:
+            passed = False
+            notes.append("Expected at least one search result.")
+        if require_no_restricted_results and returned_ids.intersection(restricted_ids):
+            passed = False
+            notes.append("Restricted result leaked into viewer search.")
+        elif require_no_restricted_results:
+            notes.append("Restricted candidates excluded from viewer search.")
+        return s.AdminSearchEvalCase(
+            name=name,
+            query=query,
+            role=role,
+            topObjectId=top.objectId if top else None,
+            topTitle=top.title if top else None,
+            resultCount=len(response.items),
+            topScore=round(top.score, 6) if top else None,
+            passed=passed,
+            notes=notes,
+        )
+
+    def _restricted_search_result_ids(self) -> set[UUID]:
+        ids: set[UUID] = set()
+        for content_unit_version in self.repository.content_unit_versions.values():
+            if self._is_content_unit_version_restricted(content_unit_version):
+                ids.add(content_unit_version.id)
+        for work_product_version in self.repository.work_product_versions.values():
+            if self._is_work_product_version_restricted(work_product_version):
+                ids.add(work_product_version.id)
+        ids.update(block.id for block in self.repository.content_blocks.values() if block.restricted)
+        return ids
+
+    def _is_content_unit_version_restricted(self, version: ContentUnitVersion) -> bool:
+        variant = self.repository.content_unit_variants.get(version.variant_id)
+        family = self.repository.content_unit_families.get(variant.family_id) if variant else None
+        return bool(version.restricted or (family and family.restricted))
+
+    def _is_work_product_version_restricted(self, version: WorkProductVersion) -> bool:
+        family = self.repository.work_product_families.get(version.family_id)
+        return bool(version.restricted or (family and family.restricted))
+
+    def _sorted_counts(self, values: Any) -> dict[str, int]:
+        return dict(sorted(Counter(str(value) for value in values).items()))
 
     def audit_events(self, actor: Actor) -> list[s.AuditEvent]:
         require_role(actor, "admin")

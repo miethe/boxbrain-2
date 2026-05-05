@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import (
@@ -74,9 +75,20 @@ def create_app(
         slide_renderer=resolved_slide_renderer,
     )
 
+    register_middleware(app)
     register_exception_handlers(app)
     register_routes(app)
     return app
+
+
+def register_middleware(app: FastAPI) -> None:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 def register_routes(app: FastAPI) -> None:

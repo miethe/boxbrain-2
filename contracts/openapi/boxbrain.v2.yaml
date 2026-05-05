@@ -1509,14 +1509,172 @@ components:
           type: object
           additionalProperties: true
         createdAt: { type: string, format: date-time }
+    AdminIngestionFailure:
+      type: object
+      properties:
+        jobId: { type: string, format: uuid }
+        title: { type: string, nullable: true }
+        stage: { type: string }
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+        retryCount: { type: integer }
+        updatedAt: { type: string, format: date-time }
+      required: [jobId, stage, retryCount, updatedAt]
+    AdminIngestionHealth:
+      type: object
+      properties:
+        totalJobs: { type: integer }
+        statusCounts:
+          type: object
+          additionalProperties: { type: integer }
+        stageCounts:
+          type: object
+          additionalProperties: { type: integer }
+        failedJobs: { type: integer }
+        retriedJobs: { type: integer }
+        totalRetries: { type: integer }
+        retryableFailures: { type: integer }
+        recentFailures:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminIngestionFailure'
+      required: [totalJobs, statusCounts, stageCounts, failedJobs, retriedJobs, totalRetries, retryableFailures, recentFailures]
+    AdminQueueHealth:
+      type: object
+      properties:
+        status: { type: string, enum: [idle, active, healthy, degraded] }
+        adapter: { type: string }
+        queueName: { type: string, nullable: true }
+        enqueuedJobCount: { type: integer, nullable: true }
+        queuedJobCount: { type: integer }
+        runningJobCount: { type: integer }
+        failedJobCount: { type: integer }
+        retryQueuedJobCount: { type: integer }
+        notes:
+          type: array
+          items: { type: string }
+      required: [status, adapter, queuedJobCount, runningJobCount, failedJobCount, retryQueuedJobCount, notes]
+    AdminStageHealth:
+      type: object
+      properties:
+        currentStageCounts:
+          type: object
+          additionalProperties: { type: integer }
+        completedStageCounts:
+          type: object
+          additionalProperties: { type: integer }
+        failedStageCounts:
+          type: object
+          additionalProperties: { type: integer }
+        stagesWithFailures:
+          type: array
+          items: { type: string }
+      required: [currentStageCounts, completedStageCounts, failedStageCounts, stagesWithFailures]
+    AdminCatalogCounts:
+      type: object
+      properties:
+        contentUnitFamilies: { type: integer }
+        contentUnitVariants: { type: integer }
+        contentUnitVersions: { type: integer }
+        workProductFamilies: { type: integer }
+        workProductVersions: { type: integer }
+        contentBlocks: { type: integer }
+        storyboards: { type: integer }
+        storyboardSnapshots: { type: integer }
+        storedObjects: { type: integer }
+        provenanceRecords: { type: integer }
+      required: [contentUnitFamilies, contentUnitVariants, contentUnitVersions, workProductFamilies, workProductVersions, contentBlocks, storyboards, storyboardSnapshots, storedObjects, provenanceRecords]
+    AdminSearchIndexHealth:
+      type: object
+      properties:
+        backend: { type: string, enum: [memory, database] }
+        searchableContentUnitVersions: { type: integer }
+        searchableWorkProductVersions: { type: integer }
+        searchableContentBlocks: { type: integer }
+        embeddings: { type: integer }
+        embeddingTargetCounts:
+          type: object
+          additionalProperties: { type: integer }
+        restrictedContentUnitVersions: { type: integer }
+        restrictedWorkProductVersions: { type: integer }
+        restrictedContentBlocks: { type: integer }
+      required: [backend, searchableContentUnitVersions, searchableWorkProductVersions, searchableContentBlocks, embeddings, embeddingTargetCounts, restrictedContentUnitVersions, restrictedWorkProductVersions, restrictedContentBlocks]
+    AdminReviewAuditCounts:
+      type: object
+      properties:
+        reviewItems: { type: integer }
+        openReviewItems: { type: integer }
+        reviewItemsByStatus:
+          type: object
+          additionalProperties: { type: integer }
+        reviewItemsByQueue:
+          type: object
+          additionalProperties: { type: integer }
+        auditEvents: { type: integer }
+        auditEventsByAction:
+          type: object
+          additionalProperties: { type: integer }
+        comments: { type: integer }
+        notes: { type: integer }
+      required: [reviewItems, openReviewItems, reviewItemsByStatus, reviewItemsByQueue, auditEvents, auditEventsByAction, comments, notes]
+    AdminCompositionCounts:
+      type: object
+      properties:
+        contentBlocks: { type: integer }
+        contentBlockMembers: { type: integer }
+        storyboards: { type: integer }
+        storyboardDraftSections: { type: integer }
+        storyboardDraftSlots: { type: integer }
+        storyboardSnapshots: { type: integer }
+        storyboardSnapshotSections: { type: integer }
+        storyboardSnapshotSlots: { type: integer }
+      required: [contentBlocks, contentBlockMembers, storyboards, storyboardDraftSections, storyboardDraftSlots, storyboardSnapshots, storyboardSnapshotSections, storyboardSnapshotSlots]
+    AdminSearchEvalCase:
+      type: object
+      properties:
+        name: { type: string }
+        query: { type: string }
+        role: { type: string, enum: [viewer, contributor, curator, reviewer, admin] }
+        expectedTopObjectId: { type: string, format: uuid, nullable: true }
+        topObjectId: { type: string, format: uuid, nullable: true }
+        topTitle: { type: string, nullable: true }
+        resultCount: { type: integer }
+        topScore: { type: number, format: float, nullable: true }
+        passed: { type: boolean }
+        notes:
+          type: array
+          items: { type: string }
+      required: [name, query, role, resultCount, passed, notes]
+    AdminSearchEvalSummary:
+      type: object
+      properties:
+        status: { type: string, enum: [pass, warn, fail] }
+        totalCases: { type: integer }
+        passedCases: { type: integer }
+        failedCases: { type: integer }
+        cases:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSearchEvalCase'
+      required: [status, totalCases, passedCases, failedCases, cases]
     AdminHealth:
       type: object
       properties:
         status: { type: string }
-        contentUnitFamilies: { type: integer }
-        contentUnitVersions: { type: integer }
-        workProductVersions: { type: integer }
-        contentBlocks: { type: integer }
-        storyboards: { type: integer }
-        ingestionJobs: { type: integer }
-        auditEvents: { type: integer }
+        ingestion:
+          $ref: '#/components/schemas/AdminIngestionHealth'
+        queue:
+          $ref: '#/components/schemas/AdminQueueHealth'
+        stages:
+          $ref: '#/components/schemas/AdminStageHealth'
+        catalog:
+          $ref: '#/components/schemas/AdminCatalogCounts'
+        searchIndex:
+          $ref: '#/components/schemas/AdminSearchIndexHealth'
+        reviewAudit:
+          $ref: '#/components/schemas/AdminReviewAuditCounts'
+        composition:
+          $ref: '#/components/schemas/AdminCompositionCounts'
+        searchEval:
+          $ref: '#/components/schemas/AdminSearchEvalSummary'
+      required: [status, ingestion, queue, stages, catalog, searchIndex, reviewAudit, composition, searchEval]
