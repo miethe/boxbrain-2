@@ -262,6 +262,9 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
   - Expanded `GET /api/admin/health` into nested observability summaries for ingestion jobs, queue state, stage telemetry, catalog/search index counts, review/audit state, composition counts, and deterministic search eval results.
   - Added local browser CORS middleware for localhost/127.0.0.1 web origins so API-backed client routes can run in local pilot/E2E mode.
   - Updated the OpenAPI contract and added focused backend coverage for admin telemetry, failed/retried jobs, stage failures, search eval readiness, and local browser API access.
+- `f65d8e2` - `fix(admin): protect readiness telemetry`
+  - Required an admin actor for `GET /api/admin/health` at the route/use-case boundary so viewer/no-header callers cannot read readiness telemetry.
+  - Added denial coverage for anonymous and viewer-scoped requests while preserving admin access for the frontend readiness surface.
 - `2369e29` - `feat(web): surface pilot readiness dashboard`
   - Replaced the static Admin page with an API-backed pilot readiness dashboard that loads Admin health and ingestion jobs, handles restricted/error states, shows readiness checks, and keeps the ingestion workspace embedded.
   - Added typed frontend Admin health helpers, a loading state, local CORS-backed Ask UI E2E coverage, stable `data-testid` support for shared Cards, and a broader Playwright core-flow spec across Ask, Library, ingestion, Reviews, Admin, ContentBlocks, and Storyboards.
@@ -273,7 +276,7 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
 
 - Focused Milestone 6 backend validation passed:
   - `cd services/api && uv run pytest -q tests/test_admin_health.py tests/test_hybrid_search_backend.py`
-  - Result: 8 passed.
+  - Result: 9 passed after admin-health authorization coverage.
   - `cd services/api && uv run ruff check app tests/test_admin_health.py`
   - Result: all checks passed.
   - `cd services/api && uv run mypy --explicit-package-bases app`
@@ -287,7 +290,7 @@ The implementation plan's sequencing still holds: identity and ingestion fidelit
   - `BOXBRAIN_WEB_E2E_PORT=3301 BOXBRAIN_API_E2E_PORT=18080 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:18080 pnpm --filter @boxbrain/web e2e` passed: 5 Playwright tests.
 - Full local verification passed:
   - `pnpm verify`
-  - Result: OpenAPI check, frontend lint/typecheck/test, backend lint/typecheck/test all passed; frontend result was 25 passed, backend result was 62 passed and 3 gated tests skipped.
+  - Result: OpenAPI check, frontend lint/typecheck/test, backend lint/typecheck/test all passed; frontend result was 25 passed, backend result was 63 passed and 3 gated tests skipped.
 - Focused Milestone 5 backend validation passed:
   - `cd services/api && uv run pytest -q tests/test_content_blocks_backend.py tests/test_storyboards_and_blocks.py tests/test_hybrid_search_backend.py`
   - Result: 12 passed.
