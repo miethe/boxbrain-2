@@ -144,6 +144,9 @@ export function VariationExplorerClient() {
   const [variationFocusIndex, setVariationFocusIndex] = useState(0);
   const railRef = useRef<HTMLDivElement>(null);
   const variationRef = useRef<HTMLDivElement>(null);
+  // Canonicalize the inbound URL at most once; interactions already write canonical
+  // hrefs, and replacing on every load can oscillate between resolved variants.
+  const canonicalizedRef = useRef(false);
 
   const params = useMemo<ExplorerParams>(
     () => ({
@@ -164,7 +167,8 @@ export function VariationExplorerClient() {
       .then((result) => {
         if (cancelled) return;
         setState(result);
-        if (result.status === "ready") {
+        if (result.status === "ready" && !canonicalizedRef.current) {
+          canonicalizedRef.current = true;
           const nextHref = explorerHref(pathname, result.data.resolved);
           const currentHref = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
           if (nextHref !== currentHref) router.replace(nextHref, { scroll: false });
