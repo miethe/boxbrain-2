@@ -1,48 +1,47 @@
-import Link from "next/link";
-import { Building2, Lock, Target } from "lucide-react";
-import { Button, Card, Meter, PageHeader, StatusBadge, Tag } from "@/components/ui";
+import { Card, EmptyState, InfoBanner } from "@/components/ui";
+import { opportunity } from "@/features/opportunities/data";
+import { OpportunityHeader } from "@/components/opportunities/header";
+import { OpportunityTabNav, knownOpportunityTabs, type OpportunityTabKey } from "@/components/opportunities/tabs";
+import { ContextPanel } from "@/components/opportunities/context-panel";
+import { WorkspaceInsights } from "@/components/opportunities/workspace-insights";
+import { SavedMaterials } from "@/components/opportunities/saved-materials";
+import { PlayBuilder } from "@/components/opportunities/play-builder";
 
-export default function OpportunitiesPage() {
+const tabCopy: Record<Exclude<OpportunityTabKey, "workspace">, { title: string; body: string }> = {
+  storyboard: { title: "Storyboard — not available in this preview", body: "Linking a real Storyboard to this preview opportunity requires an Opportunity domain model, which does not exist yet (see audit-digest.md#home-plays-opps)." },
+  insights: { title: "Insights — not available in this preview", body: "Deal-level insights require historical outcome telemetry that this preview surface does not have." },
+  requirements: { title: "Requirements — not available in this preview", body: "Requirements tracking is not part of the seeded preview dataset yet." },
+  messages: { title: "Messages — not available in this preview", body: "Opportunity messaging is a separate concept from ContentUnit comments and is not wired yet." },
+  activity: { title: "Activity — not available in this preview", body: "A full opportunity audit trail requires the Opportunity domain model, which does not exist yet." }
+};
+
+export default async function OpportunitiesPage({ searchParams }: { searchParams?: Promise<{ tab?: string }> }) {
+  const query = (await searchParams) ?? {};
+  const activeTab = (knownOpportunityTabs as string[]).includes(query.tab ?? "") ? (query.tab as OpportunityTabKey) : "workspace";
+
   return (
-    <div className="route-body">
-      <PageHeader
-        eyebrow="Preview-only module"
-        title="Opportunity workspace"
-        description="Full opportunity orchestration is deferred until catalog, search, reviews, and storyboard workflows are stable."
-        actions={<Button><Lock size={14} /> Limited preview</Button>}
-      />
-      <div className="two-col">
-        <Card className="p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-sm font-bold text-blue-700">
-                <Building2 size={16} /> Acme Global Expansion
-              </div>
-              <h2 className="m-0 text-2xl font-bold">$4.2M modernization pursuit</h2>
-              <p className="max-w-2xl text-sm text-slate-500">Preview context for future account-specific recommendations, Plays, WorkProducts, ContentUnits, saved selections, and outcome feedback.</p>
-            </div>
-            <Meter value={78} label="fit" />
-          </div>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <Tag>Manufacturing</Tag>
-            <Tag>EMEA + NA</Tag>
-            <Tag>Executive sponsor</Tag>
-            <StatusBadge tone="ai">recommendations preview</StatusBadge>
-          </div>
-          <Link className="btn btn-primary mt-5" href="/storyboards/sb-cloud-modernization">
-            <Target size={14} /> Open opportunity storyboard preview
-          </Link>
-        </Card>
-        <Card className="p-5">
-          <h2 className="m-0 text-base font-bold">Top preview recommendations</h2>
-          {["Cloud Modernization Executive Overview", "Three-slide ROI proof story", "Migration Architecture Path", "EMEA Customer Proof"].map((item) => (
-            <div key={item} className="mt-3 rounded-lg border border-slate-200 p-3 text-sm font-semibold">
-              {item}
-              <div className="mt-1 text-xs font-normal text-slate-500">Recommendation is read-only in MVP.</div>
-            </div>
-          ))}
-        </Card>
+    <div className="route-body" data-testid="opportunities-page">
+      <InfoBanner tone="ai">
+        Opportunities is a preview surface backed by local seed data — there is no live Opportunity, Deal Health, or AI recommendation backend yet. Browsing is real; actions here are illustrative only.
+      </InfoBanner>
+
+      <div className="mt-4">
+        <OpportunityHeader opportunity={opportunity} />
+        <OpportunityTabNav active={activeTab} />
       </div>
+
+      {activeTab === "workspace" ? (
+        <div className="mt-4 grid items-start gap-4 xl:grid-cols-[260px_minmax(0,1fr)_320px_minmax(0,1fr)]" data-testid="opportunity-workspace">
+          <ContextPanel opportunity={opportunity} />
+          <WorkspaceInsights />
+          <SavedMaterials />
+          <PlayBuilder />
+        </div>
+      ) : (
+        <Card className="mt-4 p-4">
+          <EmptyState title={tabCopy[activeTab].title} body={tabCopy[activeTab].body} />
+        </Card>
+      )}
     </div>
   );
 }
