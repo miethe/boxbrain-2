@@ -1,0 +1,1818 @@
+{
+ "screens": [
+  {
+   "api_needs": [
+    {
+     "need": "Per-slot/section 'match score' or content-fit percentage (e.g. 96% match) driving recommendation badges",
+     "exists": "no",
+     "endpoint_hint": "StoryboardSlot/StoryboardDiagnostics has no matchScore/confidence field; would need scoring service output on slot or a recommendation endpoint"
+    },
+    {
+     "need": "Context-aware content recommendations for a section/storyboard (Recommended tray tab, 'Matched to X persona/audience')",
+     "exists": "no",
+     "endpoint_hint": "no /storyboards/{id}/recommendations endpoint; only generic POST /search exists"
+    },
+    {
+     "need": "Storyboard-level metrics: content coverage %, duplicate count, weak-transition count, estimated read time",
+     "exists": "partial",
+     "endpoint_hint": "StoryboardDiagnostics only returns narrativeScore + warnings[]; estimated_read_time_minutes exists as a DB column on storyboard_sections but is not exposed in StoryboardSection/StoryboardDetail schema; coverage/duplicate-count/weak-transition aggregates are not computed at all (only a duplicate_selection warning entry exists, not a count)"
+    },
+    {
+     "need": "Section reorder / update (title, summary, orderIndex)",
+     "exists": "partial",
+     "endpoint_hint": "PATCH /storyboard-sections/{section_id} exists in backend and use_cases.update_storyboard_section, but apps/web/lib/api.ts has no updateStoryboardSection client function and the page never calls it"
+    },
+    {
+     "need": "Slot delete / remove-from-section",
+     "exists": "no",
+     "endpoint_hint": "no DELETE /storyboard-slots/{slot_id} route; only create + PATCH(update) exist"
+    },
+    {
+     "need": "Slot reorder within/between sections (drag-drop)",
+     "exists": "partial",
+     "endpoint_hint": "UpdateStoryboardSlotRequest accepts orderIndex so a swap of order is technically possible via PATCH, but there is no batch-reorder endpoint and no client wiring"
+    },
+    {
+     "need": "Content-unit / library search with filter facets (type, recommended/recent/collections tabs) scoped for storyboard tray",
+     "exists": "partial",
+     "endpoint_hint": "generic POST /search (searchBoxBrain) exists and could power a search box, but no tabs for recommended/recent/collection segmentation and no per-storyboard-context relevance ranking"
+    },
+    {
+     "need": "Snapshot/version compare (diff v3.2 vs v3.1)",
+     "exists": "no",
+     "endpoint_hint": "GET /storyboard-snapshots/{id} returns one snapshot only; no diff/compare endpoint"
+    },
+    {
+     "need": "Snapshot approval workflow action (approve/reject a snapshot, set approvalState)",
+     "exists": "no",
+     "endpoint_hint": "StoryboardSnapshot.approvalState exists and defaults to draft in DB, but no PATCH/command endpoint to transition it is present in storyboards.py"
+    },
+    {
+     "need": "Presence / active collaborators on a storyboard (avatar stack, 'Editing' indicator, auto-saved timestamp)",
+     "exists": "no",
+     "endpoint_hint": "no collaborators/presence endpoint anywhere in services/api/app/api/routes"
+    },
+    {
+     "need": "Comment threading (replies) and resolved/unresolved state for storyboard comments",
+     "exists": "partial",
+     "endpoint_hint": "CreateCommentRequest supports parentCommentId and Comment has a status field, but apps/web/lib/api.ts listComments/createComment usage in the page never reads parentCommentId or status, and there is no resolve-comment command endpoint"
+    },
+    {
+     "need": "Slot-level AI suggestions ('Swap to SaaS variant', 'Add customer proof', 'Regenerate title') with apply action",
+     "exists": "no",
+     "endpoint_hint": "StoryboardSlot.aiRecommended boolean exists (presenters.py exposes it) but there is no suggestions/candidates endpoint or apply-suggestion command for storyboard slots"
+    },
+    {
+     "need": "Where-used / matching Work Products count per section",
+     "exists": "partial",
+     "endpoint_hint": "listContentUnitWhereUsed exists for a content-unit version, but there is no section-level or storyboard-level aggregate of which WorkProducts use content from a given section"
+    },
+    {
+     "need": "Selected-slide detail tabs data: notes/speaker-notes, activity log, variants list, audience-fit scores, tags for the object bound to a slot",
+     "exists": "partial",
+     "endpoint_hint": "Notes API (listNotes) and ContentUnit variants/versions endpoints exist independently, but nothing joins them into a single 'slot inspector' payload; audience-fit scoring is not modeled anywhere in schemas/api.py"
+    }
+   ],
+   "current_state": "apps/web/app/(shell)/storyboards/[id]/page.tsx is a server-rendered, form-driven CRUD scaffold: a 3-column grid (Library tray of ContentBlocks only | section list with manual create-section/create-slot forms | diagnostics+snapshots+comments stack). It uses raw UUID text inputs to add/swap slot content, has no drag-and-drop, no per-slot inspector, no metrics strip, and diagnostics render only a narrative score plus a flat warnings list. It correctly implements restricted/not-found/error states and basic snapshot listing/anchored comments, which the design does not show but are good engineering additions.",
+   "effort": "XL",
+   "gaps": [
+    {
+     "title": "No three-panel canvas layout (collapsible library | canvas | slide inspector)",
+     "description": "Design (routes_storyboard_v2.jsx RouteStoryboardWorkspaceV2, storyboard-workspace.png) uses a responsive 3-panel grid: collapsible left Content Library (260px/44px collapsed), center canvas of sections, and a right slide-inspector aside (320px) that only appears when a slot is selected. Current page.tsx uses a static `xl:grid-cols-[280px_minmax(0,1.4fr)_360px]` layout where the third column is always a diagnostics/snapshot/comment stack, not a per-slide inspector, and the left column is never collapsible. There is no click-to-select-slide state at all.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Missing selected-slot inspector panel (Details/Notes/Meta/Activity/AI tabs)",
+     "description": "Design's right sidebar, once a content-unit chip is clicked, shows a sticky inspector with large preview, Edit/Swap/External/More actions, and 5 tabs: Details (owner, last edited, confidence, freshness badge, used-in count, variants list with match %, audience-fit bars per persona, tags), Notes (speaker notes + regenerate + threaded comments + add-comment box), Meta (ID/type/template/dimensions/layout/created/modified/derived-from/collection/access/approved-by/brand/rights/a11y badges), Activity (chronological actor+action+timestamp feed incl. AI actions), and AI (assistant summary + suggestion cards with Apply buttons + ask-about-this-slide input). None of this exists in the current implementation; SlotCard only renders a static thumbnail, a swap form with raw UUID inputs, and slot-anchored comments inline.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "No storyboard toolbar (Reorder / Metrics / Filters / AI Rebalance / Track changes)",
+     "description": "Design's canvas toolbar row sits above the section list: bold 'Storyboard' label + section count, then right-aligned buttons Reorder, Metrics, Filters, AI Rebalance (AI-tinted), and a 'Track changes' checkbox. Current implementation has no toolbar at all above CreateSectionForm.",
+     "severity": "medium",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Header missing version chip, editing badge, autosave indicator, collaborator avatars, compare/save-version actions",
+     "description": "Design title bar shows: title + version chip (v3.2) + 'Editing' AI-tinted badge, a subtitle line 'Auto-saved 2m ago \u00b7 6 sections \u00b7 22 units \u00b7 19 min', an avatar stack of collaborators with '+3' overflow, and action buttons 'Compare to v3.1', 'Save Version', 'Publish' (primary). Current PageHeader only shows eyebrow/title/description text plus a tiny inline snapshot-label form and a 'Publish review' link \u2014 no version chip, no editing/collab presence, no compare action, no aggregate counts (sections/units/estimated minutes) in the header.",
+     "severity": "medium",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Bottom metrics strip absent (Storyboard Health, Coverage, Duplicates, Weak Transitions, Read Time, Narrative)",
+     "description": "Design renders a 6-column metrics card below the canvas: Storyboard Health (score+descriptor), Content Coverage (%), Duplicates (count + 'Review them' link), Weak Transitions (count + link), Read Time (minutes vs target), Narrative (score + descriptor). Current DiagnosticsPanel only shows a single narrative score badge plus a flat list of warning objects (code/message) with no categorized counts, no coverage %, no duplicate/weak-transition counters, and no read-time metric \u2014 largely because the backend analyze() only returns narrativeScore + warnings, not these aggregates (see api_needs).",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Section cards lack thumbnail chip grid, per-section stats, and 'used in' / health readouts",
+     "description": "Design section row layout is a 4-column grid: drag handle | section meta (numbered badge, title, edit icon, description, units/estMin) | wrapped grid of content-unit thumbnail chips (each with drag handle, type icon, SlideThumb, kind label, match-score %) plus a dashed 'Add content unit / drop from library' drop zone | a right-hand 'Used in' column showing matching-work-product count, a Health meter (%), and an overflow menu. Current StoryboardSectionCard instead renders a plain header (Section N, title, summary, slot-count tag) and a 2-column grid of SlotCard divs with a manual add-slot form; there is no per-chip match score, no drag handle, no 'used in' count, no per-section health meter, and no section edit/overflow menu.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "No drag-and-drop for sections or slots; no 'Insert Section' affordance",
+     "description": "Design supports draggable section reordering (drag handles, dragOver reflow, opacity/scale/shadow feedback) and thin 'Insert Section' hover-to-expand dividers between every section (plus an 'Add section / AI Suggest' footer). Current implementation has no drag interactions anywhere and section creation is only via a single top form (CreateSectionForm) with a manual numeric orderIndex field; there is no insert-between-sections UI and no AI-suggest-section entry point.",
+     "severity": "high",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Content Library tray is ContentBlocks-only with no search, tabs, filters, or AI context hint",
+     "description": "Design's left Content Library aside has: a search input ('Search content units\u2026' with a '/' kbd hint), three tabs (Recommended/Recent/Library[collections]) with counts, filter chips (All/Slides/Charts/+3), an AI-tinted context hint block ('Matched to Our Solution \u00b7 CIO audience \u00b7 Acme Corp' + 'Adjust context'), a scrollable 2-col chip grid of draggable items with kind icon + match %, and a footer with 'New Unit' and 'AI Generate' buttons. Current LibraryTray is a static, non-collapsible card listing only ContentBlocks (via listContentBlocks) with a title + member-count tag and a link \u2014 no ContentUnits, no search, no tabs, no filters, no drag source, no AI hint, no add/generate actions.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Adding/swapping slot content requires typing a raw UUID instead of picking from the library",
+     "description": "CreateSlotForm and SlotCard's swap form both require the user to paste a 'selectedObjectId' UUID into a text input and choose an object-type dropdown. The design's entire interaction model is click/drag a library chip onto a slot or drop-zone \u2014 there is no equivalent 'type a UUID' affordance anywhere in the mockups. This is a fundamental interaction-model gap, not just missing polish.",
+     "severity": "high",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Gap slot placeholder styling differs from 'Recommendation needed' design treatment",
+     "description": "Current gap slots render a plain dashed-amber box with the text 'Recommendation needed'. Design instead shows an 'Add content unit / or drop from library' dashed drop-zone tile styled like the other chips (not amber-alarm colored) \u2014 gaps in the design are a neutral empty-slot invitation, not a warning-colored callout. Low/medium visual mismatch in tone and affordance.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Comments list has no threading, resolve state, or type filter",
+     "description": "Design's comments panel (top-right in the mockups' surrounding shell, and the Notes tab in the slide inspector) shows unresolved/all-types filter dropdowns, per-comment avatar + timestamp + reply count/affordance, and a persistent add-comment composer per slide. Current CommentList/StoryboardCommentForm render a flat list of comment bodies with an anchor label only (no avatar, no timestamp, no reply thread, no resolved/unresolved toggle) even though the Comment schema exposes parentCommentId and status which are unused here.",
+     "severity": "medium",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Snapshot panel lacks approval-state actions and diff/compare view",
+     "description": "SnapshotPanel lists snapshots and shows a selected-snapshot summary (label, frozen counts, approvalState text) but exposes no action to change approvalState (approve/reject) and no way to compare two snapshots side-by-side, whereas the design's header includes an explicit 'Compare to v3.1' button implying a diff view is a first-class capability.",
+     "severity": "medium",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Restricted / not-found / error states are plain text-only, no visual parity with rest of app",
+     "description": "RestrictedStoryboard, StoryboardNotFound, and StoryboardError are implemented (a genuine strength versus the design, which shows no such states), but they are minimal single-card layouts with no illustration, no suggested next actions beyond a create form / storyboards list, and no consistent icon/badge treatment matching the rest of the redesigned shell (e.g., no status chip styling parity once the visual system is upgraded elsewhere). Low severity since functionally correct \u2014 flag for visual-consistency pass once the shared UI kit is upgraded.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/(shell)/storyboards/[id]/page.tsx"
+     ]
+    }
+   ],
+   "screen": "storyboard"
+  },
+  {
+   "api_needs": [
+    {
+     "need": "Play entity + detail data: stats (usage/win-rate/deal-size/time-to-value/adoption), audience, use cases, when-to-use, success criteria, recommended-flow steps, related opportunities/assets/outcome-metrics/reviews counts, similar plays",
+     "exists": "no",
+     "endpoint_hint": "/api/plays, /api/plays/{id}"
+    },
+    {
+     "need": "Opportunity entity + workspace data: context snapshot (customer/industry/regions/owner/solution/decision-criteria/pain-points), stage/close-date/amount/tags, team roster",
+     "exists": "no",
+     "endpoint_hint": "/api/opportunities, /api/opportunities/{id}"
+    },
+    {
+     "need": "Deal Health scoring (engagement/budget/competition/timeline + composite score) per opportunity",
+     "exists": "no",
+     "endpoint_hint": "/api/opportunities/{id}/deal-health"
+    },
+    {
+     "need": "AI recommendation ranking of Plays/Slides for an opportunity (match score %, impact %, rationale)",
+     "exists": "no",
+     "endpoint_hint": "/api/opportunities/{id}/recommendations"
+    },
+    {
+     "need": "Team & Collaboration activity feed per opportunity (comments, uploads, plays opened)",
+     "exists": "no",
+     "endpoint_hint": "/api/opportunities/{id}/activity"
+    },
+    {
+     "need": "Play Builder / Artifact Pack composition tied to an opportunity (sections, ordered slide content, publish pack)",
+     "exists": "no",
+     "endpoint_hint": "/api/opportunities/{id}/artifact-packs"
+    },
+    {
+     "need": "Home dashboard combined summary + cross-entity attention feed (opportunities/plays/work-products/library health) for a single greeting-style landing view",
+     "exists": "partial",
+     "endpoint_hint": "no combined endpoint; /api/reviews/items, /api/reviews/queues, /api/admin/health, /api/work-products/families, /api/content-units/families, /api/storyboards exist individually and are unused by the Home page"
+    }
+   ],
+   "current_state": "Home (`apps/web/app/(shell)/page.tsx`) is a fully static server component rendering hardcoded demo data (`features/demo/data.ts`) via a generic marketing-style PageHeader, four stat cards, a work-products/reviews/storyboard-snapshot two-column section, and a content-families grid \u2014 none of it calls the live API despite equivalent endpoints existing (reviews, admin health, work-products, content-units, storyboards families). Plays (`plays/page.tsx`) and Opportunities (`opportunities/page.tsx`) are explicit \"Preview-only module\" placeholders confirmed by their own copy and by the complete absence of Play/Opportunity concepts anywhere in the PRD/architecture docs (`docs/01`\u2013`docs/07`) or backend routes (`services/api/app/api/routes` has no plays.py or opportunities.py) \u2014 Plays shows 4 static cards with no detail route, and Opportunities shows a 2-card static summary. The design (routes_3.jsx/routes_4.jsx + plays-detail-view.png mockup) specs both as fully interactive, richly data-driven screens: a personalized Home briefing with an AI-suggestions panel and cross-entity attention feed, a tabbed/filterable Plays list driving into a full Play Detail workspace (stats bar, flow steps, AI guidance rail), and a multi-pane Opportunity Workspace (deal health, team activity, AI play/slide recommendations, drag-drop Play Builder).",
+   "effort": "XL",
+   "gaps": [
+    {
+     "title": "Home dashboard is 100% static mock data with no API wiring or loading/error/empty states",
+     "description": "apps/web/app/(shell)/page.tsx imports everything from features/demo/data.ts (stats, workProducts, reviewItems, storyboardSections, contentFamilies) and never calls lib/api.ts. Backend endpoints already exist that could power equivalent sections: GET /api/reviews/items + /api/reviews/queues (Reviews needing judgment), GET /api/admin/health (catalog/ingestion health), GET /api/work-products/families (Active ingestion list), GET /api/content-units/families (Family-first content signal), GET /api/storyboards + snapshots (Storyboard snapshot card). None are used, and there is no loading skeleton, error state, or empty state anywhere on the page.",
+     "severity": "high",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/page.tsx",
+      "apps/web/features/demo/data.ts",
+      "apps/web/lib/api.ts"
+     ]
+    },
+    {
+     "title": "Home is missing the 'BoxBrain suggests' AI panel entirely",
+     "description": "Design Home (routes_4.jsx RouteHome) places a distinctive ai-panel card next to 'Needs your attention': gradient/tinted border, Sparkle icon + 'BoxBrain suggests' + BETA badge, and 3 bulleted AI suggestion rows each ending in a 'Take action' button. Current Home has no AI-suggestion surface on the dashboard at all \u2014 'Ask BoxBrain' only appears as a header CTA link to a different route.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "Home header is generic marketing copy, not the personalized daily-briefing greeting",
+     "description": "Design shows 'Good morning, Sarah' as an H1 plus a dated context line ('Here's what's moving across your accounts today \u2014 {date}'). Current PageHeader instead renders a fixed eyebrow/title/description ('Governed content graph' / 'BoxBrain operating console' / static blurb) with Browse Library + Ask BoxBrain buttons \u2014 no personalization, no date, no per-user framing.",
+     "severity": "medium",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/(shell)/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "'Needs your attention' cross-entity feed is missing; current split is not equivalent",
+     "description": "Design's feed mixes Opportunity/WorkProduct/Play/Library-health items in one scrollable list, each row with a colored icon chip (color keyed to urgency/entity type), title/subtitle, and trailing chevron, all clickable to the relevant route. Current Home instead has a reviews-only 'Reviews needing judgment' card (plain badges, no icon chips, no color coding, no chevron) plus a separate, unrelated 'Storyboard snapshot' card \u2014 Opportunity/Play items can't appear since no backend exists for those entities.",
+     "severity": "medium",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/page.tsx"
+     ]
+    },
+    {
+     "title": "Missing 'Quick links' 4-up tile row on Home",
+     "description": "Design renders a 4-card icon+label+chevron quick-nav row (Ask BoxBrain, Browse Library, Open Plays, My Opportunity). Current Home only exposes 2 of these as PageHeader action buttons (Browse library, Ask BoxBrain); there is no card-grid quick-nav section and no links to Plays/Opportunities from Home at all.",
+     "severity": "medium",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/page.tsx"
+     ]
+    },
+    {
+     "title": "StatCard has no sparkline trend chart",
+     "description": "Design's stat-card renders an inline SVG sparkline (up/down colored trend line) beneath the hint text on every metric \u2014 used on Home's quick stats and on the Play Detail stats bar. components/ui.tsx StatCard has no spark prop/element at all, and no sparkline primitive exists anywhere in the shared UI kit.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "Plays has no Play Detail route at all",
+     "description": "apps/web/app/(shell)/plays/ contains only page.tsx (the list) \u2014 there is no plays/[id]/page.tsx, and the list cards are not clickable to a detail page (only a generic 'View related storyboard' link is present, pointing at an unrelated storyboard). The design's Play Detail screen (routes_3.jsx RoutePlayDetail, confirmed by uploads/plays-detail-view.png) is an entire workspace: breadcrumb trail, hero card (gradient icon, VERIFIED badge, title+favorite star, tag chips, owner block, last-updated), a 5-metric stats bar with sparklines (Usage/Win Rate/Avg Deal Size Increase/Time to Value/Adoption), a 4-column info band (Intended Audience/Use Cases/When to Use/Success Criteria), a tab bar (Play Flow/Rationale/Related Opportunities 24/Assets 18/Outcome Metrics/Reviews 8), a numbered 'Recommended Flow' step list with type badges (MEETING/WORK PRODUCT/WORKSHOP/ENGAGEMENT/PROPOSAL) and per-step duration, and a sticky right rail (AI Guidance panel, Similar Plays list, Actions menu with Duplicate/Customize/Publish/Share/Export/Archive). None of this exists in the current implementation.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/plays/page.tsx"
+     ]
+    },
+    {
+     "title": "Plays list is missing category filter tabs and differs on header actions",
+     "description": "Design's RoutePlaysList shows filter tabs with counts (All Plays 28 / Growth 12 / Expansion 7 / Cross-Sell 5 / Retention 4) plus 'Filter' and primary 'New Play' header buttons. Current /plays has no tabs/categories at all and replaces the header actions with a single disabled-looking 'Limited preview' lock button, consistent with the product's preview framing but with no filtering affordance whatsoever.",
+     "severity": "medium",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/plays/page.tsx"
+     ]
+    },
+    {
+     "title": "Play cards use a uniform icon/generic tags instead of design's varied iconography and real stats row",
+     "description": "Current Plays cards all render the same blue-50 tile with a BookOpen icon and generic Tag chips (Preview / N steps / N uses) built from array index math. Design varies the icon tile per play (gradient background, differing icon: mountain/trending-up/rocket by index%3), shows a VERIFIED badge only on the flagship play, and renders a real stats footer (uses count with trending icon, win-rate % with check icon) instead of placeholder tags.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/(shell)/plays/page.tsx"
+     ]
+    },
+    {
+     "title": "Opportunities page is a 2-card summary; design specs an entire multi-pane Opportunity Workspace",
+     "description": "apps/web/app/(shell)/opportunities/page.tsx renders only a hero summary card (name, headline, Meter fit score, tags, one CTA) and a 4-item static recommendations list. Design's RouteOpportunity (routes_3.jsx) is a full workspace: header row with status badge, stage/close-date/amount, avatar-stack of team members + overflow count, Share/More actions; a tab bar (Workspace/Storyboard/Insights/Requirements 24/Messages 8/Activity); and a 4-column body \u2014 (1) Context Snapshot (customer/industry/regions/owner/solution/decision-criteria/pain-points) + Deal Health score-circle with factor badges (engagement/budget/competition/timeline) + Team & Collaboration activity feed with avatars/timestamps/quoted comments, (2) BoxBrain AI recommendation mini-cards + ranked 'Top Plays' list with match-score chips + 'Top Slides' ranked table with a relevance color legend, (3) Saved Candidate Materials file list with match scores + drag-drop upload dropzone, (4) a drag-and-drop Play Builder (Build/Review/Finalize stepper, reorderable Sections list, reorderable slide Content list, Preview/Compare/Publish Pack actions). None of these panes exist today.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/opportunities/page.tsx"
+     ]
+    },
+    {
+     "title": "No backend data model exists for any Opportunity Workspace concept",
+     "description": "grep of services/api/app/api/routes finds no plays.py or opportunities.py, and no PRD/architecture doc (docs/01-07) mentions Play or Opportunity entities \u2014 confirming these are out of current backend scope. Design requires: an Opportunity record (stage/close-date/team/tags), Deal Health scoring, AI-driven Play/Slide recommendation ranking with match scores, a Team & Collaboration activity feed, and Play Builder/Artifact Pack composition+publish. All are absent; lib/api.ts has zero Play/Opportunity-specific client functions.",
+     "severity": "high",
+     "kind": "api",
+     "files_to_touch": [
+      "services/api/app/api/routes",
+      "apps/web/lib/api.ts"
+     ]
+    },
+    {
+     "title": "Opportunities page has no tab navigation",
+     "description": "Design's tab bar (Workspace/Storyboard/Insights/Requirements/Messages/Activity) is entirely absent from the current page, which is a single static view. The one interactive affordance ('Open opportunity storyboard preview') routes to a generic, non-opportunity-scoped storyboard rather than an Opportunity-specific Storyboard tab.",
+     "severity": "medium",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/opportunities/page.tsx"
+     ]
+    },
+    {
+     "title": "Recommendation list styling doesn't reuse the app's trust/relevance indicator system",
+     "description": "Current 'Top preview recommendations' renders plain rows with a placeholder 'Recommendation is read-only in MVP.' caption. Design's equivalent (Top Plays / Top Slides) uses match-score chips, a 'Best Match' badge, and a ranked table with a High/Medium/Low relevance color-dot legend \u2014 visual language already used elsewhere in the design system but not reused here.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/(shell)/opportunities/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    }
+   ],
+   "screen": "home-plays-opps"
+  },
+  {
+   "screen": "ask-search",
+   "current_state": "apps/web/app/(shell)/ask/page.tsx implements a generic 3-column engineering-search UI: a single-line query input + Ask/Search endpoint toggle, a left 'Filters' card (profile/object-type/governance/freshness/result-mode selects + debug toggle), a flat undifferentiated list of SearchResultCard results in the middle, and a right column with a client-only 'Saved searches' list and a raw JSON 'Debug' panel. It is API-wired to POST /api/search and /api/ask and has solid loading/empty/error/restricted states. It shares no code with the design's Ask BoxBrain screen beyond fetching the same endpoints.",
+   "gaps": [
+    {
+     "title": "Overall page layout does not match design's 2-column composer+results / selection-tray structure",
+     "description": "Design (routes_1.jsx RouteAskBoxBrain) is a 2-column grid: main column (H1 'Ask BoxBrain' + sparkle icon, subtitle, 'How it works' link, a prominent AI query panel, 'Top results' header + tabs, sectioned result groups) and a fixed 340px right-hand 'My selection' tray. Current page.tsx instead renders PageHeader (generic copy) + a 3-column '.three-col' grid (Filters sidebar | results | saved-searches/debug). None of the design's visual hierarchy, spacing, or section grouping is present.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/ask/page.tsx",
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "Query composer is a plain text input, not the design's AI panel with embedded controls, filter chips, and example queries",
+     "description": "Design shows a bordered 'ai-panel': a 2-row textarea with placeholder 'Ask BoxBrain anything\u2026', an embedded send button and mic button positioned inside the input, a row of removable/expandable filter chips (Content type, Industry: Financial Services [active, with X], Date, More filters), and a 'Try an example' row of 4 clickable example-query chips that populate the query. Current implementation has a single-line <input> in a bordered label with an external Button for submit, no mic control, no inline filter chips, no example chips, and instead exposes a raw 'Ask'/'Search' endpoint-choice toggle (a backend implementation detail not present in the design at all).",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/ask/page.tsx"
+     ]
+    },
+    {
+     "title": "Results are a flat undifferentiated list; missing result-count header, sort/view controls, type tabs, and per-type sections",
+     "description": "Design shows: 'Top results' + '128 results' count, 'Sort by: Relevance' + grid/list View toggle, then tabs 'All 128 / Slides 48 / Work Products 41 / Plays 39' with count badges, then content grouped into labeled sections (SLIDES as a 3-up card grid with 'See all N' link, WORK PRODUCTS as a row list with 'See all N' link, implicitly Plays too), plus a 'Show more' pagination control at the bottom. Current page.tsx renders none of this: no header/count, no sort/view toggle, no tabs, no per-type sectioning \u2014 just one column of SearchResultCard mapped from a single filtered array regardless of result type.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/ask/page.tsx",
+      "apps/web/components/search-result-card.tsx"
+     ]
+    },
+    {
+     "title": "Result card visual language doesn't differentiate Slide vs Work Product results and is missing key visual elements",
+     "description": "Design's SLIDES cards show: rank badge (#1) on the top result, a page-count overlay chip ('18 slides'), title, date + version ('May 7, 2024 \u00b7 v3'), status badges (Approved/Fresh/Canonical), and AI signal chips with icons (High semantic match, Reused often, Recently used, Recently used). Design's WORK PRODUCTS rows show: file-type icon, title, kind + date, owner Avatar, status badges, a horizontal match-bar with percentage (not just a score pill), and an overflow/kebab menu. Current SearchResultCard renders one generic card shape for every result: 170px thumbnail, title, ScorePill, ExternalLink icon, summary snippet, a single type Tag, status badges, and explanationChips shown as plain AI badges \u2014 no rank badge, no match-bar/Meter (a Meter component already exists in ui.tsx but is unused here), no owner avatar, no kebab menu, no date/version line.",
+     "severity": "medium",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/components/search-result-card.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "SearchResultItem API schema cannot supply per-item date/version/owner or aggregate/tab counts",
+     "description": "services/api/app/schemas/api.py SearchResultItem only has objectType, objectId, resultGrain, title, summary, previewUri, score, explanationChips, statusChips \u2014 no createdAt/updatedAt/versionLabel/owner fields, and SearchResponse has no total count or per-object-type counts (needed for the 'Top results / 128 results' line and the All/Slides/Work Products/Plays tab counts). ContentUnitVersion-adjacent schemas elsewhere do carry createdAt/updatedAt/versionLabel (services/api/app/schemas/api.py ~lines 316-353), so that data exists in the domain but isn't projected into search results; no owner/author field exists anywhere in the schema layer.",
+     "severity": "high",
+     "kind": "api",
+     "files_to_touch": [
+      "services/api/app/schemas/api.py",
+      "services/api/app/application/use_cases.py (search/ask methods)"
+     ]
+    },
+    {
+     "title": "AI signal chips are generic match-type labels, not the design's usage-based signals, and no reuse/recency tracking exists",
+     "description": "use_cases._component_explanation_chips only emits mechanical labels ('keyword match', 'semantic match', 'metadata match', 'approved/trusted', 'family rollup'/'variant rollup'/'version match', 'N matching versions'). Design's per-slide signal chips read 'High semantic match', 'Reused often', 'Recently used' \u2014 the latter two require reuse-frequency and recency-of-use tracking that does not exist anywhere in the backend (no usage_count/reused/last-used fields found in domain models or schemas).",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "services/api/app/application/use_cases.py",
+      "services/api/app/domain/models.py"
+     ]
+    },
+    {
+     "title": "Right rail is a bespoke 'Saved searches' + Debug panel; design's session 'My selection' content tray is entirely absent",
+     "description": "Design's right rail is a persistent, session-scoped 'My selection' tray: header with item count + close, 'SAVED ITEMS' list (thumbnail, title, type+date, status tags, per-item remove X), 'GENERATED BY BOXBRAIN' section (AI-generated artifact card), 'Add custom content' button, a 'QUICK ACTIONS' 2x2 grid (Compare, Create brief, Export to PPT, Share collection), a primary 'Start a new chat' button, and a footer note ('Selections are saved to this session'). None of this exists on the Ask page. The app does have a global 'My Selection' affordance in the topbar (apps/web/components/shell.tsx SelectionTray) but it is only a static link with a hardcoded count of 4 pointing to one fixed storyboard \u2014 not an expandable, addable-to tray, and it isn't wired to anything on this screen. Current page instead shows a locally-scoped, non-persistent 'Saved searches' list (query bookmarking, lost on refresh) and a raw JSON debug viewer \u2014 a developer-facing feature not present in the design.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/ask/page.tsx",
+      "apps/web/components/shell.tsx",
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "Selection tray's Quick Actions have no backend capability",
+     "description": "Design's tray Quick Actions (Compare, Create brief, Export to PPT, Share collection) and the underlying idea of a session 'selection'/collection of content that persists and can be acted upon have no backend support. grep of services/api/app/api/routes shows no compare, brief-generation, ppt-export, or share/collection endpoints, and no selection/collection persistence concept anywhere in the schema or use cases.",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "services/api/app/api/routes/",
+      "services/api/app/schemas/api.py"
+     ]
+    },
+    {
+     "title": "Filter model is an engineering control panel, not the design's integrated chip-based filtering",
+     "description": "Design treats filters as inline chips inside the query composer (Content type, Industry as an active removable chip, Date, More filters) plus clickable example-query chips. Current implementation exposes a separate static 'Filters' card with a Profile <select> (including non-user-facing values like 'duplicate_review'/'similarity_review'), Object type checkboxes, an 'Approved only' governance checkbox, a Freshness <select>, a Result mode <select>, and a 'Show debug' checkbox \u2014 a fundamentally different, more technical UX paradigm than the design's conversational/chip-driven filtering.",
+     "severity": "medium",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/ask/page.tsx"
+     ]
+    },
+    {
+     "title": "Header copy, sparkle-in-title, and 'How it works' link missing",
+     "description": "Design H1 is 'Ask BoxBrain' with an inline sparkle icon plus subtitle 'AI-powered search across your content universe.' and a top-right 'How it works' link (info icon). Current page uses the generic PageHeader component with eyebrow 'Ask BoxBrain', title 'Ask and search governed content', and description 'API-backed retrieval with profile, object, freshness, and result-grain controls.' \u2014 engineering-facing copy with no sparkle-in-title and no 'How it works' affordance.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/(shell)/ask/page.tsx"
+     ]
+    },
+    {
+     "title": "Design's Ask-specific CSS primitives don't exist in the current stylesheet",
+     "description": "apps/web/app/globals.css has generic .tabs/.tab/.three-col/.card/.tag primitives but none of the design's Ask-screen-specific classes from styles_v2.css: .ai-panel (query panel container/gradient), .chip/.chip.active (filter & example chips), .tray/.tray-tab/.tray-body/.tray-item/.tray-item-thumb (selection tray), .section-head/.count-inline (sectioned results with counts), .match-bar (work-product match progress bar). Faithful rebuild requires adding these to the design system rather than reusing existing classes.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/globals.css"
+     ]
+    }
+   ],
+   "effort": "L",
+   "api_needs": [
+    {
+     "need": "Total result count + per-object-type counts (Slides/Work Products/Plays) on the search/ask response to power the 'N results' line and tab badges",
+     "exists": "no",
+     "endpoint_hint": "SearchResponse in services/api/app/schemas/api.py; computed in use_cases.search/ask"
+    },
+    {
+     "need": "Per-result date/updatedAt, versionLabel, and owner/author metadata surfaced on SearchResultItem",
+     "exists": "partial",
+     "endpoint_hint": "services/api/app/schemas/api.py SearchResultItem \u2014 createdAt/updatedAt/versionLabel exist on other schemas (ContentUnitVersion-like, ~lines 316-353) but aren't projected into search results; owner/author field does not exist anywhere in the schema layer"
+    },
+    {
+     "need": "Reuse-frequency and recency-of-use signals ('Reused often', 'Recently used') for result explanation chips",
+     "exists": "no",
+     "endpoint_hint": "use_cases._component_explanation_chips (services/api/app/application/use_cases.py ~line 1987) only emits mechanical match-type labels; no usage/reuse tracking exists in domain models"
+    },
+    {
+     "need": "Compare / Create brief / Export to PPT / Share collection actions over a selected content set",
+     "exists": "no",
+     "endpoint_hint": "no matching routes found under services/api/app/api/routes/ (checked search.py, work_products.py, content_units.py, storyboards.py)"
+    },
+    {
+     "need": "Session-scoped selection/collection concept (add/remove items, current count) to back a real 'My selection' tray shared across pages",
+     "exists": "no",
+     "endpoint_hint": "no selection/collection backend concept found anywhere; shell.tsx SelectionTray count of 4 is hardcoded, not backed by any state or API"
+    }
+   ]
+  },
+  {
+   "api_needs": [
+    {
+     "need": "Human-friendly ContentUnit display code (e.g. 'SLIDE-1A2B3') distinct from the internal UUID, shown with a copy icon in the right-rail Details card",
+     "exists": "no",
+     "endpoint_hint": "services/api/app/schemas/api.py ContentUnitVersion/ContentUnitVersionDetail \u2014 no display-code field; GET /api/content-units/versions/{id} only returns the UUID id"
+    },
+    {
+     "need": "Last-updated attribution (date + editor name) on a ContentUnit version, separate from createdAt",
+     "exists": "no",
+     "endpoint_hint": "ContentUnitVersion schema has only createdAt; no updatedAt/updatedBy field or audit-event join surfaced on GET /api/content-units/versions/{id}"
+    },
+    {
+     "need": "File location / source folder path for the ContentUnit's origin file",
+     "exists": "partial",
+     "endpoint_hint": "ProvenanceRecord.sourceRefs / sourceSystem on ContentUnitVersionDetail.provenance can approximate a source filename but carries no folder/path string like '/Strategy Decks/2024/Q2/'"
+    },
+    {
+     "need": "Where-used breakdown that separates 'Play' storyboards from other storyboards/work-products, with a Primary/Secondary role flag and an 'Updated/Generated' date per reference",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/content-units/{version_id}/where-used (ContentUnitUsageReference) already distinguishes objectType in {content_block_version, storyboard, work_product_version} and carries orderIndex/sectionId/slotId, but a Storyboard's existing mode field (work_product|play|opportunity, see api.py ~line 277) is not surfaced on the usage reference, and there is no role (Primary/Secondary) or timestamp field at all"
+    },
+    {
+     "need": "Page/slide-number label for work-product inclusion rows (e.g. 'Page 7')",
+     "exists": "partial",
+     "endpoint_hint": "ContentUnitUsageReference.orderIndex is a 0-based index that could be formatted as a page number client-side, but no explicit page label is returned"
+    },
+    {
+     "need": "Similar-concepts aggregate stats (Best Match %, Average Similarity % across all matches, Total Similar Concepts count)",
+     "exists": "yes",
+     "endpoint_hint": "GET /api/content-units/{version_id}/similar (listSimilarContentUnits) returns score per item; aggregates are computable client-side from the existing list, no new endpoint needed"
+    },
+    {
+     "need": "Combined, ordered Canonical/Style-Alt/Prior-Version stack for the vertical Variations rail",
+     "exists": "yes",
+     "endpoint_hint": "GET /api/content-units/families/{id}/variants + GET /api/content-units/variants/{id}/versions together supply variantType/isCanonical plus per-variant version history; needs client-side assembly, not a new endpoint"
+    }
+   ],
+   "current_state": "apps/web/app/(shell)/variation-explorer/page.tsx is a static, unparameterized server component rendering hardcoded demo data (features/demo/data.ts contentFamilies[0], always \"Cloud Modernization ROI\") in a generic 3-column comparison layout: a \"Family variants\" list card, a center SlideThumb+ScorePill card, and a \"Similar but separate\" list card. It takes no route/query param (the two inbound links from content-units/[id]/page.tsx point at bare \"/variation-explorer\"), makes zero API calls, and has no loading/error/empty/restricted handling. It implements almost none of the flagship rolodex layout defined in routes_5.jsx: the horizontal \"Similar Concepts\" match-badge carousel, the vertical Canonical/Style-Alt/Prior-Version stack, the large data-rich main preview (KPI + chart + stat chips + source footer), the pagination strip, the bottom Included-in-Plays/Included-in-WorkProducts/Actions row, and the right rail's ContentUnit Details, Similarity & Relevance meters, and Extracted Text cards are all absent.",
+   "effort": "XL",
+   "gaps": [
+    {
+     "title": "Entire screen is a disconnected static demo stub, not the rolodex design",
+     "description": "apps/web/app/(shell)/variation-explorer/page.tsx always renders features/demo/data.ts contentFamilies[0] regardless of navigation context \u2014 the two inbound links in apps/web/app/(shell)/content-units/[id]/page.tsx (lines 246, 303) point at bare href=\"/variation-explorer\" with no version/family id, and the page has no dynamic segment or query param to receive one. It uses an ad hoc ContentFamily demo type (trust/freshness/usageCount/taxonomy as string[]) instead of the real typed API models (ContentUnitFamilyDetail/ContentUnitVariant/ContentUnitVersionDetail/SearchResultItem) already used correctly in content-units/[id]/page.tsx. Needs a dynamic route (e.g. /variation-explorer/[versionId]) wired to getContentUnitVersion, listContentUnitVariants, listContentUnitVersions, listSimilarContentUnits, listContentUnitWhereUsed, with the content-unit detail page's 'Open full Variation Explorer' / 'Similar' links updated to pass the real version id.",
+     "severity": "high",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx",
+      "apps/web/app/(shell)/content-units/[id]/page.tsx",
+      "apps/web/features/demo/data.ts"
+     ]
+    },
+    {
+     "title": "Horizontal 'Similar Concepts' carousel rail is entirely missing",
+     "description": "Design (routes_5.jsx lines 43-72; CSS .ve-rail/.ve-rail-track/.ve-concept/.ve-concept-match/.ve-concept-check/.ve-pagination-dot in styles_v2.css:1485-1495) is a full-width horizontally-scrolling rail of 5 concept cards, each a SlideThumb topped with a match-% badge (\"78% Match\"\u2026\"Best Match\" on the selected one), a checkmark overlay on the selected card, a title + monospace ContentUnit ID beneath, round left/right arrow buttons flanking the track, a 'Swipe / scroll horizontally' hint, and a pagination-dot strip underneath. The current page's closest analog \u2014 the right-column 'Similar but separate' vertical link list (page.tsx lines 45-61, using ScorePill) \u2014 is a different shape (vertical, not a carousel), has no match-badge-on-thumbnail treatment, no selected/checkmark state, and sits in the wrong region of the layout (should be a full-width top rail, not a side column). Needs a new carousel component plus the ve-* classes ported into apps/web/app/globals.css, driven by listSimilarContentUnits(versionId).",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx",
+      "apps/web/components/ui.tsx",
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "Vertical 'Variations' stack (Canonical / Style Alt / Prior Version) is entirely missing",
+     "description": "Design (routes_5.jsx lines 74-102) is a narrow 220px vertical stack of 3 selectable variant cards, each carrying a color-coded badge (Canonical=ok/green, Style Alt=warn/amber, Prior Version=primary/purple), a thumbnail, a sub-label (e.g. 'Clean (Canonical)'/'Executive Dark'), a version+date line, click-to-select highlighting (.ve-variant.current), and a 'View all 6 variations' pill link. The current page's left column ('Family variants', page.tsx lines 17-30) is a plain card of 4 hardcoded names with only one badge ever shown, no Style-Alt/Prior-Version distinction, no selection state, no 'view all' link, and it isn't coupled to a responsive main preview. Rebuild by combining listContentUnitVariants(familyId) (variantType/isCanonical for Canonical/Style Alt) with listContentUnitVersions(variantId) (for Prior Version history) into one ordered, click-to-select stack.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx",
+      "apps/web/components/ui.tsx",
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "Main center preview card lacks real slide content, chart, KPI figure, and stat chips",
+     "description": "Design's main preview (routes_5.jsx lines 104-154) is a large elevated card with: an expand/external icon top-right; a two-column header (left: title, accent underline, description, big KPI number e.g. '$42B' + label + growth delta; right: a labeled bar chart of yearly values); a 3-up stat-chip row (icon + value + 2-line label); and a footer with source citation + company/page marker. The current center card (page.tsx lines 31-44) only shows a generic SlideThumb image, title, one-line summary, and 3 small tags (ScorePill/version/uses) \u2014 no chart, no KPI figure, no stat-chip row, no source footer, no expand action. Needs a real slide-content renderer driven by ContentUnitVersionDetail (summary/extractedText/renderUri) instead of the placeholder SlideThumb.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "Pagination strip under the main preview ('3 / 15' with prev/next) missing",
+     "description": "Design shows a centered pagination control directly under the main preview (routes_5.jsx lines 157-162): a '3 / 15' counter flanked by two circular icon buttons to step through the similar-concepts/variations set. No equivalent control exists anywhere in the current page.",
+     "severity": "medium",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx"
+     ]
+    },
+    {
+     "title": "Bottom row \u2014 'Included in Plays' / 'Included in WorkProducts' / 'Actions' 3-panel section missing, with partial backend support",
+     "description": "Design's bottom row (routes_5.jsx lines 164-221) has three cards: (a) 'Included in Plays' with a count badge, rows of {title, 'Updated <date>', Primary/Secondary role badge}, and a 'View all N plays' link; (b) 'Included in WorkProducts' with a count badge, rows of {title, 'Generated <date>', page reference e.g. 'Page 7'}, and a 'View all N workproducts' link; (c) an 'Actions' card with 5 clickable rows (Add to Deck, Add to Collection, Add to Play, Download Slide, View Source File). None of this exists in the current page. Backend-wise, GET /api/content-units/{version_id}/where-used (services/api/app/api/routes/content_units.py, use_cases.where_used) returns a flat ContentUnitUsageReference list typed content_block_version|storyboard|work_product_version with orderIndex/memberId/sectionId/slotId/workProductVersionId but no Play-vs-other-storyboard distinction (Storyboard.mode exists elsewhere in the schema but isn't surfaced here), no Primary/Secondary role flag, and no updated/generated timestamp \u2014 see api_needs.",
+     "severity": "high",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx",
+      "services/api/app/schemas/api.py",
+      "services/api/app/application/use_cases.py",
+      "services/api/app/api/routes/content_units.py"
+     ]
+    },
+    {
+     "title": "Right rail 'ContentUnit Details' card missing, with partial backend field support",
+     "description": "Design's right rail (routes_5.jsx lines 226-246) shows a card with a 2-column label/value grid: ContentUnit ID (mono, with copy icon), Source (source filename), Last Updated ('Apr 24, 2024 by Alex Kim'), File Location (mono folder path), and Tags (wrapped chips with '+2' overflow). The current page has no equivalent card at all. Data-wise, ContentUnitVersionDetail has no human-friendly display code (only UUID), no updatedBy/last-editor attribution (only createdAt), and no folder-path field (ProvenanceRecord.sourceRefs/sourceSystem only approximates a source filename); Taxonomy.tags can power the Tags chips today.",
+     "severity": "high",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx",
+      "apps/web/components/ui.tsx",
+      "services/api/app/schemas/api.py"
+     ]
+    },
+    {
+     "title": "Right rail 'Similarity & Relevance' linear meters card missing",
+     "description": "Design (routes_5.jsx lines 248-269) shows a card with two labeled linear progress bars (Best Match % in green/ok color, Average Similarity (All) % in primary color) and a 'Total Similar Concepts' count row below a divider. apps/web/components/ui.tsx only has a circular conic-gradient Meter (lines 102-117), not a linear bar meter, and the current page surfaces no similarity aggregate whatsoever. Data is fully derivable client-side from listSimilarContentUnits(versionId) (max score, mean score, count) \u2014 this is a UI-build gap, not a backend gap.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "Right rail 'Extracted Text' card missing",
+     "description": "Design (routes_5.jsx lines 271-284) shows a card with the slide's extracted text in a shaded block, a 'Copy all' link top-right, and a 'Show more' expand link at the bottom. GET /api/content-units/versions/{id} already returns extractedText on ContentUnitVersionDetail \u2014 the data exists, the current page simply never fetches or renders it.",
+     "severity": "medium",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx"
+     ]
+    },
+    {
+     "title": "Header action bar (Share / Compare(2) / Add-to-Deck split button) missing, with no destination screens yet",
+     "description": "Design's page-head-row (routes_5.jsx lines 32-38) has 3 actions: 'Share', 'Compare (2)' (badge shows items staged for compare), and a primary split-button 'Add to Deck' with a chevron-down for a dropdown. The current PageHeader only renders a single 'Back to detail' link (page.tsx line 14) \u2014 Share/Compare/Add-to-Deck are absent. A repo-wide search found no compare route and no deck-builder route under apps/web/app, so beyond adding the buttons here, the Compare and Add-to-Deck actions have no target page to navigate/POST to yet.",
+     "severity": "medium",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "Page header title/subtitle copy diverges from design's fixed chrome",
+     "description": "Design's H1 is the literal, generic 'ContentUnit Variation Explorer' with a fixed subtitle 'Explore similar concepts horizontally and alternate versions vertically.' (routes_5.jsx lines 25-30) \u2014 the specific ContentUnit's name appears inside the page body (main preview title), not as the H1. The current PageHeader instead puts the specific slide name in the H1 ('Cloud Modernization ROI variation map') with a different eyebrow ('Variation explorer') and a domain-rule-flavored description about similarity edges, which should be corrected to match the design's chrome once the page is data-driven.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx"
+     ]
+    },
+    {
+     "title": "No loading, error, empty, or restricted states",
+     "description": "Per CLAUDE.md's UI implementation reminders (loading/empty/error/restricted states required) and rule 10 (permission filtering before returning results), this screen has none: it's a pure static component with no fetch, so there's no skeleton/loading UI, no ApiError handling for a version/family that 404s or is inaccessible (contrast with the try/catch + EmptyState pattern already used in apps/web/app/(shell)/content-units/[id]/page.tsx), no empty-state for a ContentUnit with zero similar concepts or a single-variant family, and no restricted/masked treatment when a similar or where-used result's statusChips.isRestricted is true.",
+     "severity": "high",
+     "kind": "state",
+     "files_to_touch": [
+      "apps/web/app/(shell)/variation-explorer/page.tsx"
+     ]
+    },
+    {
+     "title": "No 'selected/current card' visual affordance exists in the shared UI kit",
+     "description": "Design relies heavily on a selected-card highlight ring (.ve-concept.current / .ve-variant.current \u2014 border-color:var(--primary) plus a soft box-shadow halo, styles_v2.css:1491,1499) to show which similar-concept and which variant is currently active. No comparable reusable 'selected card' style/utility exists today in apps/web/app/globals.css or apps/web/components/ui.tsx (current cards have only static borders, no active/selected variant), so this is a net-new interaction primitive needed for gaps #2 and #3 above.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/components/ui.tsx",
+      "apps/web/app/globals.css"
+     ]
+    }
+   ],
+   "screen": "variation-explorer"
+  },
+  {
+   "api_needs": [
+    {
+     "need": "Audit event log listing (action, actor, target type/id, prior/new state, reason, metadata, timestamp) for a governance audit trail view",
+     "exists": "yes",
+     "endpoint_hint": "GET /api/admin/audit-events (schema AuditEvent) \u2014 endpoint exists server-side; apps/web/lib/api.ts has no type or client function for it at all"
+    },
+    {
+     "need": "Ingestion pipeline per-stage health (current/completed/failed job counts per worker stage: validate_file, render_pages, extract_text, create_units, embed_units, enrich_units, detect_candidates)",
+     "exists": "yes",
+     "endpoint_hint": "GET /api/admin/health -> AdminHealth.stages (AdminStageHealth) \u2014 computed server-side by admin_health() but the `stages` field is entirely missing from the AdminHealth TS type in apps/web/lib/api.ts, so it can never be rendered"
+    },
+    {
+     "need": "Search index + search-quality-eval health (searchable/restricted counts by object type, embeddings, pass/fail relevance eval cases)",
+     "exists": "yes",
+     "endpoint_hint": "GET /api/admin/health -> AdminHealth.searchIndex / AdminHealth.searchEval \u2014 both already typed in api.ts but never read by admin/page.tsx"
+    },
+    {
+     "need": "Full queue health detail (adapter, queueName, per-status job counts, operational notes)",
+     "exists": "yes",
+     "endpoint_hint": "GET /api/admin/health -> AdminHealth.queue \u2014 typed but only `queue.status` is rendered (as a single Tag); adapter/notes/counts unused"
+    },
+    {
+     "need": "Roles/user management (list users, view/assign roles)",
+     "exists": "no",
+     "endpoint_hint": "No route exists; role comes only from request headers (x-boxbrain-role/x-boxbrain-user) resolved in services/api/app/api/dependencies.py \u2014 there is no persisted user or role table/endpoint"
+    },
+    {
+     "need": "Taxonomy catalog management (list/create/edit taxonomy terms used for classification)",
+     "exists": "no",
+     "endpoint_hint": "Taxonomy is only accepted as free-form per-upload JSON in POST /api/uploads (services/api/app/api/routes/ingestion.py); no admin taxonomy CRUD route exists"
+    },
+    {
+     "need": "Connector/source configuration and retention policy management",
+     "exists": "no",
+     "endpoint_hint": "No connector/retention routes or domain models found under services/api/app/api or services/api/app/domain"
+    },
+    {
+     "need": "Cursor-paginated ingestion job listing",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/ingestion-jobs (services/api/app/api/routes/ingestion.py) returns the full unpaginated list; architecture doc calls for cursor pagination on all lists"
+    }
+   ],
+   "current_state": "Admin (`apps/web/app/(shell)/admin/page.tsx`) is a server-rendered \"Admin-lite\" dashboard that fetches `/api/admin/health` and `/api/ingestion-jobs` in parallel and renders 4 stat cards, a derived readiness-checklist card, a job-status-summary card, a static guardrails card, and an embedded `<IngestionWorkspace/>` (upload form + job list + job detail) \u2014 the same component reused verbatim on the standalone `/ingestion` route. Restricted (401/403) and generic-error states are handled at the Admin page level only. No design JSX exists for either screen \u2014 `routes_*.jsx` renders the generic `RouteFallback` placeholder for both \"admin\" and \"ingestion\" routes in the reference app, so PRD/architecture conventions (sections 4.1 Admin persona, 6.1 MVP scope, 8.2 surfaces, 11 MVP release definition) are the only available ground truth.",
+   "effort": "L",
+   "gaps": [
+    {
+     "title": "No audit log browser \u2014 only a raw count is shown",
+     "description": "PRD MVP release criterion #10 requires the system to 'expose job status, audit logs, and basic admin controls,' and the Admin persona's core job is to 'audit risky content usage.' The backend fully supports this: `GET /api/admin/audit-events` returns typed `AuditEvent` records (id, action, actorId, targetType/targetId, priorState, newState, reason, metadata, createdAt) written on every governance mutation. The Admin page only shows `reviewAudit.auditEvents` as a single number in a stat card and readiness check \u2014 there is no table/list of individual events, no filter by action/target/actor, and no prior-vs-new-state diff view. `apps/web/lib/api.ts` has no `AuditEvent` type or client function at all, so the endpoint is entirely unreachable from the UI.",
+     "severity": "high",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/lib/api.ts",
+      "apps/web/app/(shell)/admin/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "Pipeline stage, queue, and search-index/eval telemetry computed by the backend is never surfaced",
+     "description": "`AdminHealth` (services/api/app/schemas/api.py) returns `stages` (per-worker-stage current/completed/failed counts + `stagesWithFailures`, matching the 7 named stages in architecture doc section 4.2), a fuller `queue` object (adapter, queueName, per-status counts, operational `notes`), `searchIndex` (searchable/restricted counts by object type, embedding counts), and `searchEval` (search-quality regression pass/fail summary with per-case detail). None of these back the Admin persona job 'monitor ingestion/search/indexing health.' The `stages` field is not even declared in the frontend `AdminHealth` TS type (apps/web/lib/api.ts), so it cannot be read; `searchIndex`/`searchEval` are typed but never referenced in admin/page.tsx; `queue` is reduced to a single status Tag, dropping adapter/notes/per-status counts. `ingestion.recentFailures` (job-level failure detail with retry affordance) is also unused in favor of a separately fetched job list.",
+     "severity": "high",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/lib/api.ts",
+      "apps/web/app/(shell)/admin/page.tsx"
+     ]
+    },
+    {
+     "title": "No admin surface (even placeholder) for roles, taxonomy, connectors, or retention",
+     "description": "PRD section 4.1 lists Admin persona jobs 'configure connectors, roles, and permissions' and 'manage taxonomy and retention policy,' and the UX surface table (8.2) defines Admin as 'Manage ingestion, roles, taxonomy, health' (MVP-light). The current Admin page has zero mention of roles, taxonomy, connectors, or retention \u2014 no read-only roles table, no taxonomy list, nothing. Backend confirms there is genuinely nothing to wire yet: roles are resolved purely from request headers (services/api/app/api/dependencies.py `VALID_ROLES`/`get_actor`) with no persisted user/role table or endpoint; taxonomy is only a free-form per-upload JSON blob, not a managed catalog; no connector/retention routes or domain models exist anywhere under services/api. Given the 'MVP-light' scope, closing this fully likely means a lightweight read-only roles/taxonomy panel rather than full CRUD, but today there is no affordance at all \u2014 not even a stub.",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/app/(shell)/admin/page.tsx",
+      "services/api/app/api/routes/admin.py",
+      "services/api/app/schemas/api.py"
+     ]
+    },
+    {
+     "title": "Ingestion job rows/detail never show the job's title or artifact type",
+     "description": "`IngestionJob` carries `title` and `artifactType` (both collected on the upload form), but `JobRow` and `JobDetail` in `components/ingestion-workspace.tsx` only ever display the job's UUID, stage, and status \u2014 there is no human-readable label anywhere, forcing users to identify jobs solely by a truncated GUID. This conflicts with the general product convention (status chips + clear identifiers) reiterated in CLAUDE.md's UI reminders.",
+     "severity": "medium",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/components/ingestion-workspace.tsx"
+     ]
+    },
+    {
+     "title": "'Restricted-content guardrails' card is static marketing copy, not live data",
+     "description": "The Admin page's guardrails card (admin/page.tsx, `data-testid=\"admin-guardrails\"`) renders four hardcoded descriptive sentences with a green 'ready' badge, none of which reflect actual system state. `AdminHealth.searchIndex` already returns live `restrictedContentUnitVersions`, `restrictedWorkProductVersions`, and `restrictedContentBlocks` counts that could replace or augment this copy with real numbers, so the panel currently overstates certainty (always shows 'ready' regardless of real state).",
+     "severity": "medium",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/admin/page.tsx"
+     ]
+    },
+    {
+     "title": "`/ingestion` route has no sidebar nav entry \u2014 reachable only via direct URL or scrolling to the bottom of Admin",
+     "description": "`apps/web/features/demo/data.ts` nav config has no `/ingestion` entry (only `/admin` is linked, under the 'Admin'-labeled nav item, plus an unrelated placeholder mapping 'Reports' to `/admin` too). The upload/ingestion workflow is a distinct, materially important workflow (PRD 7.1) that per the roles table (8.1) a Contributor \u2014 not just an Admin \u2014 should be able to reach; today it is only discoverable by scrolling within the Admin page or knowing the `/ingestion` URL directly.",
+     "severity": "medium",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/features/demo/data.ts",
+      "apps/web/components/shell.tsx"
+     ]
+    },
+    {
+     "title": "Ingestion page has no restricted-state handling and no route-level loading skeleton (asymmetric with Admin)",
+     "description": "`/admin` has both a dedicated `loading.tsx` skeleton and a page-level split between `RestrictedAdmin` (401/403) and `AdminError` (other failures). `/ingestion` (app/(shell)/ingestion/page.tsx) has neither: there is no `loading.tsx`, and inside `IngestionWorkspace`, any failure from `listIngestionJobs`/`uploadArtifact`/`retryIngestionJob` \u2014 including a 401/403 \u2014 collapses into the same generic red 'Ingestion API error' banner used for every other failure, with no distinct 'you don't have permission' messaging.",
+     "severity": "medium",
+     "kind": "state",
+     "files_to_touch": [
+      "apps/web/app/(shell)/ingestion/page.tsx",
+      "apps/web/components/ingestion-workspace.tsx"
+     ]
+    },
+    {
+     "title": "Upload form advertises 7 artifact types but only .pptx decks are functionally accepted",
+     "description": "The upload form's `artifactType` select offers Deck/Brief/Document/One pager/Whitepaper/Proposal/Other, but both the client-side validation in `components/ingestion-workspace.tsx` (`handleUpload` rejects any non-`.pptx` filename before submit, with the explicit message 'Upload a .pptx deck. Other source formats are not accepted in this milestone.') and the backend (`create_upload_job` in services/api/app/application/use_cases.py marks any non-`.pptx` file as an immediate `failed`/`unsupported_file_type` job regardless of the chosen artifactType) make 6 of the 7 dropdown options permanently non-functional today. The UI should either restrict the selector to the types actually supported or clearly flag the others as not-yet-supported.",
+     "severity": "medium",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/components/ingestion-workspace.tsx"
+     ]
+    },
+    {
+     "title": "Ingestion job list has no pagination",
+     "description": "`GET /api/ingestion-jobs` (services/api/app/api/routes/ingestion.py) returns the full unpaginated job array, and `listIngestionJobs`/`IngestionWorkspace` load and render it all client-side. Architecture doc section 7.1 calls for cursor pagination on all list endpoints; at pilot scale this is low-risk, but the job list card in `ingestion-workspace.tsx` has no cursor/limit affordance for when job volume grows.",
+     "severity": "low",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/components/ingestion-workspace.tsx",
+      "apps/web/lib/api.ts",
+      "services/api/app/api/routes/ingestion.py"
+     ]
+    }
+   ],
+   "screen": "admin-ingestion"
+  },
+  {
+   "screen": "reviews",
+   "current_state": "apps/web/app/(shell)/reviews/page.tsx renders components/reviews-hub.tsx: a PageHeader + a 3-column CSS grid (queues sidebar | item list | decision panel). It correctly wires live API data (listReviewQueues, listReviewItems, getReviewItem, runReviewAction, generateReviewCandidates) with loading/empty/error/restricted states for each pane, and shows a 2-up ComparePanel plus a single confidence Meter, a free-text audit reason field, and 3 action buttons (suggested action, reject, request-changes). This is a functionally sound but structurally and content-wise reduced version of the design: it omits the queue tab strip, list sort/filter/pagination, the compare header toolbar, the 5-tab sub-panel (Content Comparison/Comments/Provenance/Version History/Activity), the multi-metric AI similarity breakdown, the full suggested-action button set, the Provenance Overview card, and the entire multi-item 'Compare' drawer shown in slide-compare.png.",
+   "gaps": [
+    {
+     "title": "Queue selector is a sidebar column, not a horizontal tab strip; 2 of 7 queues missing",
+     "description": "Design (routes_reviews_v2.jsx RvTab / tabs array) renders queues as a full-width horizontal underline-tab strip below the page header (New Items 24, Duplicate Candidates 18, Variant Linking 12, Similarity Review 31, Stale Content 27, Approvals 9, Comment Resolution 14), leaving the 3-column grid below for list | compare | AI-panel only. Current reviews-hub.tsx instead spends an entire grid column on a vertical 'Queues' card (QueueButton list), which collapses the design's 3 real content columns (list, compare, AI panel) down to effectively 2 (item list, decision panel) since the AI-panel content is folded into DecisionPanel. Additionally, queueLabels in reviews-hub.tsx (and the backend's queue_type generator in use_cases.py:_deterministic_review_candidates) only cover duplicate/variant/similarity/stale/approval \u2014 there is no 'New Items' or 'Comment Resolution' queue type anywhere in the stack.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx"
+     ]
+    },
+    {
+     "title": "Item list card missing sort, filter, and pagination controls; card style diverges from design",
+     "description": "Design's left list card (routes_reviews_v2.jsx RvDupCard/list) has a header with item count + 'Sort by' dropdown (AI Confidence/Updated/Title) + filter icon button, and a footer with 'Showing 1 to 5 of 18 results' plus numbered pagination + prev/next icon buttons. Each row uses a 36px circular color-coded score badge (green/blue/amber/red by threshold) plus a 'vs. <target> <version>' line and a colored confidence-tier label. Current ReviewItemCard in reviews-hub.tsx has none of: sort control, filter button, or pagination; it uses a small StatusBadge percentage chip instead of the circular score badge, and folds the 'vs.' comparison into a generic targetSummary line without the design's visual hierarchy.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "Compare header toolbar (title row, Manual Override toggle, AI Analysis Details, expand) missing",
+     "description": "Design's middle compare card starts with a header row: 'Compare: <Title A> vA vs. <Title B> vB' plus an inline 'AI Confidence: NN%' pill, a 'Manual Override' label+toggle switch, an 'AI Analysis Details' button, and an external/expand icon button (routes_reviews_v2.jsx lines ~164-180). DecisionPanel in reviews-hub.tsx has no equivalent header row at all \u2014 it only shows queue/source/action Tag chips above the ComparePanel, with confidence surfaced later via a separate Meter component, no manual-override control, no 'AI Analysis Details' entry point, and no expand action.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx"
+     ]
+    },
+    {
+     "title": "Compare deck cards missing per-side action icons and center swap button",
+     "description": "Design's two-deck compare (each side) shows title+version, 'type \u00b7 updated by author', a large shadowed slide thumbnail, and a row of Eye/Download/More icon buttons underneath, with a circular swap/compare icon button centered between the two decks. Current CompareObjectCard in reviews-hub.tsx renders only a preview + title + optional summary + status chips \u2014 no per-deck icon action row, no 'updated by <author>' line (no author field exists on ReviewCompareObject either), and no center swap button between the two cards.",
+     "severity": "medium",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx"
+     ]
+    },
+    {
+     "title": "Lower compare tab strip (Content Comparison / Comments / Provenance / Version History / Activity) entirely absent",
+     "description": "Design places a 5-tab strip beneath the two-deck compare (routes_reviews_v2.jsx lines 216-280): Content Comparison, Comments (n), Provenance, Version History, Activity. The Comments tab alone has filter dropdowns (All Comments/All Status/Sort by Newest), an 'Add Comment' button, and a threaded list (avatar, name, timestamp, Open/Variant/Informational badges, edit/resolve/more icon buttons). None of this exists in reviews-hub.tsx today; DecisionPanel instead shows a single static AI-rationale note, a confidence Meter, a free-text reason textarea, and 3 action buttons with no tabbed sub-content at all.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx"
+     ]
+    },
+    {
+     "title": "AI panel reduced to one confidence number; missing similarity breakdown and matched-sections list",
+     "description": "Design's right 'AI Similarity Analysis' card shows a 3-metric grid (Overall/Content/Structure Similarity %), a Semantic Similarity stat, a numbered 'Top Matching Sections' list with per-section % match, and a 'View all N matched sections' link. Current reviews-hub.tsx only renders a single generic confidence Meter ('suggestion confidence') sourced from ReviewItemDetail.confidence. This is a data gap: ReviewItem/ReviewItemDetail in services/api/app/schemas/api.py only stores one `confidence: float`, with no overall/content/structure/semantic breakdown fields and no per-section match data anywhere in the domain model or presenters.py.",
+     "severity": "high",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx",
+      "services/api/app/schemas/api.py",
+      "services/api/app/application/use_cases.py",
+      "services/api/app/application/presenters.py"
+     ]
+    },
+    {
+     "title": "Suggested Action panel exposes only 3 of 5 candidate actions instead of always showing all",
+     "description": "Design's 'Suggested Action' card always shows 5 distinct action buttons with icon+title+subtitle: Mark as Variants (primary/highlighted), Mark as Similar, Merge Versions, Set Canonical, and Not Duplicates (danger-styled). Current DecisionPanel only renders 3 buttons: a single dynamic 'suggested action' button (whichever of accept/mark-variant/mark-similar/merge-versions/set-canonical is normalized as suggestedAction), plus static Reject and Request Changes buttons \u2014 hiding the other candidate actions unless they happen to be the suggested one. The backend already exposes all 5 action endpoints (mark-variant, mark-similar, merge-versions, set-canonical, reject) via services/api/app/api/routes/reviews.py, so this is purely a frontend interaction gap, not a backend one.",
+     "severity": "medium",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx"
+     ]
+    },
+    {
+     "title": "Provenance Overview card missing from AI/decision sidebar",
+     "description": "Design's third right-column card, 'Provenance Overview', shows Common Source (title + date), Diverged (days ago), Authors (avatar stack + count), Collections (name + 'View all' link), and a 'View Full Provenance Graph' button. No equivalent card exists in reviews-hub.tsx. Backend data support is partial: ContentUnitVersionDetail.provenance (ProvenanceRecord: originType, sourceSystem, parentRefs, sourceRefs, modelInfo, pipelineVersion, createdAt) exists per-version but there is no computed 'common ancestor / divergence' comparison across two versions, no author field anywhere in the schema, and no collections concept at all in the backend (no /collections route, no Collection type in api.ts).",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx",
+      "services/api/app/schemas/api.py",
+      "services/api/app/application/use_cases.py"
+     ]
+    },
+    {
+     "title": "Full multi-item 'Compare' drawer (slide-compare.png) is entirely unimplemented",
+     "description": "slide-compare.png shows a dedicated overlay/drawer ('Compare \u2014 N items selected', Reorder, close) triggered from the expand icon, listing 2-3 selectable items side by side, each with: Current/Alternative label + checkbox, title, version+date, thumbnail, status badge with icon (Approved/In Review/Draft), Quality Score gauge with percentile ('Top 8%'), Freshness (relative time + up-to-date/slightly-stale/stale label), Last Updated By, File Size, Usage (plays + views), Rating (stars + count), Compliance chip, an action icon row (view/share/duplicate/more), and an 'Add another item \u2014 Search or browse content to add' tile. A repo-wide grep confirms no 'Compare' component exists anywhere outside reviews-hub.tsx's inline 2-up panel \u2014 this drawer/pattern is net-new for the whole app, not just Reviews.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "Compare drawer's per-item metadata (ratings, usage counts, file size, last-updated-by) has no backend support",
+     "description": "The multi-item Compare drawer needs star ratings + review count, usage plays/views counts, file size, and a 'Last Updated By' author name per item. None of these fields exist on ContentUnitVersion/ContentUnitVariant/ContentUnitFamilyCard in apps/web/lib/api.ts or the corresponding backend schemas \u2014 ContentUnitVersion only has qualityScore and usageScore (aggregate scores, not raw play/view counts), and there is no author/owner field or file-size field anywhere in the content-unit domain model.",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "services/api/app/schemas/api.py",
+      "services/api/app/application/use_cases.py",
+      "services/api/app/application/presenters.py"
+     ]
+    },
+    {
+     "title": "Reviews list API lacks true pagination/sort; header actions Queue Settings and Export missing",
+     "description": "GET /api/reviews/items ignores the `limit` the frontend already sends (no limit/offset/cursor param on the route in services/api/app/api/routes/reviews.py) and nextCursor is always null in the response, so the design's 'Showing 1 to 5 of 18 results' + numbered pagination cannot be backed without backend changes; there is also no sort query param for AI Confidence/Updated/Title. Separately, the design header has 'Queue Settings' and 'Export' buttons (routes_reviews_v2.jsx) that reviews-hub.tsx's PageHeader replaces with a 'Generate candidates' button not present in the design at all \u2014 no queue-settings config endpoint or export endpoint exists anywhere in services/api/app/api/routes/.",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx",
+      "services/api/app/api/routes/reviews.py",
+      "services/api/app/application/use_cases.py"
+     ]
+    },
+    {
+     "title": "List/queue components use ad hoc Tailwind styling instead of design's dense list-row/badge conventions",
+     "description": "QueueButton, ReviewItemCard, and the comparison cards are built from one-off Tailwind utility classes rather than the design's shared list-row / score-circle / dashed-divider / mono-label conventions defined in styles_v2.css (list-row, mono, toggle, select-wrap, icon-btn classes already exist in apps/web/app/globals.css as design tokens but are underused here). Purely cosmetic once the structural gaps above are addressed, but worth normalizing alongside the Wave 0 UI-kit expansion.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/components/reviews-hub.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    }
+   ],
+   "effort": "XL",
+   "api_needs": [
+    {
+     "need": "Similarity breakdown metrics (overall/content/structure/semantic %) + ranked top-matching-sections list on ReviewItemDetail",
+     "exists": "no",
+     "endpoint_hint": "GET /api/reviews/items/{id}"
+    },
+    {
+     "need": "'New Items' review queue type (newly ingested content awaiting first review)",
+     "exists": "no",
+     "endpoint_hint": "GET /api/reviews/queues, /api/reviews/items"
+    },
+    {
+     "need": "'Comment Resolution' review queue type wiring open comments into the queue/review-item system",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/reviews/queues, /api/comments"
+    },
+    {
+     "need": "True pagination (limit/offset/cursor) and sort (confidence/updated/title) on the review items list",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/reviews/items"
+    },
+    {
+     "need": "Cross-version Provenance Overview: common-ancestor + divergence-days computation, plus author and collections fields",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/content-units/versions/{id} (provenance), no collections/author fields anywhere"
+    },
+    {
+     "need": "Comments scoped to review compare objects (list + create + resolve)",
+     "exists": "yes",
+     "endpoint_hint": "GET/POST /api/comments?targetType&targetId"
+    },
+    {
+     "need": "Content diff data for the 'Content Comparison' tab",
+     "exists": "yes",
+     "endpoint_hint": "ReviewCompareObject.extractedText already returned by GET /api/reviews/items/{id}"
+    },
+    {
+     "need": "Version history list for the 'Version History' tab",
+     "exists": "yes",
+     "endpoint_hint": "GET /api/content-units/variants/{variantId}/versions (listContentUnitVersions already wired in api.ts)"
+    },
+    {
+     "need": "Per-target Activity/audit trail for the 'Activity' tab",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/admin/audit-events exists but has no targetId/targetType filter and no client wrapper in api.ts"
+    },
+    {
+     "need": "Queue Settings configuration endpoint",
+     "exists": "no",
+     "endpoint_hint": "none \u2014 no route exists"
+    },
+    {
+     "need": "Reviews queue Export endpoint",
+     "exists": "no",
+     "endpoint_hint": "none \u2014 no route exists"
+    },
+    {
+     "need": "Per-item ratings (stars+count), usage plays/views counts, file size, and last-updated-by author for the multi-item Compare drawer",
+     "exists": "partial",
+     "endpoint_hint": "ContentUnitVersion has qualityScore/usageScore aggregates only; no raw ratings/plays/views/fileSize/author fields"
+    }
+   ]
+  },
+  {
+   "screen": "library",
+   "current_state": "apps/web/app/(shell)/library/page.tsx renders a single fixed two-column layout: a left column of flat ContentUnitFamilyCard link-cards (each linking out to /content-units/[id]) and a right column that always shows a compact WorkProducts list, regardless of which of the four decorative tabs (\"ContentUnits\" active, \"WorkProducts\", \"ContentBlocks\", \"Collections\") is clicked \u2014 the tabs have no onClick handlers and none of them change the rendered content. There is no filter sidebar, no sort/view toggles, no inline variant expansion, no similarity rail, no multi-select/compare dock, and no query-driven search-results mode; loading.tsx mirrors only that same simplified two-pane shape. The design (routes_1.jsx RouteLibrary + ContentUnitLibraryView) specifies a much richer family-first browse experience plus a separate generic \"All/Work Products/Plays/Collections\" grid+Insights-rail experience, and the library-search.png mockup (uncovered by JSX) specifies an entirely separate faceted search-results mode that has no implementation at all today.",
+   "effort": "XL",
+   "gaps": [
+    {
+     "title": "Library tabs are static decoration, not functional view switches",
+     "description": "Design (routes_1.jsx RouteLibrary, lines 200-206) has 5 tabs \u2014 All, Work Products, Content Units, Plays, Collections \u2014 each with onClick state (setActiveTab) that swaps the entire body between ContentUnitLibraryView (family-first) and a generic grid+Insights view, and swaps the header actions (non-ContentUnits tabs show a 'New Storyboard' ghost button + 'New Work Product' primary button per lines 188-197; ContentUnits tab shows none). Current apps/web/app/(shell)/library/page.tsx renders `<div className=\"tab active\">ContentUnits</div>` etc. as inert markup with no onClick/state, always shows the same 'New collection'/'Filters' header actions, and includes a 'ContentBlocks' tab that has no counterpart in the design's tab set at all (design has Plays instead).",
+     "severity": "high",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/page.tsx"
+     ]
+    },
+    {
+     "title": "No 'All' tab experience: generic multi-type grid + filter chip row + view/sort controls",
+     "description": "Design's non-ContentUnits tab body (routes_1.jsx lines 217-293, matches uploads/library-all.png) shows: a filter chip row (All Filters w/ count badge, Content Type, Industry, Use Case, Persona, Tags, More Filters dropdowns, Clear all, Save view); a results header ('1,248 results' + removable active-filter chip, Sort: Relevance dropdown, grid/list/table view-toggle icon group); and a 4-column card grid where each card shows a file-type corner badge (ppt/doc/img icon), a star-favorite toggle, a 'Trusted' badge on the thumbnail, title, up to 2 tags, a 2-line clamped description, owner avatar + 'Updated Xh ago', and a footer row of eye/view-count, download-count, and an 'AI Relevance' match-score chip, plus a hover-reveal 'Edit as Storyboard' button. None of this exists in the current implementation for any tab.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/page.tsx",
+      "apps/web/components/ui.tsx",
+      "apps/web/app/globals.css",
+      "apps/web/lib/api.ts"
+     ]
+    },
+    {
+     "title": "ContentUnit family-first browse is missing its filter sidebar, view/sort controls, and family metadata row",
+     "description": "Design's ContentUnitLibraryView (routes_1.jsx lines 386-462, matches uploads/content-unit-library.png) renders: a control row with Filters chip (count badge), 'Show families'/'Show all variants' segmented toggle, Sort dropdown, grid/list toggle, '134 families \u00b7 856 variants' counts, and Clear all; and a 220px-wide left FILTER BY sidebar with Content Type/Use Case/Industry/Persona/Tags/Content Owner/Locale-Region dropdown filters plus a Trust & Quality checkbox group (Trusted/Needs Review/Draft with counts) and a 'Save as view' link. The current page.tsx has none of this \u2014 it renders family cards directly under the tab row with no filter UI, no toggle, no counts, and each card's footer shows a raw debug string ('Canonical preview available/pending \u00b7 link source X \u00b7 family <id>') instead of the designed owner/updated/created/locale metadata row (Sarah Chen \u00b7 Updated May 12, 2025 \u00b7 First created Apr 8, 2024 \u00b7 Locale Global (EN)).",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/page.tsx",
+      "apps/web/components/ui.tsx",
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "No inline expand-to-Variants table per family (Compare/Similar/Add actions)",
+     "description": "Design's family row (routes_1.jsx lines 466-542) expands in place on click to reveal a 'Variants in this family (N)' table with columns Variant (+ Canonical badge), Audience, Linked By (AI-Link/Manual-Link icon), AI Confidence (percent + 5-dot meter + High/Medium label), Versions, Updated, and right-aligned row actions (Compare, Similar, Add, More-menu), with row click navigating to the ContentUnit detail. Current implementation never expands inline \u2014 each FamilyCard is a flat `<Link>` straight to /content-units/[id]; there is no variant table, no confidence meter, no per-variant Compare/Similar/Add actions anywhere on the Library screen.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "No 'Similarity Preview' right rail on the Content Units tab",
+     "description": "Design (routes_1.jsx lines 297-323) replaces the right rail with a sticky 'Similarity Preview' card when the Content Units tab is active: 'Based on: <selected family/variant>' plus a ranked list of top similar families (thumbnail, name, variant/version-count meta, tags, score-circle 0-100) and a 'View all similar (N)' link. The current page's right column is always the WorkProducts list/card regardless of tab, so this panel is entirely absent for the family-first view.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/page.tsx",
+      "apps/web/components/ui.tsx",
+      "apps/web/lib/api.ts"
+     ]
+    },
+    {
+     "title": "No multi-select / selection-compare dock",
+     "description": "Design (routes_1.jsx lines 546-569) supports selecting multiple families/variants and shows a fixed-position bottom dock ('N selected', thumbnail chips with title/sub-label and remove-X per item, 'Compare (N)' button, 'Add to Storyboard' primary button, more-menu). The library-search.png mockup shows an equivalent, richer dock (Actions row: Add to Play, Add to Workspace, Download, More, Compare) plus a right-side 'Compare (3)' panel with a Venn-style 'Similarity insights' visualization. Current implementation has zero selection state, no checkboxes on cards/rows, and no dock/compare UI anywhere on the Library screen.",
+     "severity": "high",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/page.tsx",
+      "apps/web/components/ui.tsx"
+     ]
+    },
+    {
+     "title": "Query-driven search-results mode (uploads/library-search.png) is entirely unimplemented",
+     "description": "This mockup \u2014 explicitly out of JSX scope, so it is the guiding source for this behavior \u2014 specifies a distinct results screen reached from search: active-filter chips with '+N more'/Clear all; 'Unified results' vs 'Grouped by topic (New)' tabs; a toolbar with Sort by, Density (Comfortable), and view-mode icons; a dismissible 'Semantic match' interpretation banner; 'Select all N on page' plus per-card checkboxes/bookmark/info/more-menu; a left facet sidebar (Object Type, Offering, Technology, Audience, Freshness, Rating, Approval Status \u2014 each with per-value counts and 'Show more'); and a results-footer with 'Showing 1\u201350 of N results', rows-per-page selector, page-number links, and 'Help improve results'. None of this exists anywhere in the app (no route, no components, no facet/pagination API).",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/page.tsx",
+      "apps/web/lib/api.ts",
+      "services/api/app/api/routes/search.py",
+      "services/api/app/schemas/api.py"
+     ]
+    },
+    {
+     "title": "Insights rail (Top Content, Content Health, Freshness, Recommendations) has no backing data source",
+     "description": "Design's non-ContentUnits-tab right rail (routes_1.jsx lines 324-378, uploads/library-all.png) needs: a 'Top Content' ranked-by-views list (last 30 days), a circular 'Content Health' gauge (e.g. 92 Healthy) with Trusted/Needs Review/Outdated percentage breakdown and a 'Review flagged content (N)' button, a 'Freshness' percentage + trend-vs-prior-30-days stat, and an AI 'Recommendations' card. No endpoint anywhere in services/api exposes view/usage aggregates, a health score, a freshness trend, or a recommendations feed \u2014 this blocks gap #2 from being data-backed even once the UI is built.",
+     "severity": "high",
+     "kind": "api",
+     "files_to_touch": [
+      "services/api/app/api/routes/",
+      "services/api/app/application/use_cases.py",
+      "services/api/app/schemas/api.py",
+      "apps/web/lib/api.ts"
+     ]
+    },
+    {
+     "title": "Family/variant taxonomy facets, owner, dates, locale, and trust counts are not exposed by the API",
+     "description": "listContentUnitFamilies (lib/api.ts ListContentUnitFamiliesInput) only accepts cursor/limit/mode/approvalState/freshnessState \u2014 there is no server-side filtering or count aggregation by Content Type, Use Case, Industry, Persona, Tags, Content Owner, or Locale/Region, and no Trusted/Needs-Review/Draft aggregate counts (642/186/28 in the mockup) endpoint. Additionally, the ContentUnitFamily domain model (services/api/app/domain/models.py) has no owner, created_at, or updated_at fields at all, so the family-row metadata line (Owner, Updated, First created, Locale) required by the design cannot be populated even client-side.",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "services/api/app/domain/models.py",
+      "services/api/app/schemas/api.py",
+      "services/api/app/application/use_cases.py",
+      "services/api/app/application/presenters.py",
+      "implementation_assets/initial_db_schema.sql",
+      "apps/web/lib/api.ts"
+     ]
+    },
+    {
+     "title": "Cards lack real usage telemetry and an AI relevance score",
+     "description": "Design cards throughout (library-all.png, content-unit-library.png) show real view counts, download counts, and an 'AI Relevance'/match score per card. The current FamilyCard/WorkProductLink instead computes a synthetic `scoreFromStatus()` heuristic client-side from approval/freshness state and shows no views/downloads at all \u2014 ContentUnitFamilyCard/WorkProductFamilyCard have no viewCount/downloadCount/relevanceScore fields.",
+     "severity": "medium",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/page.tsx",
+      "services/api/app/schemas/api.py",
+      "services/api/app/application/presenters.py"
+     ]
+    },
+    {
+     "title": "Plays and Collections tabs have no backing objects, routes, or nav destination",
+     "description": "Design's Library screen treats Plays and Collections as first-class, fully populated tabs. In this codebase there is no Collections page, nav entry, or backend route/domain model anywhere (grep across app/ and services/api found none), and the existing /plays route (apps/web/app/(shell)/plays/page.tsx) is explicitly built as a 'preview-only module' with hardcoded seed cards, not a queryable API-backed list. Selecting these tabs in a corrected Library implementation would have no real data to render.",
+     "severity": "medium",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/page.tsx",
+      "services/api/app/api/routes/",
+      "services/api/app/domain/models.py"
+     ]
+    },
+    {
+     "title": "Loading skeleton (library/loading.tsx) mirrors the wrong (old) layout",
+     "description": "loading.tsx renders 3 pulsing two-column family+workproduct cards matching only the current simplified page shape. Once the tabbed family-first + filter-sidebar + variant-table + similarity-rail (or generic grid + Insights-rail) layouts are built per the gaps above, the skeleton needs matching placeholder structure (filter sidebar shimmer, family-row shimmer with thumbnail/meta/counts, right-rail shimmer) so tab switches don't show a jarring layout shift between loading and loaded states.",
+     "severity": "medium",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/library/loading.tsx"
+     ]
+    },
+    {
+     "title": "Design CSS primitives (chip, score-circle, file-icon badge, tray/dock, count-inline) are missing from the app stylesheet",
+     "description": "The design stylesheet (docs/.../styles_v2.css) defines .chip/.chip.active, .file-icon(.ppt/.doc/.pdf/.img), .meter(.mid/.low/.ai), .tray/.tray-tab/.tray-item, .count-inline, and .score-circle \u2014 none of these classes exist in apps/web/app/globals.css (grep confirms only .tag, .tab/.tab.active, and a handful of badge classes are defined). Building any of gaps #2\u2013#7 will require porting these primitives (or Tailwind-equivalent components) rather than ad hoc one-off styles.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/globals.css",
+      "apps/web/components/ui.tsx"
+     ]
+    }
+   ],
+   "api_needs": [
+    {
+     "need": "Family-level owner, created date, updated date, and locale metadata on ContentUnitFamilyCard/Detail (not present on the ContentUnitFamily domain model at all)",
+     "exists": "no",
+     "endpoint_hint": "GET /api/content-units/families, GET /api/content-units/families/{id}"
+    },
+    {
+     "need": "Taxonomy-based facet filtering with per-value counts (Content Type, Use Case, Industry, Persona, Tags, Content Owner, Locale/Region) plus Trust & Quality aggregate counts for the family filter sidebar",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/content-units/families currently only supports approvalState/freshnessState/mode query params; taxonomy is returned per-item so client-side filtering is possible but there is no facet-count endpoint"
+    },
+    {
+     "need": "Per-variant version count without an additional round trip per variant",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/content-units/families/{id}/variants (ContentUnitVariant has no versionCount field; must call GET /api/content-units/variants/{id}/versions per variant today)"
+    },
+    {
+     "need": "Family-level 'similar families' ranking (aggregated across versions, with tags + variant/version counts) for the Similarity Preview rail default state",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/content-units/{version_id}/similar exists but is version-scoped, requires an explicit versionId, returns version-grain SearchResultItem without variantCount/versionCount/tags"
+    },
+    {
+     "need": "Library-wide Insights: top content by views (30d), content health score + Trusted/Needs-Review/Outdated breakdown, freshness % + trend, AI recommendations feed",
+     "exists": "no",
+     "endpoint_hint": "no admin/health or insights route returns this; services/api/app/api/routes/admin.py only exposes system health, not content analytics"
+    },
+    {
+     "need": "Usage telemetry (view count, download count) and a real AI relevance/match score per family, work product, and search result card",
+     "exists": "no",
+     "endpoint_hint": "extend ContentUnitFamilyCard / WorkProductFamilyCard / SearchResultItem schemas"
+    },
+    {
+     "need": "Search result facets with counts (Object Type, Offering, Technology, Audience, Freshness, Rating, Approval Status) for the search-results filter sidebar",
+     "exists": "no",
+     "endpoint_hint": "POST /api/search \u2014 SearchResponse has items[]/interpretedIntent/debug only, no facets"
+    },
+    {
+     "need": "Search result pagination (total count + page/rows-per-page) instead of a flat capped items[] array",
+     "exists": "no",
+     "endpoint_hint": "POST /api/search \u2014 SearchRequest has limit only, no cursor/page, SearchResponse has no totalCount"
+    },
+    {
+     "need": "'Grouped by topic' result clustering mode for search results",
+     "exists": "no",
+     "endpoint_hint": "POST /api/search \u2014 resultMode is auto/families/variants/versions only, no topic-grouping mode"
+    },
+    {
+     "need": "Star rating field per content object for search result cards",
+     "exists": "no",
+     "endpoint_hint": "extend SearchResultItem / ContentUnitVersion schemas"
+    },
+    {
+     "need": "Plays and Collections as first-class, queryable library objects backing dedicated Library tabs",
+     "exists": "no",
+     "endpoint_hint": "no Play/Collection domain model or route exists; /plays page.tsx is explicitly hardcoded preview-only seed data today"
+    },
+    {
+     "need": "Bulk 'add to storyboard' / 'add to play' / 'add to workspace' action across a multi-item selection dock",
+     "exists": "partial",
+     "endpoint_hint": "POST /api/storyboards/{id}/sections/{sectionId}/slots accepts one slot at a time; no batch/bulk endpoint"
+    }
+   ]
+  },
+  {
+   "screen": "work-products",
+   "current_state": "apps/web/app/(shell)/work-products/[id]/page.tsx renders one flat card (preview + metadata + a static 4-line governance checklist) plus a bottom filmstrip grid; there is no tab navigation, no variant concept, no section/slot composition table, and no right rail. apps/web/app/(shell)/publish/page.tsx is a generic non-parameterized page hardcoded to workProducts[0], with a static all-ok checklist and a demo manifest-slots list; it is not wired to any WorkProduct id/version and lacks the design's stepper, checklist detail, package outputs, provenance, or right rail. The backend's work_product_families/variants/versions, build_manifests, comments/notes, similarity_edges and audit_events tables already exist but only two WorkProduct routes are exposed (list families, get one version).",
+   "effort": "XL",
+   "gaps": [
+    {
+     "title": "No tabbed section navigation on WorkProduct detail",
+     "description": "Design shows Overview/Variants(4)/Versions(7)/Similar/Storyboard/Comments(3)/Notes(2)/Activity tabs. Current page renders one flat view with no tabs; .tabs/.tab CSS exists in globals.css but is unused here.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Deck Preview has no carousel/navigation controls",
+     "description": "Design has prev/next slide arrows, 'n / total' counter, grid/external icon buttons. Current WorkProductPreview renders one static thumbnail with no pagination or controls.",
+     "severity": "high",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Deck Variants panel is entirely missing",
+     "description": "Design's 'Deck Variants' card shows a 3-up thumbnail grid of sibling variants (Board/Executive/Technical + inline Regional-EMEA row) with slide counts, approved check, active highlight, 'Manage Variants' button. No variant concept is rendered anywhere despite work_product_variants existing in the DB.",
+     "severity": "high",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx",
+      "apps/web/lib/api.ts"
+     ]
+    },
+    {
+     "title": "No Variant Composition table (sections -> slots)",
+     "description": "Design's centerpiece shows collapsible sections each expanding to slot rows (#, Section/Slot, Purpose, Selected Content Unit link, Source, Last Edited, row menu) plus a View-as selector and Compare Variants button. Current page shows a flat ContentUnits grid with only title+badge+version, no section grouping or purpose/source/last-edited columns. Under-serves CLAUDE.md rule 8.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "No Slot Details / swap-content sub-panel",
+     "description": "Design's right column of the composition card shows current-selection detail (thumbnail, owner, last edited), a 'Swap This Slide' alternatives list with score-delta badges and Swap buttons, and a Browse Content Library CTA. None of this exists currently.",
+     "severity": "high",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "No Usage & Performance analytics card",
+     "description": "Design shows Views/Shares/Avg Time Viewed/Downloads stat tiles with trend deltas, a 14-point bar sparkline, and a date-range selector. No such card or backing data/endpoint exists.",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx",
+      "services/api/app/api/routes/work_products.py"
+     ]
+    },
+    {
+     "title": "Collaboration & Notes card not wired on WorkProduct detail",
+     "description": "Design shows an add-note/@mention affordance plus threaded notes with avatar/timestamp/@mentions/Reply. The same generic listComments/listNotes API is already used this way on content-units/[id] and storyboards/[id] pages, but work-products/[id]/page.tsx never calls either.",
+     "severity": "medium",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "No Similarity Suggestions card and no WorkProduct similarity endpoint",
+     "description": "Design shows similar decks with % match, thumbnail, type/version, and 'View all'. content_units has GET /content-units/{id}/similar; no equivalent exists for work_product_versions, and the frontend has no card for it.",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx",
+      "services/api/app/api/routes/work_products.py"
+     ]
+    },
+    {
+     "title": "Entire sticky right rail is missing on WorkProduct detail",
+     "description": "Design's right rail has 5 modules: Build Manifest (counts+last built+saved state), Lineage & Provenance (created-by, derived-from, uses-content-from N units/M collections, provenance graph link), Freshness & Approval (two donut gauges + approval history link), Derived Work Product Variants list with status badges, and AI Insights (BETA detected-impact list). Current right column is one static Governance-checklist card with 4 hardcoded strings; none of the 5 modules exist.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx",
+      "apps/web/lib/api.ts",
+      "services/api/app/api/routes/work_products.py"
+     ]
+    },
+    {
+     "title": "Title row missing Preview/Share/More/Create-Variant actions and version chip styling",
+     "description": "Design header shows Deck badge + mono version chip + Latest badge, plus Preview Full Deck / Share / overflow / split Create-Variant buttons. Current header only has Storyboard and Publish-review links plus badges.",
+     "severity": "medium",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Non-401/403 API failures silently fall back to demo data instead of an explicit error state",
+     "description": "loadWorkProduct() only special-cases 401/403; any other error silently renders unrelated demo data with no indication the live API failed, unlike content-blocks/[id]/page.tsx which has a distinct ContentBlockError state.",
+     "severity": "low",
+     "kind": "state",
+     "files_to_touch": [
+      "apps/web/app/(shell)/work-products/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "Publish page is not scoped to a WorkProduct id/version",
+     "description": "Design route is contextual (breadcrumb + version + 6-step pipeline for one deck). Current apps/web/app/(shell)/publish/page.tsx is a flat unparameterized route hardcoded to workProducts[0]; the WorkProduct detail page's Publish-review link also does not pass the work product id, so the two screens are not actually linked by object.",
+     "severity": "high",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx",
+      "apps/web/app/(shell)/work-products/[id]/page.tsx"
+     ]
+    },
+    {
+     "title": "No pipeline Stepper on Publish page",
+     "description": "Design shows a 6-stage stepper (Build -> Storyboard -> Review & Approve -> Package[active] -> Publish -> Distribute) with done/active/pending states and connectors. Entirely absent.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "No Deck Preview strip with thumbnail rail on Publish page",
+     "description": "Design shows a large current-slide preview plus a 5-thumbnail clickable rail, slide counter, and prev/next controls. Current page shows one static SlideThumb only.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "No Version Summary card",
+     "description": "Design shows from/to version chips, contributor avatar-stack, a changes summary line, a since-last-version stat line, release-notes bullets, and a Compare-to-previous-version link. None exist on the current publish page.",
+     "severity": "medium",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "No Publish Mode selector",
+     "description": "Design offers Release/Patch/Preview-Only radio-card publish modes affecting version semantics (governance-relevant). Current page has only a single generic Export-package button.",
+     "severity": "high",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "Approval Checklist is a flat static list instead of a categorized, status-varied checklist",
+     "description": "Design groups 10 checks under Content Integrity / Brand & Rights / Narrative & Accessibility, each with ok/warn/err/pending status, description, optional AI-attribution line, and an inline Fix button for warnings, plus a header progress badge and Run-Full-AI-Review button. Current page renders 5 flat strings all hardcoded green/ok with no categorization, warning states, AI attribution, or fix action.",
+     "severity": "high",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "No Package Outputs selection list",
+     "description": "Design shows 6 toggleable package outputs (PowerPoint, PDF, Hosted Link, AI Executive Summary, AI Speaker Notes, Deck Kit zip) with checkbox, icon, description, size/generation metadata, AI badges, running selected-count/total-size, and Add-custom-output link. Current page has only one generic Export-package button and an unrelated demo manifest-slots list; no backend model for package output types exists either.",
+     "severity": "high",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx",
+      "services/api/app/api/routes/work_products.py"
+     ]
+    },
+    {
+     "title": "No Provenance & Rights card",
+     "description": "Design shows Composed-from rows (Content Units/Collections, Brand Templates, Data Sources) and Customer & 3rd-Party consent rows with shield icons plus a View-Full-Provenance-Graph button. Current page has only generic checklist strings, no structured breakdown.",
+     "severity": "medium",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "No Audience & Use Case card, and no Opportunity entity in the backend",
+     "description": "Design shows Audience chips, Use Case chips, Stage chip, and a Linked Opportunity link with deal value/stage. Backend has no Opportunity route/model at all; Taxonomy.audiences/useCases fields exist generically but are not exposed on WorkProduct schemas or linked to any Opportunity object.",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx",
+      "services/api/app/schemas/api.py"
+     ]
+    },
+    {
+     "title": "No AI Package Recommendations card",
+     "description": "Design shows a BETA card with 3 recommendation tiles (impact badge + action button e.g. Enable/Generate/Rebuild) and a Why-these link. No equivalent exists in the current page or API.",
+     "severity": "medium",
+     "kind": "api",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "No Distribution (after publish) preview card",
+     "description": "Design shows 4 channel tiles (Subscribers, Opportunity, Library, Email Digest) with icon/title/description and active/inactive state, plus an Add-Channel action. Entirely absent.",
+     "severity": "medium",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "Entire sticky right rail is missing on Publish page",
+     "description": "Design's right rail has 4 modules: Pre-flight Status (mini status rows + a Ready-to-publish verdict), Approval Routing (named approvers with role/avatar/status/timestamp, including a not-required state), Publish Settings (access select, expiry select, 4 checkboxes), and Recent Activity feed (including an AI-attributed row). Current page's right column has none of these; only an unrelated demo Manifest-slots card sits in their place.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "No sticky bottom publish action bar",
+     "description": "Design has a sticky bottom bar summarizing readiness plus Schedule/Publish-Preview-First/Publish-Now buttons. Current page's only actions are in the top PageHeader (Back to WorkProduct, Export package).",
+     "severity": "medium",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/app/(shell)/publish/page.tsx"
+     ]
+    },
+    {
+     "title": "Missing shared UI primitives both screens depend on",
+     "description": "Neither screen can be built to spec without: an Avatar/avatar-stack component (none exists in apps/web/components/ui.tsx or shell.tsx), a donut/gauge chart primitive, a bar-sparkline primitive, a chip style, a count-inline tab-count badge, a split button for Create-Variant/Publish actions, and btn-xs/icon-btn-borderless/select-wrap utility classes, none of which exist in apps/web/app/globals.css today.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/components/ui.tsx",
+      "apps/web/app/globals.css"
+     ]
+    }
+   ],
+   "api_needs": [
+    {
+     "need": "List sibling variants for a WorkProduct family (label, slide count, approval, active/current)",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/work-products/families/{id}/variants (work_product_variants table exists, no route)"
+    },
+    {
+     "need": "List version history for a WorkProduct variant",
+     "exists": "partial",
+     "endpoint_hint": "GET /api/work-products/variants/{id}/versions (work_product_versions table exists, no route)"
+    },
+    {
+     "need": "Similar WorkProduct versions (deck-level similarity)",
+     "exists": "no",
+     "endpoint_hint": "GET /api/work-products/versions/{id}/similar, mirroring existing /content-units/{id}/similar"
+    },
+    {
+     "need": "Comments/Notes for a WorkProduct version",
+     "exists": "yes",
+     "endpoint_hint": "GET /api/comments and /api/notes with targetType=work_product_version (already used elsewhere, just not called from this page)"
+    },
+    {
+     "need": "Usage & performance analytics (views/shares/avg time viewed/downloads + timeseries)",
+     "exists": "no",
+     "endpoint_hint": "no analytics table/route found under services/api/app/api/routes"
+    },
+    {
+     "need": "Build manifest summary metadata (size, last-built timestamp, collection count)",
+     "exists": "partial",
+     "endpoint_hint": "build_manifests/build_manifest_slots tables exist; WorkProductVersionDetail schema does not surface size/last-built/collection-count"
+    },
+    {
+     "need": "Approval history log scoped to a WorkProduct version",
+     "exists": "partial",
+     "endpoint_hint": "audit_events table exists but only exposed via admin-only GET /api/admin/audit-events, not object-scoped"
+    },
+    {
+     "need": "AI Insights / detected-impact list for a WorkProduct",
+     "exists": "no",
+     "endpoint_hint": "no AI-insight/detection endpoint for work products"
+    },
+    {
+     "need": "Publish/package pipeline state (stepper stage, publish mode, package outputs, approval routing, distribution settings)",
+     "exists": "no",
+     "endpoint_hint": "no publish/package routes, schemas, or DB tables found anywhere in services/api"
+    },
+    {
+     "need": "Structured approval checklist items (content integrity / brand & rights / narrative & accessibility) with per-item status",
+     "exists": "no",
+     "endpoint_hint": "no checklist model/endpoint; reviews.py covers review-item actions but not a categorized pre-publish checklist"
+    },
+    {
+     "need": "Opportunity entity + WorkProduct-to-Opportunity link, plus audience/use-case tags on WorkProduct",
+     "exists": "no",
+     "endpoint_hint": "no Opportunity route/model anywhere in services/api; Taxonomy.audiences/useCases exist generically but aren't exposed on WorkProduct schemas or linked to an Opportunity object"
+    }
+   ]
+  },
+  {
+   "screen": "shell-tokens",
+   "current_state": "apps/web/components/shell.tsx renders a fixed AppShell (Sidebar + Topbar) shared by every route. Sidebar shows one unlabeled primary nav list (features/demo/data.ts navItems), one 'Operations'-labeled secondary list, and a 'Favorites' list of hardcoded strings. Topbar auto-derives breadcrumbs from the URL pathname, has a growing search input, an Ask BoxBrain sparkle icon-link, a static SelectionTray link, a bell, help, and a flat avatar circle. globals.css ports most design color/spacing/shadow tokens faithfully but the badge/status-chip system and several component-level styles (icon-btn variants, active nav state, avatar, font loading) diverge from styles_v2.css.",
+   "gaps": [
+    {
+     "title": "Sidebar has no DISCOVER/BUILD/MANAGE/ADMIN section IA and is missing most of its items",
+     "description": "The content-unit-explorer.png mock shows the sidebar organized into four labeled sections \u2014 DISCOVER (Home, Search, Content Library, Collections, Favorites, Recent), BUILD (Deck Builder, Play Builder, WorkProduct Builder), MANAGE (Plays, WorkProducts, Uploads, Tags, Insights), ADMIN (Policies, Users & Teams, Settings). Current shell.tsx (Sidebar) renders one unlabeled primary list (Home, Ask BoxBrain, Library, Storyboards, Reviews, Plays, Opportunities, Admin), one list labeled 'Operations' (Inbox, Accounts, Variation Explorer, Reports), and a 'Favorites' list \u2014 none of the four section labels exist, and Collections, Recent, Deck Builder, Play Builder, WorkProduct Builder, Uploads, Tags, Insights, Policies, and Users & Teams have no sidebar entry at all. Note the app router already has built pages at /work-products and /ingestion (WorkProducts, Uploads equivalents) with zero sidebar link pointing to them today \u2014 pure wiring gap for those two.",
+     "severity": "high",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/components/shell.tsx",
+      "apps/web/features/demo/data.ts"
+     ]
+    },
+    {
+     "title": "Secondary nav items alias other routes' hrefs (dead-end / mislabeled links)",
+     "description": "features/demo/data.ts secondaryNav points Inbox -> /ask, Accounts -> /library, Reports -> /admin \u2014 three distinct labels all land on pages meant for other nav items (Ask BoxBrain, Library, Admin), so clicking 'Inbox' shows the Ask BoxBrain screen, 'Accounts' shows Library, and 'Reports' shows Admin verbatim. No dedicated /inbox, /accounts, or /reports route exists.",
+     "severity": "medium",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/features/demo/data.ts",
+      "apps/web/components/shell.tsx"
+     ]
+    },
+    {
+     "title": "Favorites list items are static strings, not wired to real entities",
+     "description": "favoriteItems in features/demo/data.ts is a plain string[]; shell.tsx's Favorites nav renders each string with an href hardcoded to '/library' regardless of what the favorite actually is, so every favorite navigates to the same place. Design (shell.jsx FAV array) associates each favorite with a real key/route it navigates to.",
+     "severity": "medium",
+     "kind": "data",
+     "files_to_touch": [
+      "apps/web/features/demo/data.ts",
+      "apps/web/components/shell.tsx"
+     ]
+    },
+    {
+     "title": "'My Selection' is a static link, not the design's cross-app selection drawer",
+     "description": "docs/.../src_v2/my_selection.jsx defines a full MySelectionProvider/MySelectionSidebar system: a context-backed, localStorage-persisted cart of mixed-type items (workproduct/play/contentunit/slide/opportunity/asset/generated), a topbar pill button whose background/count reflect live state, a slide-out right drawer grouping items by type with collapsible sections, per-item thumbnails/badges/remove, an empty state, and Quick Actions (Compare, Create brief, Export to PPT, Share collection, Start a new chat). Current apps/web/components/shell.tsx SelectionTray is just a Link with hardcoded href='/storyboards/sb-cloud-modernization' and hardcoded count '4' \u2014 no context/state, no drawer, no grouping, no quick actions, no persistence, no empty state. This is the single largest functional gap on this screen.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/components/shell.tsx"
+     ]
+    },
+    {
+     "title": "Status-chip / badge vocabulary is incomplete vs design tokens",
+     "description": "styles_v2.css defines a full badge kind system with a colored `.dot` indicator: ok/approved/fresh, info/canonical/clientsafe, warn/review/aging, danger/stale/deprecated, ai/generated, primary, and solid. apps/web/components/ui.tsx's StatusBadge/Tag only support tone = ok | warn | danger | ai | neutral (no info, canonical, primary, restricted, solid, or link-source), and globals.css's `.badge`/`.tag` rules only define .ok/.warn/.ai/.danger \u2014 there is no `.dot` element or `.badge.canonical`/`.badge.primary`/`.badge.info` styling at all. Callers currently have to lossily force domain states into one of the 5 generic tones (e.g. content-units/[id]/page.tsx and search-result-card.tsx map linkSource to tone='ai' or 'neutral' with no distinct visual for manual/hybrid/canonical/restricted). This directly conflicts with CLAUDE.md's rule to use status chips for approval/freshness/canonical/restricted/link-source, and is foundational since every screen consumes this component.",
+     "severity": "high",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/components/ui.tsx",
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "Active sidebar nav item uses the wrong token (near-invisible highlight)",
+     "description": "styles_v2.css `.sb-item.active` sets background: var(--primary) (#2563eb solid blue). The --sidebar-active token (#1e293b) is defined in the design's :root but is never actually referenced by any selector in the 1514-line stylesheet \u2014 it's a dead token. apps/web/components/shell.tsx's NavGroup instead applies isActive ? 'bg-[var(--sidebar-active)] text-white' : ..., i.e. it wires the unused dark-slate token into the real active state, so the active nav item renders as a barely-distinguishable dark background against the sidebar's own #0b1220/#111a2e instead of the intended solid blue highlight.",
+     "severity": "medium",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/components/shell.tsx",
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "Topbar icon buttons render bordered/boxed instead of borderless/flat",
+     "description": "styles_v2.css scopes `.topbar .icon-btn { background: transparent; border: 0; color: var(--ink-3); }` \u2014 all topbar icon buttons (AI sparkle, selection, bell, help) are flat/transparent by design, with a separate generic `.icon-btn` + `.icon-btn.borderless` modifier used elsewhere in the page body. Current globals.css only defines one generic `.icon-btn` (border:1px solid var(--line); background:var(--paper)) applied identically everywhere, so the topbar's sparkle/selection/bell/help buttons render as bordered white boxed buttons instead of the intended flat icon style.",
+     "severity": "medium",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "No unread-notification indicator on the bell icon",
+     "description": "shell.jsx design renders Ico.Bell with a sibling badge-dot span, and styles_v2.css defines `.topbar .icon-btn .badge-dot` as a small primary-colored dot pinned top-right with a paper-colored ring \u2014 a persistent unread indicator. apps/web/components/shell.tsx's Topbar bell button has no such element (just a Bell icon), so there is no visual affordance for unread notifications.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/components/shell.tsx",
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "Breadcrumbs are mechanically derived from the URL, not per-page authored",
+     "description": "Every design route file passes explicit, human-authored, multi-level crumb arrays to <Topbar crumbs={[...]}/> (e.g. routes_wp_publish.jsx: [\"WorkProducts\",\"Northwind Expansion \u2014 Executive Brief\",\"Publish & Package\"]; routes_5.jsx: [\"Content Library\",\"ContentUnit Variation Explorer\"]). apps/web/components/shell.tsx's Topbar instead does pathname.split('/').filter(Boolean).map(part => part.replaceAll('-',' ')) with no prop/override mechanism, so dynamic-segment pages (e.g. /content-units/[id]) will show the raw id/slug as a breadcrumb crumb instead of the entity's real title, and there is no way for a page to supply a richer multi-level trail.",
+     "severity": "medium",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/components/shell.tsx"
+     ]
+    },
+    {
+     "title": "Topbar flex proportions inverted vs design",
+     "description": "styles_v2.css gives .breadcrumbs { flex: 1; ... } and .topbar .search { width: 360px; } \u2014 breadcrumbs occupy the growing space and the search box is a fixed-width control. apps/web/components/shell.tsx does the opposite: breadcrumbs are 'hidden md:flex' with no flex-grow, and the search label is 'flex-1 min-w-[240px]', so the search box expands to consume all available topbar width while breadcrumbs stay compact.",
+     "severity": "low",
+     "kind": "layout",
+     "files_to_touch": [
+      "apps/web/components/shell.tsx"
+     ]
+    },
+    {
+     "title": "Topbar avatar styling doesn't match design (flat vs gradient+ring)",
+     "description": "styles_v2.css .topbar .avatar is a purple-to-pink gradient circle (linear-gradient(135deg, #a855f7, #ec4899)) with a 2px paper-colored border and an outer box-shadow: 0 0 0 1px var(--line) ring. Current shell.tsx renders a flat solid bg-slate-900 circle with no gradient and no ring.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/components/shell.tsx"
+     ]
+    },
+    {
+     "title": "Brand typography tokens declared but never loaded",
+     "description": "Both styles_v2.css and globals.css declare --font/--font-instrument as \"Instrument Sans\", \"Inter\", ... and --mono/--font-mono as \"JetBrains Mono\", ..., and tailwind.config.ts wires font-sans/font-mono to these variables. Neither the design HTML nor apps/web/app/layout.tsx actually loads these webfonts (no next/font, no @font-face, no Google Fonts link) \u2014 layout.tsx only sets <body className='font-sans'>. Since Instrument Sans and JetBrains Mono aren't installed as system fonts, the browser silently falls back to Inter/system-ui/monospace, so the app never actually renders in the distinctive typeface used throughout the mockups.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/app/layout.tsx",
+      "apps/web/tailwind.config.ts"
+     ]
+    },
+    {
+     "title": "Floating 'Ask BoxBrain' help-bubble FAB is missing",
+     "description": "styles_v2.css defines .help-bubble \u2014 a fixed bottom-right 46px circular primary-colored button with shadow-lg (app.jsx renders it as a persistent sparkle-icon shortcut to Ask BoxBrain from any screen). No equivalent floating button exists anywhere in the current apps/web implementation.",
+     "severity": "low",
+     "kind": "component",
+     "files_to_touch": [
+      "apps/web/components/shell.tsx",
+      "apps/web/app/globals.css"
+     ]
+    },
+    {
+     "title": "Nav-item count badge doesn't vary by active state",
+     "description": "styles_v2.css sets a translucent white pill for a count badge on the active item (.sb-item .count) and overrides it to solid var(--primary) only when the parent is not active (.sb-item:not(.active) .count). Current shell.tsx always renders the count as bg-blue-500 regardless of whether the parent nav item is active, so an active item with a count (e.g. Reviews) shows a solid blue badge against a solid blue background instead of the intended lower-contrast translucent pill.",
+     "severity": "low",
+     "kind": "visual",
+     "files_to_touch": [
+      "apps/web/components/shell.tsx"
+     ]
+    },
+    {
+     "title": "Ask BoxBrain is duplicated as both a sidebar nav item and a topbar icon shortcut",
+     "description": "Design keeps a plain 'Search' sidebar entry (NAV_TOP in shell.jsx) distinct from the topbar's AI sparkle icon button, which is a separate quick-access affordance. Current implementation routes both the sidebar 'Ask BoxBrain' nav item and the topbar sparkle icon-link to the same /ask route, producing redundant/duplicate navigation to identical content via two different global affordances.",
+     "severity": "low",
+     "kind": "interaction",
+     "files_to_touch": [
+      "apps/web/features/demo/data.ts",
+      "apps/web/components/shell.tsx"
+     ]
+    }
+   ],
+   "api_needs": [
+    {
+     "need": "Collections list/detail data to power a Collections nav item + page",
+     "exists": "no",
+     "endpoint_hint": "GET /collections, GET /collections/{id}"
+    },
+    {
+     "need": "Per-user 'Recent items' feed for a Recent nav item",
+     "exists": "no",
+     "endpoint_hint": "GET /me/recent"
+    },
+    {
+     "need": "Tags management/browse endpoint (aggregate list of all tags across content units, distinct from per-item tags which already exist on ContentUnitFamilyCard)",
+     "exists": "partial",
+     "endpoint_hint": "GET /tags"
+    },
+    {
+     "need": "Library/content Insights aggregate (content health score, freshness %, top content by views, AI recommendations) as shown adjacent to Library in library-all.png",
+     "exists": "no",
+     "endpoint_hint": "GET /insights or GET /library/insights"
+    },
+    {
+     "need": "Policies (governance rules) data for an Admin > Policies page",
+     "exists": "no",
+     "endpoint_hint": "GET /admin/policies"
+    },
+    {
+     "need": "Users & Teams management data for an Admin > Users & Teams page",
+     "exists": "no",
+     "endpoint_hint": "GET /admin/users, GET /admin/teams"
+    },
+    {
+     "need": "Deck Builder / Play Builder / WorkProduct Builder entry points (BUILD section) \u2014 may just be existing storyboard/work-product creation flows renamed, needs product confirmation",
+     "exists": "partial",
+     "endpoint_hint": "existing storyboards/work-products POST endpoints likely suffice; no dedicated 'builder' endpoint found"
+    }
+   ],
+   "effort": "L"
+  }
+ ],
+ "backend": {
+  "summary": "The backend (FastAPI + use-case layer) is materially more complete than a scaffold: all 46 OpenAPI paths have matching route handlers, the frontend api.ts client hits real paths that exist, the Alembic chain is a single linear chain (0001->0005, no branching heads), and the dual-mode repository (in-memory default / SQLAlchemy via BOXBRAIN_REPOSITORY=database) uses a consistent duck-typed `_save_*`/`getattr(repository, 'save_x', None)` hook pattern so most governance mutations (approval/freshness/canonical/review actions) correctly persist to Postgres and write audit events when DB mode is active. The real gaps are: (1) pagination is a total placeholder across every list endpoint (nextCursor is hardcoded None everywhere, and the frontend already sends cursor/limit/mode params the backend silently drops), (2) `/api/assets/{key}` has zero actor/visibility enforcement despite every JSON endpoint enforcing restricted-object filtering, (3) the whole frontend runs as `x-boxbrain-user: admin` by default with no in-app role switcher, so restricted-visibility code paths are never exercised in practice, (4) three whole feature domains (build/export manifests, Collections, real AI enrichment/ai_outputs) have SQL tables scaffolded in infra/initial_db_schema.sql but zero ORM models, use-cases, or routes wired to them, and (5) the containerized app stack boots DB mode with `seed=False` and no seed script, so a fresh stack has an empty catalog until someone manually ingests a deck. These findings track closely with (and add concrete code evidence for) the implementation report's own 'Current Known Gaps' section.",
+  "contract_drift": [
+   "GET /api/content-units/families: frontend (listContentUnitFamilies in apps/web/lib/api.ts) sends mode, cursor, limit query params (ContentUnitListMode/ListContentUnitFamiliesInput) but services/api/app/api/routes/content_units.py::list_families and the OpenAPI operation only declare approvalState/freshnessState \u2014 FastAPI silently drops the unknown params, so pagination and the families-vs-variants list mode are pure no-ops server-side today.",
+   "GET /api/reviews/items: frontend (listReviewItems) sends cursor/limit; routes/reviews.py::list_review_items only accepts queueType/status. Same silent-drop pattern.",
+   "GET /api/content-blocks, GET /api/storyboards, GET /api/work-products/families: all return the PageEnvelope shape {items, nextCursor} but no route accepts any pagination parameter, and every use-case method hardcodes nextCursor=None \u2014 the PageEnvelope contract is aspirational, not implemented, across the board.",
+   "POST /api/reviews/candidates/generate: frontend (generateReviewCandidates) posts a JSON body {queueType, query, limit}; routes/reviews.py::generate_review_candidates declares no request body at all (neither does the OpenAPI operation), and use_cases.generate_review_candidates(actor) ignores any filter, always running a full O(n^2) deterministic sweep over every ContentUnitVersion.",
+   "GET /api/admin/audit-events exists in route/use-case/OpenAPI but apps/web never calls it (admin/page.tsx only reads aggregated counts off /api/admin/health's AdminHealth.reviewAudit) \u2014 a live but currently unconsumed surface with no pagination/filtering if it is wired up later.",
+   "Two divergent get_actor implementations: app/dependencies.py::get_actor (header defaults 'viewer'/None, different header semantics) is dead code that nothing imports; every route actually depends on app/api/dependencies.py::get_actor (different defaults: X-BoxBrain-Role default 'viewer' falls back to X-BoxBrain-User, X-BoxBrain-User-Id default 'seed-viewer'). Not a runtime bug, but a real risk that a future edit lands in the unused copy."
+  ],
+  "quick_fixes": [
+   {
+    "title": "Wire real cursor/limit pagination (and families/variants mode) into list endpoints",
+    "description": "Add cursor/limit query params to list_families (plus honoring `mode`), list_review_items, list_content_blocks, list_storyboards, list_work_product_families, and thread them through the corresponding use_cases.list_* methods so nextCursor is real instead of hardcoded None. The frontend already sends these params for content-units/families and reviews/items, so this closes an existing silent drop.",
+    "files": [
+     "services/api/app/api/routes/content_units.py",
+     "services/api/app/api/routes/reviews.py",
+     "services/api/app/api/routes/content_blocks.py",
+     "services/api/app/api/routes/storyboards.py",
+     "services/api/app/api/routes/work_products.py",
+     "services/api/app/application/use_cases.py",
+     "contracts/openapi/boxbrain.v2.yaml"
+    ]
+   },
+   {
+    "title": "Wire queueType/limit(/query) request body into POST /api/reviews/candidates/generate",
+    "description": "The frontend already posts {queueType, query, limit} but the route accepts no body and use_cases.generate_review_candidates(actor) always full-sweeps every ContentUnitVersion via the O(n^2) _deterministic_review_candidates(). Add a request schema, thread queueType/limit into filtering so the Reviews Hub 'generate more' action actually scopes work instead of silently ignoring the payload.",
+    "files": [
+     "services/api/app/api/routes/reviews.py",
+     "services/api/app/application/use_cases.py",
+     "services/api/app/schemas/api.py",
+     "contracts/openapi/boxbrain.v2.yaml"
+    ]
+   },
+   {
+    "title": "Enforce actor/visibility checks on GET /api/assets/{key}",
+    "description": "assets.py never calls get_actor and never checks whether the owning ContentUnit/WorkProduct version is restricted \u2014 it just linear-scans stored_objects for a matching metadata['key'] and streams bytes back to anyone. Every JSON endpoint filters restricted objects, but the raw render/thumbnail bytes referenced by renderUri/thumbnailUri bypass that filtering entirely if the key is known. Add get_actor + a restricted-object check (deny or require reviewer+ role) before returning the asset.",
+    "files": [
+     "services/api/app/api/routes/assets.py"
+    ]
+   },
+   {
+    "title": "Index stored_objects by key instead of linear-scanning on every asset fetch",
+    "description": "get_asset() does `for stored_object in use_cases.repository.stored_objects.values(): if stored_object.metadata.get('key') == key` \u2014 an O(n) scan per image/thumbnail request. Build/maintain a key->id index (or key as the dict key) so thumbnail-heavy pages (Library, Storyboard, Reviews compare) don't degrade linearly with catalog size.",
+    "files": [
+     "services/api/app/api/routes/assets.py",
+     "services/api/app/infrastructure/in_memory_repository.py",
+     "services/api/app/infrastructure/sqlalchemy_repository.py"
+    ]
+   },
+   {
+    "title": "Make CORS origins configurable via env instead of hardcoded localhost regex",
+    "description": "register_middleware() in main.py hardcodes allow_origin_regex to localhost/127.0.0.1 only. Any non-localhost deployment of the containerized app stack (real host/domain, staging URL) will have browser-side API calls silently blocked by CORS with no config knob. Add a BOXBRAIN_CORS_ORIGINS setting (comma-separated) with the current localhost regex as the default.",
+    "files": [
+     "services/api/app/main.py",
+     "services/api/app/config.py"
+    ]
+   },
+   {
+    "title": "Remove or clearly deprecate the dead get_actor in app/dependencies.py",
+    "description": "app/dependencies.py defines a get_actor with different header semantics than the one actually wired into every route (app/api/dependencies.py). Nothing imports the former; delete it or add a comment redirecting future edits, to avoid someone fixing a role bug in the copy that isn't used.",
+    "files": [
+     "services/api/app/dependencies.py",
+     "services/api/app/api/dependencies.py"
+    ]
+   }
+  ],
+  "large_shortfalls": [
+   {
+    "capability": "Source-aware visibility / real RBAC",
+    "why_large": "Current model is a single boolean `restricted` flag per family/version enforced by header-trusted role heuristics (get_actor infers role from X-BoxBrain-User/Role headers with no auth backing them); the frontend's default header hardcodes x-boxbrain-user: admin with no in-app role switcher, so restricted-visibility code paths are effectively never exercised end-to-end today. There is no tenant/org membership table, no per-source ACL, and the `users` table in infra/initial_db_schema.sql has zero ORM model or use-case wiring.",
+    "plan_hint": "Design tenant/org membership + object/source visibility tables, replace header-trusted actor resolution with real auth (OIDC/SSO), and add an in-app role/impersonation switcher for pilot testing before real client content loads. Matches the implementation report's own recommended step 1."
+   },
+   {
+    "capability": "AI enrichment workers / real candidate generation pipeline",
+    "why_large": "_deterministic_review_candidates() in use_cases.py is a synchronous O(n^2) text-Jaccard heuristic run inline on-request (no background job, no embeddings/LLM signal, no incremental scan). The `ai_outputs` table exists in the SQL schema (infra/initial_db_schema.sql) but has no ORM model, no repository method, and no use-case ever touches it \u2014 AI suggestion provenance/model/confidence metadata described in CLAUDE.md rule #6 has nowhere to persist today.",
+    "plan_hint": "Move candidate generation into an RQ ingestion/enrichment worker stage keyed off embeddings already stored per ContentUnit/WorkProduct version, persist AI outputs (model/prompt/confidence) to a real ai_outputs table, and link accepted/rejected review items back to those rows."
+   },
+   {
+    "capability": "Build/export/publish manifest workflow",
+    "why_large": "`build_manifests` and `build_manifest_slots` tables are created by migration 0001 (via infra/initial_db_schema.sql) but have zero ORM models (db_models.py), zero repository/use-case methods, zero routes, and zero OpenAPI operations \u2014 grep across services/api/app for 'build_manifest'/'BuildManifest' returns nothing outside the raw SQL. The frontend Publish/Package route remains entirely demo-data per the implementation report.",
+    "plan_hint": "Define BuildManifest/BuildManifestSlot domain + SQLAlchemy models, add a snapshot-to-manifest use case off existing immutable Storyboard snapshots, and add export/package preview endpoints \u2014 sequencing matches the report's step 5 (needs Storyboard snapshots + WorkProducts + storage, which already exist)."
+   },
+   {
+    "capability": "Collections (saved/bookmarked content)",
+    "why_large": "`collections`/`collection_members` tables exist in infra/initial_db_schema.sql but are completely unimplemented \u2014 no db_models.py rows, no use-case, no routes; called out explicitly as missing MVP scope for Library in the implementation report.",
+    "plan_hint": "Treat as a net-new small domain slice (family/variant-agnostic saved refs) once visibility model lands, since collection membership will need the same restricted-object filtering as everything else."
+   },
+   {
+    "capability": "Generated/typed frontend API client tied to the OpenAPI contract",
+    "why_large": "apps/web/lib/api.ts is a ~1100-line hand-maintained client with no codegen or CI check against contracts/openapi/boxbrain.v2.yaml; the pagination/candidate-generation drift found in this audit is exactly the kind of thing that will keep silently diverging without a generated client or a contract test.",
+    "plan_hint": "Adopt an OpenAPI->TS codegen step in CI (or at minimum a contract test that walks FastAPI's route table against the yaml and api.ts's endpoint strings) so drift fails the build instead of shipping silently."
+   },
+   {
+    "capability": "Multi-process/multi-worker DB-mode correctness",
+    "why_large": "SqlAlchemyBoxBrainRepository is architecturally an in-memory read-model cache (dict attributes) refreshed via reload(), called once at process startup and then ad hoc only before storyboard section/slot/review mutations (not before content-unit approval/canonical/comment/note mutations). Running more than one API worker process against the same Postgres would let each process's cache diverge (stale reads, lost updates from sibling workers), and reload()'s dict.update() merge semantics never remove rows deleted out-of-band.",
+    "plan_hint": "Either move remaining read paths to direct SQL queries (already flagged as remaining work in the implementation report) or explicitly pin the API to a single worker/process until that migration lands; document the constraint now so nobody scales workers under DB mode by accident."
+   }
+  ],
+  "db_mode_risks": [
+   "Empty catalog on fresh boot: infra/docker-compose.app.yml sets BOXBRAIN_REPOSITORY=database for the full containerized stack, and dependencies.py constructs SqlAlchemyBoxBrainRepository(SessionLocal, seed=False) \u2014 there is no seed/fixture script for Postgres (no `make seed-db`, nothing under any 'seed' path) equivalent to the rich in-memory seed() fixture (ROI/architecture/restricted families, seeded WorkProduct, ContentBlock, Storyboard, review items). A fresh stack boot is empty until someone manually uploads a deck through ingestion \u2014 a real problem for demos, smoke tests, or pilot walkthroughs run against the containerized stack.",
+   "Hard startup dependency on migration completion with no retry/backoff: `repository` is a module-level singleton built at import time in app/dependencies.py; SqlAlchemyBoxBrainRepository.__init__ calls reload() immediately, which SELECTs from tables that must already exist. infra/docker-compose.app.yml correctly gates the api service on `migrate: condition: service_completed_successfully` and `postgres: condition: service_healthy`, but running the API standalone (e.g. `make api-db`, or a bare uvicorn invocation per README/AGENTS.md examples) without first running `alembic upgrade head` will crash hard at import with no graceful wait or clear remediation message.",
+   "Stale-cache risk from reload() merge semantics: reload() populates self.* dicts via `.update(...)`, which adds/overwrites but never removes entries \u2014 rows deleted directly in Postgres out-of-band (manual cleanup, another process) will keep appearing as present in a running API process's in-memory read model until restart.",
+   "reload() is only invoked ad hoc before storyboard section/slot mutations and review_action/generate_review_candidates (via _refresh_repository()), not before content-unit approval/freshness/canonical, comment, or note mutations \u2014 meaning those paths always operate on whatever was loaded at startup or by the last storyboard/review refresh, which is fine for a single in-process demo but is an inconsistency worth documenting before scaling reliance on it.",
+   "No connection pool sizing/env exposed in config.py/database.py (create_engine uses SQLAlchemy defaults); combined with the reload()-heavy access pattern (broad SELECT scans triggered by ordinary mutation requests), concurrent pilot load could hit pool exhaustion or slow full-table reloads well before real data volume grows large.",
+   "BOXBRAIN_DB_SCHEMA (custom Postgres schema support) only adjusts search_path/version_table_schema; migration 0001 unconditionally runs `CREATE EXTENSION IF NOT EXISTS vector`/`uuid-ossp` from infra/initial_db_schema.sql \u2014 worth explicitly verifying extension creation behavior when a non-default BOXBRAIN_DB_SCHEMA is set, since this path isn't covered by the migration chain's own tests."
+  ]
+ }
+}
