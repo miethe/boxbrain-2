@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { AlertCircle, CheckCircle2, GitBranch, History, MessageSquare, MessageSquarePlus, Network, NotebookPen, RefreshCw, ShieldCheck, Star } from "lucide-react";
+import { redirect } from "next/navigation";
+import { AlertCircle } from "lucide-react";
 import {
   ApiError,
-  API_BASE_URL,
   boxbrainApi,
   type ApprovalState,
   type Comment,
@@ -14,16 +13,38 @@ import {
   type ContentUnitWhereUsedReference,
   type FreshnessState,
   type Note,
+  type ProvenanceRecord,
   type SearchResultItem,
-  type StatusChips,
-  type Taxonomy
+  type Storyboard,
+  type WorkProductVersionDetail
 } from "@/lib/api";
-import { Button, Card, Meter, PageHeader, SlideThumb, StatusBadge, Tag } from "@/components/ui";
-
-type VersionGroup = {
-  variant: ContentUnitVariant;
-  versions: ContentUnitVersion[];
-};
+import { Card, PageHeader } from "@/components/ui";
+import {
+  approvalTone,
+  buildActivityTimeline,
+  findFilmstripPosition,
+  flattenVersionGroups,
+  normalizeScore,
+  primaryParentReference,
+  taxonomyTags,
+  titleCase,
+  versionBadge,
+  type ActivityEvent,
+  type FlatVersion,
+  type SlidePosition,
+  type Tone
+} from "@/features/content-units/lib";
+import { ContentUnitHeaderBlock } from "@/components/content-units/header-block";
+import { ContentUnitTabNav, type ContentUnitTabKey, type OverviewPanelKey } from "@/components/content-units/tab-nav";
+import { GovernancePanel } from "@/components/content-units/governance-panel";
+import { OverviewTab } from "@/components/content-units/overview-tab";
+import { VariantsTab } from "@/components/content-units/variants-tab";
+import { VersionsTab } from "@/components/content-units/versions-tab";
+import { SimilarTab } from "@/components/content-units/similar-tab";
+import { CommentsTab } from "@/components/content-units/comments-tab";
+import { NotesTab } from "@/components/content-units/notes-tab";
+import { ActivityTab } from "@/components/content-units/activity-tab";
+import type { CarouselCard } from "@/components/content-units/variant-carousel";
 
 type AncillaryData = {
   similar: SearchResultItem[];
@@ -32,116 +53,173 @@ type AncillaryData = {
   notes: Note[];
 };
 
-type ContentUnitPageModel =
-  | {
-      source: "family";
-      family: ContentUnitFamilyDetail;
-      versionGroups: VersionGroup[];
-      selectedVersion?: ContentUnitVersionDetail;
-      ancillary: AncillaryData;
-    }
-  | {
-      source: "version";
-      version: ContentUnitVersionDetail;
-      ancillary: AncillaryData;
-    };
+type ContentUnitDetailModel = {
+  source: "family" | "version";
+  pageId: string;
+  title: string;
+  isCanonical: boolean;
+  isApproved: boolean;
+  isAiLinked: boolean;
+  isRestricted: boolean;
+  freshnessState?: FreshnessState;
+  version?: ContentUnitVersionDetail;
+  currentVariant?: ContentUnitVariant;
+  variantOptions: ContentUnitVariant[];
+  flatVersions: FlatVersion[];
+  hasFamily: boolean;
+  summary?: string | null;
+  tags: string[];
+  provenance?: ProvenanceRecord;
+  slidePosition: SlidePosition | null;
+  parentTitle?: string | null;
+  previewUri?: string | null;
+  thumb?: string | null;
+  ancillary: AncillaryData;
+  storyboards: Storyboard[];
+  activityEvents: ActivityEvent[];
+};
 
 type ContentUnitLoadResult =
-  | {
-      status: "ok";
-      model: ContentUnitPageModel;
-    }
-  | {
-      status: "restricted";
-    }
-  | {
-      status: "not_found";
-    }
-  | {
-      status: "error";
-      message: string;
-    };
+  | { status: "ok"; model: ContentUnitDetailModel }
+  | { status: "restricted" }
+  | { status: "not_found" }
+  | { status: "error"; message: string };
 
-export default async function ContentUnitPage({ params }: { params: Promise<{ id: string }> }) {
+const KNOWN_TABS: ContentUnitTabKey[] = ["overview", "variants", "versions", "similar", "comments", "notes", "activity"];
+const KNOWN_PANELS: OverviewPanelKey[] = ["overview", "text", "provenance", "relationships", "activity"];
+
+export default async function ContentUnitPage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ tab?: string; panel?: string; version?: string }>;
+}) {
   const { id } = await params;
-  const result = await loadContentUnit(id);
+  const query = (await searchParams) ?? {};
+  const result = await loadContentUnit(id, query.version);
 
-  if (result.status === "restricted") {
-    return <RestrictedContentUnit />;
-  }
+  if (result.status === "restricted") return <RestrictedContentUnit />;
+  if (result.status === "not_found") return <NotFoundContentUnit id={id} />;
+  if (result.status === "error") return <ContentUnitError message={result.message} />;
 
-  if (result.status === "not_found") {
-    return <NotFoundContentUnit id={id} />;
-  }
+  const activeTab = (KNOWN_TABS as string[]).includes(query.tab ?? "") ? (query.tab as ContentUnitTabKey) : "overview";
+  const activePanel = (KNOWN_PANELS as string[]).includes(query.panel ?? "") ? (query.panel as OverviewPanelKey) : "overview";
 
-  if (result.status === "error") {
-    return <ContentUnitError message={result.message} />;
-  }
-
-  return result.model.source === "family" ? <FamilyDetail model={result.model} pageId={id} /> : <VersionDetail model={result.model} pageId={id} />;
+  return <ContentUnitDetailView model={result.model} activeTab={activeTab} activePanel={activePanel} />;
 }
 
-async function loadContentUnit(id: string): Promise<ContentUnitLoadResult> {
+async function loadContentUnit(id: string, versionOverride?: string): Promise<ContentUnitLoadResult> {
   try {
     const family = await boxbrainApi.getContentUnitFamily(id);
-    return { status: "ok", model: await buildFamilyModel(family) };
+    return { status: "ok", model: await buildFamilyModel(id, family, versionOverride) };
   } catch (error) {
-    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-      return { status: "restricted" };
-    }
-
-    if (error instanceof ApiError && error.status !== 404) {
-      return { status: "error", message: error.message };
-    }
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return { status: "restricted" };
+    if (error instanceof ApiError && error.status !== 404) return { status: "error", message: error.message };
   }
 
   try {
     const version = await boxbrainApi.getContentUnitVersion(id);
-    return {
-      status: "ok",
-      model: {
-        source: "version",
-        version,
-        ancillary: await loadVersionAncillary(version)
-      }
-    };
+    return { status: "ok", model: await buildVersionOnlyModel(id, version) };
   } catch (error) {
-    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-      return { status: "restricted" };
-    }
-    if (error instanceof ApiError && error.status === 404) {
-      return { status: "not_found" };
-    }
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return { status: "restricted" };
+    if (error instanceof ApiError && error.status === 404) return { status: "not_found" };
     return { status: "error", message: error instanceof Error ? error.message : "The ContentUnit API request failed." };
   }
 }
 
-async function buildFamilyModel(family: ContentUnitFamilyDetail): Promise<ContentUnitPageModel> {
+async function buildFamilyModel(pageId: string, family: ContentUnitFamilyDetail, versionOverride?: string): Promise<ContentUnitDetailModel> {
   const variants = family.variants?.length ? family.variants : (await boxbrainApi.listContentUnitVariants(family.id)).items;
   const versionGroups = await Promise.all(
-    variants.map(async (variant) => ({
-      variant,
-      versions: (await boxbrainApi.listContentUnitVersions(variant.id)).items
-    }))
+    variants.map(async (variant) => ({ variant, versions: (await boxbrainApi.listContentUnitVersions(variant.id)).items }))
   );
-  const selectedVersionId = selectVersionId(variants, versionGroups);
+  const flatVersions = flattenVersionGroups(versionGroups);
+
+  const defaultVersionId = selectVersionId(variants, versionGroups);
+  const requestedVersionId = versionOverride && flatVersions.some((entry) => entry.version.id === versionOverride) ? versionOverride : undefined;
+  const selectedVersionId = requestedVersionId ?? defaultVersionId;
   const selectedVersion = selectedVersionId ? await boxbrainApi.getContentUnitVersion(selectedVersionId) : undefined;
+  const currentVariant = variants.find((variant) => variant.id === selectedVersion?.variantId);
+
+  const [ancillary, storyboardEnvelope] = await Promise.all([
+    selectedVersion ? loadVersionAncillary(selectedVersion) : Promise.resolve(emptyAncillary()),
+    safeListStoryboards()
+  ]);
+
+  const primaryParentRef = primaryParentReference(ancillary.whereUsed);
+  const parentDetail = primaryParentRef?.objectType === "work_product_version" ? await safeGetWorkProductVersion(primaryParentRef.objectId) : undefined;
+  const slidePosition = parentDetail && selectedVersion ? findFilmstripPosition(parentDetail.filmstrip, selectedVersion.id) : null;
+
+  const notes = [...(family.notes ?? []), ...ancillary.notes];
+  const activityEvents = buildActivityTimeline({ versions: flatVersions, comments: ancillary.comments, notes });
 
   return {
     source: "family",
-    family,
-    versionGroups,
-    selectedVersion,
-    ancillary: selectedVersion ? await loadVersionAncillary(selectedVersion) : emptyAncillary()
+    pageId,
+    title: selectedVersion?.summary ?? family.familyTitle,
+    isCanonical: Boolean(currentVariant?.isCanonical ?? family.statusChips?.isCanonical),
+    isApproved: (selectedVersion?.approvalState ?? family.statusChips?.approvalState) === "approved",
+    isAiLinked: currentVariant?.linkedBy === "ai" || currentVariant?.linkedBy === "hybrid",
+    isRestricted: Boolean(family.statusChips?.isRestricted),
+    freshnessState: selectedVersion?.freshnessState ?? family.statusChips?.freshnessState,
+    version: selectedVersion,
+    currentVariant,
+    variantOptions: variants,
+    flatVersions,
+    hasFamily: variants.length > 0,
+    summary: selectedVersion?.summary ?? family.conceptualSummary,
+    tags: taxonomyTags(family.taxonomy),
+    provenance: selectedVersion?.provenance,
+    slidePosition,
+    parentTitle: primaryParentRef?.title ?? null,
+    previewUri: selectedVersion?.thumbnailUri ?? selectedVersion?.renderUri ?? family.canonicalPreviewUri,
+    thumb: selectedVersion?.thumbnailUri ?? family.canonicalPreviewUri,
+    ancillary: { ...ancillary, notes },
+    storyboards: storyboardEnvelope.items,
+    activityEvents
+  };
+}
+
+async function buildVersionOnlyModel(pageId: string, version: ContentUnitVersionDetail): Promise<ContentUnitDetailModel> {
+  const [ancillary, storyboardEnvelope] = await Promise.all([loadVersionAncillary(version), safeListStoryboards()]);
+  const primaryParentRef = primaryParentReference(ancillary.whereUsed);
+  const parentDetail = primaryParentRef?.objectType === "work_product_version" ? await safeGetWorkProductVersion(primaryParentRef.objectId) : undefined;
+  const slidePosition = parentDetail ? findFilmstripPosition(parentDetail.filmstrip, version.id) : null;
+  const activityEvents = buildActivityTimeline({ versions: [{ version }], comments: ancillary.comments, notes: ancillary.notes });
+
+  return {
+    source: "version",
+    pageId,
+    title: version.summary ?? `ContentUnit ${version.versionNumber}`,
+    isCanonical: false,
+    isApproved: version.approvalState === "approved",
+    isAiLinked: false,
+    isRestricted: false,
+    freshnessState: version.freshnessState,
+    version,
+    currentVariant: undefined,
+    variantOptions: [],
+    flatVersions: [],
+    hasFamily: false,
+    summary: version.summary,
+    tags: [],
+    provenance: version.provenance,
+    slidePosition,
+    parentTitle: primaryParentRef?.title ?? null,
+    previewUri: version.thumbnailUri ?? version.renderUri,
+    thumb: version.thumbnailUri,
+    ancillary,
+    storyboards: storyboardEnvelope.items,
+    activityEvents
   };
 }
 
 async function loadVersionAncillary(version: ContentUnitVersionDetail): Promise<AncillaryData> {
   const [similar, whereUsed, comments, notes] = await Promise.all([
-    boxbrainApi.listSimilarContentUnits(version.id),
-    boxbrainApi.listContentUnitWhereUsed(version.id),
-    boxbrainApi.listComments("content_unit_version", version.id),
-    boxbrainApi.listNotes("content_unit_version", version.id)
+    safeListSimilar(version.id),
+    safeListWhereUsed(version.id),
+    safeListComments(version.id),
+    safeListNotes(version.id)
   ]);
 
   return {
@@ -152,17 +230,86 @@ async function loadVersionAncillary(version: ContentUnitVersionDetail): Promise<
   };
 }
 
+async function safeListSimilar(versionId: string) {
+  try {
+    return await boxbrainApi.listSimilarContentUnits(versionId);
+  } catch {
+    return [];
+  }
+}
+
+async function safeListWhereUsed(versionId: string) {
+  try {
+    return await boxbrainApi.listContentUnitWhereUsed(versionId);
+  } catch {
+    return [];
+  }
+}
+
+async function safeListComments(versionId: string) {
+  try {
+    return await boxbrainApi.listComments("content_unit_version", versionId);
+  } catch {
+    return [];
+  }
+}
+
+async function safeListNotes(versionId: string) {
+  try {
+    return await boxbrainApi.listNotes("content_unit_version", versionId);
+  } catch {
+    return [];
+  }
+}
+
+async function safeListStoryboards() {
+  try {
+    return await boxbrainApi.listStoryboards();
+  } catch {
+    return { items: [], nextCursor: null };
+  }
+}
+
+async function safeGetWorkProductVersion(id: string): Promise<WorkProductVersionDetail | undefined> {
+  try {
+    return await boxbrainApi.getWorkProductVersion(id);
+  } catch {
+    return undefined;
+  }
+}
+
+function selectVersionId(variants: ContentUnitVariant[], groups: Array<{ variant: ContentUnitVariant; versions: ContentUnitVersion[] }>) {
+  const canonical = variants.find((variant) => variant.isCanonical) ?? variants[0];
+  if (canonical?.latestVersionId) return canonical.latestVersionId;
+  if (canonical?.latestVersion?.id) return canonical.latestVersion.id;
+  return groups.find((group) => group.versions.length > 0)?.versions[0]?.id;
+}
+
+function emptyAncillary(): AncillaryData {
+  return { similar: [], whereUsed: [], comments: [], notes: [] };
+}
+
+// ---------------------------------------------------------------------------
+// Server actions (write wiring). All governance/comment/note actions from the
+// pre-uplift implementation are preserved; createPersistentCommentAction gained
+// optional parentCommentId support for the new reply affordance, and
+// addToStoryboardAction is new (wires the previously decorative "Add to Deck"
+// header button to the real Storyboard API).
+// ---------------------------------------------------------------------------
+
 async function createPersistentCommentAction(formData: FormData) {
   "use server";
 
   const pageId = requiredFormValue(formData, "pageId");
   const versionId = requiredFormValue(formData, "versionId");
   const body = requiredFormValue(formData, "body");
+  const parentCommentId = optionalFormValue(formData, "parentCommentId");
   await boxbrainApi.createComment({
     kind: "persistent_comment",
     targetType: "content_unit_version",
     targetId: versionId,
-    body
+    body,
+    parentCommentId: parentCommentId ?? undefined
   });
   revalidateContentUnitPaths(pageId, versionId);
 }
@@ -210,6 +357,45 @@ async function updateFreshnessAction(formData: FormData) {
   revalidateContentUnitPaths(pageId, versionId);
 }
 
+async function addToStoryboardAction(formData: FormData) {
+  "use server";
+
+  const versionId = requiredFormValue(formData, "versionId");
+  const title = requiredFormValue(formData, "title");
+  const storyboardId = requiredFormValue(formData, "storyboardId");
+
+  let targetStoryboardId = storyboardId;
+
+  if (storyboardId === "__new__") {
+    const newTitle = optionalFormValue(formData, "newStoryboardTitle") ?? `${title} storyboard`;
+    const storyboard = await boxbrainApi.createStoryboard({ title: newTitle, mode: "work_product" });
+    const section = await boxbrainApi.createStoryboardSection(storyboard.id, { title: "From ContentUnit", orderIndex: 0 });
+    targetStoryboardId = storyboard.id;
+    await boxbrainApi.createStoryboardSlot(section.id, {
+      slotType: "content_unit",
+      selectedObjectType: "content_unit_version",
+      selectedObjectId: versionId,
+      orderIndex: 0,
+      purpose: title,
+      isRequired: true
+    });
+  } else {
+    const storyboard = await boxbrainApi.getStoryboard(storyboardId);
+    const section = storyboard.draftSections[0] ?? (await boxbrainApi.createStoryboardSection(storyboardId, { title: "From ContentUnit", orderIndex: 0 }));
+    await boxbrainApi.createStoryboardSlot(section.id, {
+      slotType: "content_unit",
+      selectedObjectType: "content_unit_version",
+      selectedObjectId: versionId,
+      orderIndex: section.slots.length,
+      purpose: title,
+      isRequired: true
+    });
+  }
+
+  revalidatePath(`/storyboards/${targetStoryboardId}`);
+  redirect(`/storyboards/${targetStoryboardId}`);
+}
+
 function revalidateContentUnitPaths(pageId: string, versionId?: string | null) {
   revalidatePath(`/content-units/${pageId}`);
   if (versionId && versionId !== pageId) revalidatePath(`/content-units/${versionId}`);
@@ -228,443 +414,178 @@ function optionalFormValue(formData: FormData, field: string) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function FamilyDetail({ model, pageId }: { model: Extract<ContentUnitPageModel, { source: "family" }>; pageId: string }) {
-  const canonicalVariant = model.versionGroups.find((group) => group.variant.isCanonical)?.variant ?? model.versionGroups[0]?.variant;
-  const version = model.selectedVersion;
-  const tags = taxonomyTags(model.family.taxonomy);
-  const status = versionStatus(model.family.statusChips, version);
-  const variantOptions = model.versionGroups.map((group) => group.variant);
+// ---------------------------------------------------------------------------
+// View
+// ---------------------------------------------------------------------------
 
-  return (
-    <div className="route-body">
-      <PageHeader
-        eyebrow="ContentUnit family"
-        title={model.family.familyTitle}
-        description={model.family.conceptualSummary ?? version?.summary ?? "Live ContentUnit family detail from the governed catalog API."}
-        actions={
-          <>
-            <Link className="btn" href="/variation-explorer">
-              <Network size={14} /> Variation explorer
-            </Link>
-            <Button variant="primary">Add to storyboard</Button>
-          </>
-        }
-      />
-
-      <div className="two-col">
-        <div className="grid gap-4">
-          <Card className="overflow-hidden">
-            <div className="grid gap-5 p-5 lg:grid-cols-[minmax(300px,0.9fr)_minmax(0,1fr)]">
-              <ContentUnitPreview title={model.family.familyTitle} previewUri={version?.thumbnailUri ?? version?.renderUri ?? model.family.canonicalPreviewUri} />
-              <div>
-                <StatusRow status={status} />
-                <dl className="mt-5 grid grid-cols-2 gap-4 text-sm">
-                  <Metric label="Canonical variant" value={canonicalVariant?.variantLabel ?? "Not set"} />
-                  <Metric label="Latest version" value={version?.versionNumber ?? canonicalVariant?.latestVersion?.versionNumber ?? "None"} />
-                  <Metric label="Where used" value={`${model.ancillary.whereUsed.length} references`} />
-                  <Metric label="Similarity links" value={`${model.ancillary.similar.length} related`} />
-                </dl>
-                <div className="mt-5 flex flex-wrap gap-2">{tags.length === 0 ? <Tag>untagged</Tag> : tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</div>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="tabs">
-              <div className="tab active">Overview</div>
-              <div className="tab">Variants</div>
-              <div className="tab">Versions</div>
-              <div className="tab">Provenance</div>
-              <div className="tab">Comments</div>
-              <div className="tab">Notes</div>
-              <div className="tab">Where-used</div>
-            </div>
-            <VariantGrid groups={model.versionGroups} />
-          </Card>
-        </div>
-
-        <SideRail pageId={pageId} version={version} ancillary={model.ancillary} familyNotes={model.family.notes ?? []} variantOptions={variantOptions} />
-      </div>
-    </div>
-  );
-}
-
-function VersionDetail({ model, pageId }: { model: Extract<ContentUnitPageModel, { source: "version" }>; pageId: string }) {
-  const version = model.version;
-
-  return (
-    <div className="route-body">
-      <PageHeader
-        eyebrow="ContentUnit version"
-        title={version.summary ?? `ContentUnit ${version.versionNumber}`}
-        description={version.extractedText ?? version.speakerNotes ?? "Live ContentUnit version detail from the governed catalog API."}
-        actions={
-          <>
-            <Link className="btn" href="/variation-explorer">
-              <Network size={14} /> Variation explorer
-            </Link>
-            <Button variant="primary">Add to storyboard</Button>
-          </>
-        }
-      />
-
-      <div className="two-col">
-        <div className="grid gap-4">
-          <Card className="overflow-hidden">
-            <div className="grid gap-5 p-5 lg:grid-cols-[minmax(300px,0.9fr)_minmax(0,1fr)]">
-              <ContentUnitPreview title={version.summary ?? version.id} previewUri={version.thumbnailUri ?? version.renderUri} />
-              <div>
-                <StatusRow status={versionStatus(undefined, version)} />
-                <dl className="mt-5 grid grid-cols-2 gap-4 text-sm">
-                  <Metric label="Variant" value={version.variantId} />
-                  <Metric label="Version" value={version.versionNumber} />
-                  <Metric label="Where used" value={`${model.ancillary.whereUsed.length} references`} />
-                  <Metric label="Similarity links" value={`${model.ancillary.similar.length} related`} />
-                </dl>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-4">
-            <h2 className="m-0 text-base font-bold">Extracted content</h2>
-            <div className="mt-3 grid gap-3 text-sm text-slate-600">
-              <TextPanel title="Extracted text" body={version.extractedText} empty="No extracted text returned." />
-              <TextPanel title="Speaker notes" body={version.speakerNotes} empty="No speaker notes returned." />
-            </div>
-          </Card>
-        </div>
-
-        <SideRail pageId={pageId} version={version} ancillary={model.ancillary} familyNotes={[]} variantOptions={[]} />
-      </div>
-    </div>
-  );
-}
-
-function VariantGrid({ groups }: { groups: VersionGroup[] }) {
-  if (groups.length === 0) {
-    return (
-      <div className="p-6 text-center">
-        <div className="text-sm font-bold text-slate-800">No variants returned</div>
-        <p className="mx-auto mt-1 max-w-lg text-sm text-slate-500">The family exists, but the API did not return variant or version membership.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-4 p-4 md:grid-cols-3">
-      {groups.map(({ variant, versions }, index) => {
-        const latest = versions[0] ?? variant.latestVersion;
-        return (
-          <div key={variant.id} className="rounded-lg border border-slate-200 p-3">
-            <ContentUnitPreview title={`${variant.variantLabel} variant`} previewUri={latest?.thumbnailUri ?? latest?.renderUri} fallbackVariant={index % 2 === 0 ? "light" : "teal"} />
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <div className="min-w-0 truncate text-sm font-bold">{variant.variantLabel}</div>
-              {variant.isCanonical && <StatusBadge tone="ok">canonical</StatusBadge>}
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              Latest {latest?.versionNumber ?? "not returned"} · {versions.length} versions · {variant.linkedBy ?? "manual"}
-            </div>
-            {versions.length > 0 && (
-              <div className="mt-3 grid gap-2">
-                {versions.slice(0, 4).map((version) => (
-                  <Link key={version.id} href={`/content-units/${version.id}`} className="rounded-md bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                    {version.versionNumber} · {version.approvalState}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function SideRail({
-  pageId,
-  version,
-  ancillary,
-  familyNotes,
-  variantOptions
+function ContentUnitDetailView({
+  model,
+  activeTab,
+  activePanel
 }: {
-  pageId: string;
-  version?: ContentUnitVersionDetail;
-  ancillary: AncillaryData;
-  familyNotes: Note[];
-  variantOptions: ContentUnitVariant[];
+  model: ContentUnitDetailModel;
+  activeTab: ContentUnitTabKey;
+  activePanel: OverviewPanelKey;
 }) {
-  const allNotes = [...familyNotes, ...ancillary.notes];
-  const currentVariant = variantOptions.find((variant) => variant.id === version?.variantId);
+  const carouselCards = buildCarouselCards(model);
+  const versionsHref = `/content-units/${model.pageId}?tab=versions`;
+  const similarHref = `/content-units/${model.pageId}?tab=similar`;
+  const commentsHref = `/content-units/${model.pageId}?tab=comments`;
+  const notesHref = `/content-units/${model.pageId}?tab=notes`;
 
   return (
-    <div className="grid content-start gap-4">
-      <Card className="p-4">
-        <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-          <ShieldCheck size={16} color="var(--ok)" /> Governance
-        </div>
-        <Meter value={qualityScore(version)} label="quality score" />
-        {version ? (
-          <div className="mt-4 grid gap-3">
-            <form action={updateApprovalAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
-              <FormIds pageId={pageId} versionId={version.id} />
-              <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
-                Approval
-                <select name="approvalState" defaultValue={version.approvalState} className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold normal-case text-slate-800">
-                  {approvalOptions.map((state) => (
-                    <option key={state} value={state}>
-                      {state}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <input name="notes" className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Decision note" />
-              <Button type="submit" className="justify-center">
-                <CheckCircle2 size={14} /> Update approval
-              </Button>
-            </form>
+    <div className="route-body" data-testid="content-unit-page">
+      <ContentUnitHeaderBlock
+        pageId={model.pageId}
+        versionId={model.version?.id}
+        title={model.title}
+        isCanonical={model.isCanonical}
+        isApproved={model.isApproved}
+        isAiLinked={model.isAiLinked}
+        isRestricted={model.isRestricted}
+        freshnessState={model.freshnessState}
+        slideId={model.version?.id}
+        slidePosition={model.slidePosition}
+        parentTitle={model.parentTitle}
+        lastModified={model.version?.createdAt}
+        breadcrumbParentTitle={model.parentTitle}
+        thumb={model.thumb}
+        storyboards={model.storyboards}
+        addToStoryboardAction={addToStoryboardAction}
+      />
 
-            <form action={updateFreshnessAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
-              <FormIds pageId={pageId} versionId={version.id} />
-              <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
-                Freshness
-                <select name="freshnessState" defaultValue={version.freshnessState ?? "aging"} className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold normal-case text-slate-800">
-                  {freshnessOptions.map((state) => (
-                    <option key={state} value={state}>
-                      {state}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <input name="notes" className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Freshness note" />
-              <Button type="submit" className="justify-center">
-                <RefreshCw size={14} /> Update freshness
-              </Button>
-            </form>
+      <ContentUnitTabNav pageId={model.pageId} active={activeTab} versionId={model.version?.id} counts={{ comments: model.ancillary.comments.length, notes: model.ancillary.notes.length }} />
 
-            <form action={setCanonicalVariantAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
-              <FormIds pageId={pageId} versionId={version.id} />
-              <label className="grid gap-1 text-xs font-bold uppercase text-slate-500">
-                Canonical variant
-                {variantOptions.length > 0 ? (
-                  <select name="variantId" defaultValue={currentVariant?.id ?? version.variantId} className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold normal-case text-slate-800">
-                    {variantOptions.map((variant) => (
-                      <option key={variant.id} value={variant.id}>
-                        {variant.variantLabel}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <>
-                    <input type="hidden" name="variantId" value={version.variantId} />
-                    <div className="rounded-md bg-slate-50 px-2 py-1.5 text-sm normal-case text-slate-700">{version.variantId}</div>
-                  </>
-                )}
-              </label>
-              <input name="reason" className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Canonical reason" />
-              <Button type="submit" className="justify-center">
-                <Star size={14} /> Set canonical
-              </Button>
-            </form>
-          </div>
-        ) : (
-          <div className="mt-4 rounded-lg border border-slate-200 p-3 text-sm text-slate-500">No version is selected, so write controls are unavailable.</div>
-        )}
-      </Card>
-      <Card className="p-4">
-        <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-          <GitBranch size={16} color="var(--primary)" /> Provenance
-        </div>
-        <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
-          {version?.provenance ? provenanceText(version.provenance) : "No version provenance returned."}
-        </div>
-        <div className="mt-3 text-xs text-slate-500">Major versions require provenance records. AI suggestions remain reviewable candidates.</div>
-      </Card>
-      <Card className="p-4">
-        <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-          <History size={16} /> Where used
-        </div>
-        <ReferenceList items={ancillary.whereUsed} empty="No usage references returned." />
-      </Card>
-      <Card className="p-4">
-        <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-          <Network size={16} /> Similar content
-        </div>
-        <SimilarList items={ancillary.similar} />
-      </Card>
-      <Card className="p-4">
-        <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-          <MessageSquare size={16} /> Comments and notes
-        </div>
-        {version && <CommentNoteForms pageId={pageId} versionId={version.id} />}
-        <CommentNoteList comments={ancillary.comments} notes={allNotes} />
-      </Card>
-    </div>
-  );
-}
-
-const approvalOptions: ApprovalState[] = ["draft", "review", "approved", "deprecated", "archived"];
-const freshnessOptions: FreshnessState[] = ["fresh", "aging", "stale"];
-const noteTypeOptions = ["usage_guidance", "review_note", "migration_note"];
-
-function FormIds({ pageId, versionId }: { pageId: string; versionId: string }) {
-  return (
-    <>
-      <input type="hidden" name="pageId" value={pageId} />
-      <input type="hidden" name="versionId" value={versionId} />
-    </>
-  );
-}
-
-function CommentNoteForms({ pageId, versionId }: { pageId: string; versionId: string }) {
-  return (
-    <div className="mb-3 grid gap-3">
-      <form action={createPersistentCommentAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
-        <FormIds pageId={pageId} versionId={versionId} />
-        <textarea
-          name="body"
-          required
-          rows={2}
-          className="min-h-16 rounded-md border border-slate-200 px-2 py-1.5 text-sm"
-          placeholder="Persistent comment"
+      {activeTab === "overview" && (
+        <OverviewTab
+          pageId={model.pageId}
+          previewTitle={model.title}
+          previewUri={model.previewUri}
+          panel={activePanel}
+          version={model.version}
+          summary={model.summary}
+          tags={model.tags}
+          provenance={model.provenance}
+          slidePosition={model.slidePosition}
+          carouselCards={carouselCards}
+          whereUsed={model.ancillary.whereUsed}
+          similar={model.ancillary.similar}
+          activityEvents={model.activityEvents}
+          similarHref={similarHref}
         />
-        <Button type="submit" className="justify-center">
-          <MessageSquarePlus size={14} /> Add comment
-        </Button>
-      </form>
+      )}
 
-      <form action={createNoteAction} className="grid gap-2 rounded-lg border border-slate-200 p-3">
-        <FormIds pageId={pageId} versionId={versionId} />
-        <input name="title" className="rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Note title" />
-        <textarea name="body" required rows={2} className="min-h-16 rounded-md border border-slate-200 px-2 py-1.5 text-sm" placeholder="Note body" />
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-          <select name="noteType" defaultValue="usage_guidance" className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold text-slate-800">
-            {noteTypeOptions.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-1 text-xs font-semibold text-slate-600">
-            <input type="checkbox" name="isPinned" className="h-4 w-4 rounded border-slate-300" />
-            Pin
-          </label>
-        </div>
-        <Button type="submit" className="justify-center">
-          <NotebookPen size={14} /> Add note
-        </Button>
-      </form>
+      {activeTab === "variants" && (
+        <VariantsTab
+          pageId={model.pageId}
+          hasFamily={model.hasFamily}
+          version={model.version}
+          previewSubtitle={model.version?.extractedText}
+          sourceDocName={model.parentTitle}
+          flatVersions={model.flatVersions}
+          provenance={model.provenance}
+          slidePosition={model.slidePosition}
+          tags={model.tags}
+          comments={model.ancillary.comments}
+          notes={model.ancillary.notes}
+          similar={model.ancillary.similar}
+          whereUsed={model.ancillary.whereUsed}
+          variationExplorerHref="/variation-explorer"
+          similarHref={similarHref}
+          commentsHref={commentsHref}
+          notesHref={notesHref}
+          versionsHref={versionsHref}
+          createCommentAction={createPersistentCommentAction}
+          createNoteAction={createNoteAction}
+        />
+      )}
+
+      {activeTab === "versions" && <VersionsTab pageId={model.pageId} entries={model.flatVersions} selectedVersionId={model.version?.id} />}
+
+      {activeTab === "similar" && <SimilarTab items={model.ancillary.similar} />}
+
+      {activeTab === "comments" && (
+        <CommentsTab pageId={model.pageId} versionId={model.version?.id} comments={model.ancillary.comments} createCommentAction={createPersistentCommentAction} />
+      )}
+
+      {activeTab === "notes" && <NotesTab pageId={model.pageId} versionId={model.version?.id} notes={model.ancillary.notes} createNoteAction={createNoteAction} />}
+
+      {activeTab === "activity" && <ActivityTab events={model.activityEvents} />}
+
+      <GovernancePanel
+        pageId={model.pageId}
+        version={model.version}
+        variantOptions={model.variantOptions}
+        currentVariantId={model.currentVariant?.id}
+        updateApprovalAction={updateApprovalAction}
+        updateFreshnessAction={updateFreshnessAction}
+        setCanonicalVariantAction={setCanonicalVariantAction}
+      />
     </div>
   );
 }
 
-function StatusRow({ status }: { status: StatusChips }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      <StatusBadge tone={approvalTone(status.approvalState)}>{status.approvalState}</StatusBadge>
-      <StatusBadge tone={freshnessTone(status.freshnessState)}>{status.freshnessState}</StatusBadge>
-      {status.isRestricted && <StatusBadge tone="danger">restricted</StatusBadge>}
-      {status.isCanonical && <StatusBadge tone="ok">canonical</StatusBadge>}
-      {status.linkSource && <StatusBadge tone={status.linkSource === "ai" ? "ai" : "neutral"}>{status.linkSource}</StatusBadge>}
-    </div>
-  );
-}
+function buildCarouselCards(model: ContentUnitDetailModel): CarouselCard[] {
+  const cards: CarouselCard[] = [];
+  const thumbVariants: Array<"dark" | "light" | "teal" | "purple"> = ["light", "dark", "teal", "purple"];
 
-function ContentUnitPreview({
-  title,
-  previewUri,
-  fallbackVariant = "dark"
-}: {
-  title: string;
-  previewUri?: string | null;
-  fallbackVariant?: "dark" | "light" | "teal" | "purple";
-}) {
-  if (!previewUri) return <SlideThumb title={title} variant={fallbackVariant} brand="BB" />;
-  return (
-    <div
-      className="slide-thumb light bg-cover bg-center"
-      aria-label={`${title} preview`}
-      style={{
-        backgroundImage: `url("${assetUrl(previewUri)}")`
-      }}
-    >
-      <div className="slide-content bg-white/75">
-        <div className="slide-brand">BB</div>
-        <div className="slide-title">{title}</div>
-      </div>
-    </div>
-  );
-}
-
-function ReferenceList({ items, empty }: { items: ContentUnitWhereUsedReference[]; empty: string }) {
-  if (items.length === 0) return <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500">{empty}</div>;
-  return (
-    <div className="grid gap-2">
-      {items.map((item) => (
-        <Link key={`${item.objectType}-${item.objectId}-${item.slotId ?? item.orderIndex ?? ""}`} href={referenceHref(item)} className="block rounded-lg border border-slate-200 p-2 text-sm hover:bg-slate-50">
-          <div className="font-semibold">{item.title ?? item.objectId}</div>
-          <div className="text-xs text-slate-500">{item.objectType}</div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function SimilarList({ items }: { items: SearchResultItem[] }) {
-  if (items.length === 0) return <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500">No similarity edges returned.</div>;
-  return (
-    <div className="grid gap-2">
-      {items.map((item) => (
-        <Link key={item.objectId} href={`/content-units/${item.objectId}`} className="block rounded-lg border border-slate-200 p-2 text-sm hover:bg-slate-50">
-          <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate font-semibold">{item.title}</span>
-            <span className="text-xs font-bold text-slate-500">{Math.round(item.score * 100)}%</span>
-          </div>
-          <div className="text-xs text-slate-500">{item.explanationChips?.join(" · ") || item.resultGrain}</div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function CommentNoteList({ comments, notes }: { comments: Comment[]; notes: Note[] }) {
-  if (comments.length === 0 && notes.length === 0) {
-    return <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500">No comments or notes returned.</div>;
+  if (model.version) {
+    const badge = versionBadge(model.currentVariant, model.version);
+    cards.push({
+      id: `current-${model.version.id}`,
+      href: `/content-units/${model.pageId}`,
+      title: model.title,
+      thumbVariant: "light",
+      badgeLabel: badge.label,
+      badgeTone: badge.tone,
+      matchScore: null,
+      isCurrent: true,
+      createdAt: model.version.createdAt,
+      selectionId: model.version.id,
+      selectionSubtitle: model.parentTitle ?? undefined
+    });
   }
 
-  return (
-    <div className="grid gap-2 text-sm">
-      {comments.map((comment) => (
-        <div key={comment.id} className="rounded-lg bg-blue-50 p-3 text-blue-950">
-          <div className="text-xs font-bold uppercase text-blue-700">{comment.kind}</div>
-          {comment.body}
-        </div>
-      ))}
-      {notes.map((note) => (
-        <div key={note.id} className="rounded-lg bg-emerald-50 p-3 text-emerald-950">
-          <div className="text-xs font-bold uppercase text-emerald-700">{note.title ?? note.noteType}</div>
-          {note.body}
-        </div>
-      ))}
-    </div>
-  );
-}
+  const siblingVariants = model.variantOptions.filter((variant) => variant.id !== model.currentVariant?.id);
+  siblingVariants.forEach((variant, index) => {
+    const latest = model.flatVersions.find((entry) => entry.variant.id === variant.id)?.version ?? variant.latestVersion ?? undefined;
+    if (!latest) return;
+    const badge = versionBadge(variant, latest);
+    cards.push({
+      id: `variant-${variant.id}`,
+      href: `/content-units/${model.pageId}?version=${latest.id}`,
+      title: variant.variantLabel,
+      thumbVariant: thumbVariants[(index + 1) % thumbVariants.length],
+      badgeLabel: badge.label,
+      badgeTone: badge.tone,
+      matchScore: null,
+      isCurrent: false,
+      createdAt: latest.createdAt,
+      selectionId: latest.id,
+      selectionSubtitle: variant.variantLabel
+    });
+  });
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="m-0 break-words font-bold">{value}</dd>
-    </div>
-  );
-}
+  model.ancillary.similar.forEach((item, index) => {
+    const chips = item.statusChips;
+    const tone: Tone = chips?.isCanonical ? "primary" : approvalTone(chips?.approvalState ?? "draft");
+    const label = chips?.isCanonical ? "Canonical" : titleCase(chips?.approvalState ?? "draft");
+    cards.push({
+      id: `similar-${item.objectId}`,
+      href: `/content-units/${item.objectId}`,
+      title: item.title,
+      thumbVariant: thumbVariants[(index + 2) % thumbVariants.length],
+      badgeLabel: label,
+      badgeTone: tone,
+      matchScore: normalizeScore(item.score),
+      isCurrent: false,
+      createdAt: undefined,
+      selectionId: item.objectId,
+      selectionSubtitle: item.summary ?? undefined
+    });
+  });
 
-function TextPanel({ title, body, empty }: { title: string; body?: string | null; empty: string }) {
-  return (
-    <div className="rounded-lg bg-slate-50 p-3">
-      <div className="mb-1 text-xs font-bold uppercase text-slate-500">{title}</div>
-      <div>{body?.trim() || empty}</div>
-    </div>
-  );
+  return cards;
 }
 
 function ContentUnitError({ message }: { message: string }) {
@@ -708,71 +629,4 @@ function NotFoundContentUnit({ id }: { id: string }) {
       <Card className="p-5 text-sm text-slate-600">Requested identifier: {id}</Card>
     </div>
   );
-}
-
-function selectVersionId(variants: ContentUnitVariant[], groups: VersionGroup[]) {
-  const canonical = variants.find((variant) => variant.isCanonical) ?? variants[0];
-  if (canonical?.latestVersionId) return canonical.latestVersionId;
-  if (canonical?.latestVersion?.id) return canonical.latestVersion.id;
-  return groups.find((group) => group.versions.length > 0)?.versions[0]?.id;
-}
-
-function emptyAncillary(): AncillaryData {
-  return { similar: [], whereUsed: [], comments: [], notes: [] };
-}
-
-function versionStatus(status?: StatusChips, version?: ContentUnitVersion): StatusChips {
-  return {
-    approvalState: version?.approvalState ?? status?.approvalState ?? "draft",
-    freshnessState: version?.freshnessState ?? status?.freshnessState ?? "aging",
-    isCanonical: status?.isCanonical ?? false,
-    isRestricted: status?.isRestricted ?? false,
-    linkSource: status?.linkSource ?? "manual"
-  };
-}
-
-function taxonomyTags(taxonomy?: Taxonomy) {
-  if (!taxonomy) return [];
-  const values = Object.values(taxonomy)
-    .flatMap((value) => (Array.isArray(value) ? value : []))
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-  return Array.from(new Set(values)).slice(0, 8);
-}
-
-function approvalTone(value: string) {
-  if (value === "approved") return "ok";
-  if (value === "deprecated" || value === "archived") return "danger";
-  if (value === "review") return "warn";
-  return "neutral";
-}
-
-function freshnessTone(value: string) {
-  if (value === "fresh") return "ok";
-  if (value === "stale") return "danger";
-  return "warn";
-}
-
-function qualityScore(version?: ContentUnitVersion) {
-  const raw = version?.qualityScore;
-  if (typeof raw !== "number") return 70;
-  const normalized = raw <= 1 ? raw * 100 : raw;
-  return Math.max(0, Math.min(100, Math.round(normalized)));
-}
-
-function provenanceText(provenance: NonNullable<ContentUnitVersionDetail["provenance"]>) {
-  const source = provenance.sourceRefs?.length ? provenance.sourceRefs.join(" · ") : provenance.originType;
-  const pipeline = provenance.pipelineVersion ? ` · ${provenance.pipelineVersion}` : "";
-  return `${source}${pipeline}`;
-}
-
-function referenceHref(item: ContentUnitWhereUsedReference) {
-  if (item.objectType === "storyboard") return `/storyboards/${item.objectId}`;
-  if (item.objectType === "content_block_version") return `/content-blocks/${item.objectId}`;
-  if (item.objectType === "work_product_version") return `/work-products/${item.objectId}`;
-  return "/library";
-}
-
-function assetUrl(uri: string) {
-  if (/^https?:\/\//.test(uri)) return uri;
-  return `${API_BASE_URL}${uri.startsWith("/") ? "" : "/"}${uri}`;
 }
