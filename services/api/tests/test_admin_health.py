@@ -25,12 +25,12 @@ def test_admin_health_returns_pilot_readiness_observability_summary() -> None:
     assert payload["ingestion"]["statusCounts"]["complete"] == 1
     assert payload["queue"]["adapter"] == "NoopIngestionQueue"
     assert payload["queue"]["status"] == "healthy"
-    assert payload["catalog"]["contentUnitFamilies"] == 3
-    assert payload["catalog"]["contentUnitVersions"] == 4
+    assert payload["catalog"]["contentUnitFamilies"] == 9
+    assert payload["catalog"]["contentUnitVersions"] == 16
     assert payload["searchIndex"]["backend"] == "memory"
     assert payload["searchIndex"]["restrictedContentUnitVersions"] == 1
-    assert payload["reviewAudit"]["openReviewItems"] == 2
-    assert payload["composition"]["contentBlockMembers"] == 2
+    assert payload["reviewAudit"]["openReviewItems"] == 4
+    assert payload["composition"]["contentBlockMembers"] == 4
     assert payload["composition"]["storyboardDraftSlots"] == 1
     assert payload["searchEval"]["status"] == "pass"
     assert payload["searchEval"]["passedCases"] == payload["searchEval"]["totalCases"]

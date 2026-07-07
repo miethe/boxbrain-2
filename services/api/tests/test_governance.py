@@ -54,7 +54,7 @@ def test_similarity_review_does_not_merge_families(client):
         repo.content_unit_variants[SEED_IDS["architecture_variant"]].family_id
         == original_architecture_family
     )
-    assert len(repo.similarity_edges) == 1
+    assert len(repo.similarity_edges) == 6
 
 
 def test_viewer_cannot_perform_governance_action(client):

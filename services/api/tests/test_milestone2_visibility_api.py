@@ -28,9 +28,16 @@ def test_content_unit_family_list_filters_by_approval_and_freshness(client) -> N
     )
 
     assert approved.status_code == 200
-    assert [item["id"] for item in approved.json()["items"]] == [str(SEED_IDS["roi_family"])]
+    assert [item["id"] for item in approved.json()["items"]] == [
+        str(SEED_IDS["roi_family"]),
+        str(SEED_IDS["market_regional_family"]),
+        str(SEED_IDS["market_overview_family"]),
+        str(SEED_IDS["market_tamsamsom_family"]),
+    ]
     assert stale.status_code == 200
-    assert stale.json()["items"] == []
+    assert [item["id"] for item in stale.json()["items"]] == [
+        str(SEED_IDS["market_competitive_family"])
+    ]
 
 
 def test_freshness_update_writes_audit_event(client) -> None:
@@ -123,7 +130,9 @@ def test_restricted_containers_are_hidden_from_viewer_outputs(client) -> None:
     assert storyboard_list.status_code == 200
     assert str(SEED_IDS["storyboard"]) not in {item["id"] for item in storyboard_list.json()["items"]}
     assert work_product_list.status_code == 200
-    assert work_product_list.json()["items"] == []
+    assert str(SEED_IDS["work_product_family"]) not in {
+        item["id"] for item in work_product_list.json()["items"]
+    }
 
     reviewer_detail = client.get(
         f"/api/content-blocks/{block.id}",

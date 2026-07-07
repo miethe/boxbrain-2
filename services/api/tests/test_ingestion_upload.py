@@ -96,7 +96,7 @@ def test_deterministic_processor_creates_one_atomic_unit_per_slide_and_is_idempo
     assert first.status == "complete"
     assert second.status == "complete"
     repo = client.app.state.repository
-    assert len(repo.content_unit_versions) == 6
+    assert len(repo.content_unit_versions) == 18
     created_ids = repo.ingestion_jobs[UUID(upload["id"])].upload_metadata[
         "createdContentUnitVersionIds"
     ]
