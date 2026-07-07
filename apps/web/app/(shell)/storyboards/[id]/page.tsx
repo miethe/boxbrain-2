@@ -1,7 +1,5 @@
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { AlertCircle, AlertTriangle, Camera, GitBranchPlus, MessageSquarePlus, PackageCheck, Plus, Replace, Sparkles } from "lucide-react";
+import { AlertCircle, GitBranchPlus, Plus } from "lucide-react";
 import {
   ApiError,
   boxbrainApi,
@@ -10,12 +8,25 @@ import {
   type Storyboard,
   type StoryboardDetail,
   type StoryboardDiagnostics,
-  type StoryboardSection,
-  type StoryboardSlot,
-  type StoryboardSlotType,
   type StoryboardSnapshot
 } from "@/lib/api";
-import { Button, Card, EmptyState, PageHeader, SlideThumb, StatusBadge, Tag } from "@/components/ui";
+import { Button, Card, PageHeader } from "@/components/ui";
+import { collectObjectRefs, objectDetailKey, type ObjectRef, type SlotObjectDetail } from "@/features/storyboards/lib";
+import {
+  addGapSlotAction,
+  addSlotFromLibraryAction,
+  createAnchoredCommentAction,
+  createSlotObjectNoteAction,
+  createSnapshotAction,
+  createStoryboardAction,
+  insertSectionAction,
+  renameSectionAction,
+  reorderSectionsAction,
+  reorderSlotsAction,
+  swapSlotContentAction
+} from "@/features/storyboards/actions";
+import { StoryboardWorkspace } from "@/components/storyboards/workspace-client";
+import type { StoryboardActions } from "@/components/storyboards/types";
 
 type StoryboardLoadResult =
   | {
@@ -26,6 +37,7 @@ type StoryboardLoadResult =
       diagnostics: StoryboardDiagnostics;
       comments: Comment[];
       contentBlocks: ContentBlockVersionDetail[];
+      objectDetails: Record<string, SlotObjectDetail>;
     }
   | {
       status: "restricted";
@@ -54,58 +66,31 @@ export default async function StoryboardPage({
   if (result.status === "not_found") return <StoryboardNotFound id={id} storyboards={result.storyboards} />;
   if (result.status === "error") return <StoryboardError message={result.message} />;
 
+  const actions: StoryboardActions = {
+    insertSection: insertSectionAction,
+    renameSection: renameSectionAction,
+    reorderSections: reorderSectionsAction,
+    addSlotFromLibrary: addSlotFromLibraryAction,
+    addGapSlot: addGapSlotAction,
+    swapSlotContent: swapSlotContentAction,
+    reorderSlots: reorderSlotsAction,
+    createSnapshot: createSnapshotAction,
+    createAnchoredComment: createAnchoredCommentAction,
+    createSlotObjectNote: createSlotObjectNoteAction
+  };
+
   return (
     <div className="route-body" data-testid="storyboard-page">
-      <PageHeader
-        eyebrow="Storyboard workspace"
-        title={result.storyboard.title}
-        description="API-backed composition workspace with sections, slots, diagnostics, anchored comments, and immutable snapshots."
-        actions={
-          <>
-            <form action={createSnapshotAction} className="flex gap-2">
-              <input type="hidden" name="storyboardId" value={result.storyboard.id} />
-              <input name="versionLabel" className="w-32 rounded-lg border border-slate-200 px-2 text-sm" placeholder="v1" />
-              <Button type="submit">
-                <Camera size={14} /> Save snapshot
-              </Button>
-            </form>
-            <Link className="btn btn-primary" href="/publish">
-              <PackageCheck size={14} /> Publish review
-            </Link>
-          </>
-        }
+      <StoryboardWorkspace
+        storyboard={result.storyboard}
+        snapshots={result.snapshots}
+        selectedSnapshot={result.selectedSnapshot}
+        diagnostics={result.diagnostics}
+        comments={result.comments}
+        contentBlocks={result.contentBlocks}
+        objectDetails={result.objectDetails}
+        actions={actions}
       />
-
-      <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1.4fr)_360px]">
-        <LibraryTray contentBlocks={result.contentBlocks} />
-
-        <div className="grid content-start gap-4">
-          <CreateSectionForm storyboardId={result.storyboard.id} nextOrderIndex={result.storyboard.draftSections.length} />
-          {result.storyboard.draftSections.length === 0 ? (
-            <EmptyState
-              title="No draft sections"
-              body="The Storyboard API is reachable, but this storyboard has no editable draft sections yet."
-            />
-          ) : (
-            result.storyboard.draftSections.map((section, sectionIndex) => (
-              <StoryboardSectionCard
-                key={section.id}
-                section={section}
-                sectionIndex={sectionIndex}
-                storyboardId={result.storyboard.id}
-                comments={result.comments}
-              />
-            ))
-          )}
-        </div>
-
-        <div className="grid content-start gap-4">
-          <DiagnosticsPanel diagnostics={result.diagnostics} />
-          <SnapshotPanel storyboard={result.storyboard} snapshots={result.snapshots} selectedSnapshot={result.selectedSnapshot} />
-          <StoryboardCommentForm storyboardId={result.storyboard.id} sections={result.storyboard.draftSections} />
-          <CommentList comments={result.comments} />
-        </div>
-      </div>
     </div>
   );
 }
@@ -120,6 +105,7 @@ async function loadStoryboard(id: string, snapshotId?: string): Promise<Storyboa
       safeListContentBlocks(),
       snapshotId ? safeGetSnapshot(snapshotId) : Promise.resolve(undefined)
     ]);
+    const objectDetails = await loadObjectDetails(collectObjectRefs(storyboard.draftSections), contentBlockEnvelope.items ?? []);
     return {
       status: "ok",
       storyboard,
@@ -127,7 +113,8 @@ async function loadStoryboard(id: string, snapshotId?: string): Promise<Storyboa
       selectedSnapshot,
       diagnostics,
       comments,
-      contentBlocks: contentBlockEnvelope.items ?? []
+      contentBlocks: contentBlockEnvelope.items ?? [],
+      objectDetails
     };
   } catch (error) {
     if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
@@ -138,6 +125,91 @@ async function loadStoryboard(id: string, snapshotId?: string): Promise<Storyboa
     }
     return { status: "error", message: error instanceof Error ? error.message : "The Storyboard API request failed." };
   }
+}
+
+/** Batch-loads a normalized detail record for every unique object a slot currently points at, so
+ * the canvas can render real approval/freshness/quality status chips and the slide inspector needs
+ * zero further client round-trips. Every fetch is individually wrapped so one broken reference
+ * (e.g. a version that was since deleted) degrades to an honest "detail unavailable" for that one
+ * chip instead of failing the whole page. */
+async function loadObjectDetails(refs: ObjectRef[], preloadedBlocks: ContentBlockVersionDetail[]): Promise<Record<string, SlotObjectDetail>> {
+  const blocksById = new Map(preloadedBlocks.map((block) => [block.id, block]));
+  const entries = await Promise.all(
+    refs.map(async (ref) => {
+      try {
+        const detail = await loadOneObjectDetail(ref, blocksById);
+        return [objectDetailKey(ref.type, ref.id), detail] as const;
+      } catch {
+        return [objectDetailKey(ref.type, ref.id), null] as const;
+      }
+    })
+  );
+  const record: Record<string, SlotObjectDetail> = {};
+  for (const [key, detail] of entries) {
+    if (detail) record[key] = detail;
+  }
+  return record;
+}
+
+async function loadOneObjectDetail(ref: ObjectRef, blocksById: Map<string, ContentBlockVersionDetail>): Promise<SlotObjectDetail> {
+  if (ref.type === "content_unit_version") {
+    const [version, whereUsed] = await Promise.all([boxbrainApi.getContentUnitVersion(ref.id), safeListWhereUsed(ref.id)]);
+    return {
+      kind: "content_unit_version",
+      href: `/content-units/${ref.id}`,
+      summary: version.summary ?? null,
+      approvalState: version.approvalState,
+      freshnessState: version.freshnessState,
+      qualityScore: version.qualityScore ?? null,
+      usageScore: version.usageScore ?? null,
+      speakerNotes: version.speakerNotes ?? null,
+      extractedText: version.extractedText ?? null,
+      provenance: version.provenance,
+      comments: version.comments ?? [],
+      notes: version.notes ?? [],
+      whereUsed,
+      createdAt: version.createdAt,
+      versionNumber: version.versionNumber,
+      variantId: version.variantId
+    };
+  }
+
+  if (ref.type === "content_block_version") {
+    const preloaded = blocksById.get(ref.id);
+    const block = preloaded ?? (await boxbrainApi.getContentBlock(ref.id));
+    const [comments, notes] = await Promise.all([safeListComments2("content_block_version", ref.id), safeListNotes("content_block_version", ref.id)]);
+    return {
+      kind: "content_block_version",
+      href: `/content-blocks/${ref.id}`,
+      displayTitle: block.title,
+      summary: block.summary ?? null,
+      approvalState: block.approvalState,
+      comments,
+      notes,
+      whereUsed: [],
+      createdAt: block.createdAt,
+      blockType: block.blockType,
+      memberCount: block.members.length
+    };
+  }
+
+  const [workProduct, comments, notes] = await Promise.all([
+    boxbrainApi.getWorkProductVersion(ref.id),
+    safeListComments2("work_product_version", ref.id),
+    safeListNotes("work_product_version", ref.id)
+  ]);
+  return {
+    kind: "work_product_version",
+    href: `/work-products/${ref.id}`,
+    displayTitle: workProduct.title,
+    approvalState: workProduct.approvalState,
+    comments,
+    notes,
+    whereUsed: [],
+    createdAt: typeof workProduct.createdAt === "string" ? workProduct.createdAt : undefined,
+    versionNumber: workProduct.versionNumber,
+    artifactType: workProduct.artifactType
+  };
 }
 
 async function safeListStoryboards() {
@@ -180,357 +252,36 @@ async function safeListComments(storyboardId: string) {
   }
 }
 
+async function safeListComments2(targetType: string, targetId: string) {
+  try {
+    return await boxbrainApi.listComments(targetType, targetId);
+  } catch {
+    return [];
+  }
+}
+
+async function safeListNotes(targetType: string, targetId: string) {
+  try {
+    return await boxbrainApi.listNotes(targetType, targetId);
+  } catch {
+    return [];
+  }
+}
+
+async function safeListWhereUsed(versionId: string) {
+  try {
+    return await boxbrainApi.listContentUnitWhereUsed(versionId);
+  } catch {
+    return [];
+  }
+}
+
 async function safeListContentBlocks() {
   try {
     return await boxbrainApi.listContentBlocks();
   } catch {
     return { items: [], nextCursor: null };
   }
-}
-
-async function createStoryboardAction(formData: FormData) {
-  "use server";
-
-  const storyboard = await boxbrainApi.createStoryboard({
-    title: requiredFormValue(formData, "title"),
-    mode: (optionalFormValue(formData, "mode") ?? "work_product") as "work_product" | "play" | "opportunity"
-  });
-  redirect(`/storyboards/${storyboard.id}`);
-}
-
-async function createSectionAction(formData: FormData) {
-  "use server";
-
-  const storyboardId = requiredFormValue(formData, "storyboardId");
-  await boxbrainApi.createStoryboardSection(storyboardId, {
-    title: requiredFormValue(formData, "title"),
-    summary: optionalFormValue(formData, "summary"),
-    orderIndex: optionalNumberValue(formData, "orderIndex")
-  });
-  revalidatePath(`/storyboards/${storyboardId}`);
-}
-
-async function createSlotAction(formData: FormData) {
-  "use server";
-
-  const storyboardId = requiredFormValue(formData, "storyboardId");
-  const sectionId = requiredFormValue(formData, "sectionId");
-  const selectedObjectType = optionalFormValue(formData, "selectedObjectType");
-  const selectedObjectId = optionalFormValue(formData, "selectedObjectId");
-  const slotType = selectedObjectType && selectedObjectId ? slotTypeForSelectedObject(selectedObjectType) : "gap";
-
-  await boxbrainApi.createStoryboardSlot(sectionId, {
-    slotType,
-    selectedObjectType: slotType === "gap" ? null : selectedObjectType,
-    selectedObjectId: slotType === "gap" ? null : selectedObjectId,
-    purpose: optionalFormValue(formData, "purpose"),
-    isRequired: formData.get("isRequired") !== "off"
-  });
-  revalidatePath(`/storyboards/${storyboardId}`);
-}
-
-async function swapSlotAction(formData: FormData) {
-  "use server";
-
-  const storyboardId = requiredFormValue(formData, "storyboardId");
-  const selectedObjectType = requiredFormValue(formData, "selectedObjectType");
-  await boxbrainApi.updateStoryboardSlot(requiredFormValue(formData, "slotId"), {
-    slotType: slotTypeForSelectedObject(selectedObjectType),
-    selectedObjectType,
-    selectedObjectId: requiredFormValue(formData, "selectedObjectId"),
-    purpose: optionalFormValue(formData, "purpose") ?? undefined
-  });
-  revalidatePath(`/storyboards/${storyboardId}`);
-}
-
-async function createSnapshotAction(formData: FormData) {
-  "use server";
-
-  const storyboardId = requiredFormValue(formData, "storyboardId");
-  const snapshot = await boxbrainApi.createStoryboardSnapshot(storyboardId, optionalFormValue(formData, "versionLabel"));
-  revalidatePath(`/storyboards/${storyboardId}`);
-  redirect(`/storyboards/${storyboardId}?snapshotId=${snapshot.id}`);
-}
-
-async function createAnchoredCommentAction(formData: FormData) {
-  "use server";
-
-  const storyboardId = requiredFormValue(formData, "storyboardId");
-  const [sectionId, slotId] = (optionalFormValue(formData, "targetAnchor") ?? "|").split("|");
-  await boxbrainApi.createComment({
-    kind: "persistent_comment",
-    targetType: "storyboard",
-    targetId: storyboardId,
-    body: requiredFormValue(formData, "body"),
-    anchor: {
-      sectionId: sectionId || null,
-      slotId: slotId || null,
-      snapshotId: optionalFormValue(formData, "snapshotId")
-    }
-  });
-  revalidatePath(`/storyboards/${storyboardId}`);
-}
-
-function LibraryTray({ contentBlocks }: { contentBlocks: ContentBlockVersionDetail[] }) {
-  return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="m-0 text-sm font-bold">Block tray</h2>
-        <StatusBadge tone="ai">api</StatusBadge>
-      </div>
-      <div className="grid gap-3">
-        {contentBlocks.length === 0 ? (
-          <p className="m-0 text-sm text-slate-500">No visible ContentBlocks returned.</p>
-        ) : (
-          contentBlocks.map((block) => (
-            <Link key={block.id} href={`/content-blocks/${block.id}`} className="rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
-              <SlideThumb title={block.title} variant="light" />
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <div className="truncate text-xs font-bold">{block.title}</div>
-                <Tag>{block.members.length} units</Tag>
-              </div>
-            </Link>
-          ))
-        )}
-      </div>
-    </Card>
-  );
-}
-
-function CreateSectionForm({ storyboardId, nextOrderIndex }: { storyboardId: string; nextOrderIndex: number }) {
-  return (
-    <Card className="p-4">
-      <form action={createSectionAction} className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_86px_auto]">
-        <input type="hidden" name="storyboardId" value={storyboardId} />
-        <input name="title" className="rounded-lg border border-slate-200 p-2 text-sm" placeholder="Section title" required />
-        <input name="summary" className="rounded-lg border border-slate-200 p-2 text-sm" placeholder="Section summary" />
-        <input name="orderIndex" type="number" className="rounded-lg border border-slate-200 p-2 text-sm" defaultValue={nextOrderIndex} />
-        <Button type="submit">
-          <Plus size={14} /> Section
-        </Button>
-      </form>
-    </Card>
-  );
-}
-
-function StoryboardSectionCard({
-  section,
-  sectionIndex,
-  storyboardId,
-  comments
-}: {
-  section: StoryboardSection;
-  sectionIndex: number;
-  storyboardId: string;
-  comments: Comment[];
-}) {
-  return (
-    <Card className="overflow-hidden">
-      <div className="border-b border-slate-200 bg-white p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-xs font-bold uppercase tracking-[0.07em] text-slate-500">Section {sectionIndex + 1}</div>
-            <h2 className="m-0 text-base font-bold">{section.title}</h2>
-            <p className="m-0 text-sm text-slate-500">{section.summary ?? "No section summary returned."}</p>
-          </div>
-          <Tag>{section.slots.length} slots</Tag>
-        </div>
-        <CreateSlotForm storyboardId={storyboardId} sectionId={section.id} />
-      </div>
-      <div className="grid gap-3 p-4 md:grid-cols-2">
-        {section.slots.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">No slots in this section.</div>
-        ) : (
-          section.slots.map((slot) => <SlotCard key={slot.id} slot={slot} storyboardId={storyboardId} comments={comments} />)
-        )}
-      </div>
-    </Card>
-  );
-}
-
-function CreateSlotForm({ storyboardId, sectionId }: { storyboardId: string; sectionId: string }) {
-  return (
-    <form action={createSlotAction} className="mt-3 grid gap-2 md:grid-cols-[1fr_170px_1fr_auto]">
-      <input type="hidden" name="storyboardId" value={storyboardId} />
-      <input type="hidden" name="sectionId" value={sectionId} />
-      <input name="purpose" className="rounded-lg border border-slate-200 p-2 text-sm" placeholder="Slot purpose" />
-      <select name="selectedObjectType" className="rounded-lg border border-slate-200 bg-white p-2 text-sm">
-        <option value="">Gap</option>
-        <option value="content_unit_version">ContentUnit version</option>
-        <option value="content_block_version">ContentBlock version</option>
-        <option value="work_product_version">WorkProduct version</option>
-      </select>
-      <input name="selectedObjectId" className="rounded-lg border border-slate-200 p-2 font-mono text-xs" placeholder="Selected object UUID" />
-      <Button type="submit">
-        <Plus size={14} /> Slot
-      </Button>
-    </form>
-  );
-}
-
-function SlotCard({ slot, storyboardId, comments }: { slot: StoryboardSlot; storyboardId: string; comments: Comment[] }) {
-  const slotComments = comments.filter((comment) => anchorValue(comment, "slotId") === slot.id);
-  const isGap = slot.slotType === "gap" || !slot.selectedObjectId;
-
-  return (
-    <div className={`rounded-lg border p-3 ${isGap ? "border-dashed border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`}>
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div>
-          <div className="text-sm font-bold">{slot.purpose ?? "Untitled slot"}</div>
-          <div className="text-xs text-slate-500">Order {slot.orderIndex + 1}</div>
-        </div>
-        {isGap ? <Tag tone="warn">gap</Tag> : <StatusBadge tone="ok">{slot.slotType}</StatusBadge>}
-      </div>
-      {isGap ? (
-        <div className="grid aspect-video place-items-center rounded-lg border border-dashed border-amber-300 bg-white/70 text-center text-sm font-semibold text-amber-700">
-          Recommendation needed
-        </div>
-      ) : (
-        <Link href={selectedObjectHref(slot)} className="block">
-          <SlideThumb title={slot.selectedObjectType ?? "Selected object"} variant={slot.slotType === "content_block" ? "teal" : "light"} />
-          <div className="mt-2 truncate font-mono text-xs text-slate-500">{slot.selectedObjectId}</div>
-        </Link>
-      )}
-      <form action={swapSlotAction} className="mt-3 grid gap-2">
-        <input type="hidden" name="storyboardId" value={storyboardId} />
-        <input type="hidden" name="slotId" value={slot.id} />
-        <select name="selectedObjectType" className="rounded-lg border border-slate-200 bg-white p-2 text-sm" defaultValue={slot.selectedObjectType ?? "content_unit_version"}>
-          <option value="content_unit_version">ContentUnit version</option>
-          <option value="content_block_version">ContentBlock version</option>
-          <option value="work_product_version">WorkProduct version</option>
-        </select>
-        <input name="selectedObjectId" className="rounded-lg border border-slate-200 p-2 font-mono text-xs" placeholder="Swap to object UUID" required />
-        <input name="purpose" className="rounded-lg border border-slate-200 p-2 text-sm" placeholder="Updated purpose" defaultValue={slot.purpose ?? ""} />
-        <Button type="submit">
-          <Replace size={14} /> Swap
-        </Button>
-      </form>
-      {slotComments.length > 0 && (
-        <div className="mt-3 grid gap-2">
-          {slotComments.map((comment) => (
-            <div key={comment.id} className="rounded-lg bg-blue-50 p-2 text-xs text-blue-950">{comment.body}</div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function DiagnosticsPanel({ diagnostics }: { diagnostics: StoryboardDiagnostics }) {
-  const score = diagnostics.narrativeScore == null ? null : Math.round(diagnostics.narrativeScore * 100);
-  return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-        <AlertTriangle size={16} color="var(--warn)" /> Diagnostics
-      </div>
-      <div className="mb-3">{score == null ? <Tag>not scored</Tag> : <StatusBadge tone={score >= 80 ? "ok" : "warn"}>{score} narrative</StatusBadge>}</div>
-      <div className="grid gap-2 text-sm">
-        {diagnostics.warnings.length === 0 ? (
-          <div className="rounded-lg bg-emerald-50 p-3 text-emerald-800">No diagnostics warnings returned.</div>
-        ) : (
-          diagnostics.warnings.map((warning) => (
-            <div key={`${warning.code}-${warning.targetId ?? warning.message}`} className={`rounded-lg p-3 ${warning.severity === "critical" ? "bg-red-50 text-red-800" : warning.severity === "warning" ? "bg-amber-50 text-amber-800" : "bg-blue-50 text-blue-800"}`}>
-              <div className="font-bold">{warning.code}</div>
-              <div>{warning.message}</div>
-            </div>
-          ))
-        )}
-      </div>
-    </Card>
-  );
-}
-
-function SnapshotPanel({
-  storyboard,
-  snapshots,
-  selectedSnapshot
-}: {
-  storyboard: StoryboardDetail;
-  snapshots: StoryboardSnapshot[];
-  selectedSnapshot?: StoryboardSnapshot;
-}) {
-  return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-        <Camera size={16} /> Snapshot history
-      </div>
-      {snapshots.length === 0 ? (
-        <p className="m-0 text-sm text-slate-500">No immutable snapshots have been saved.</p>
-      ) : (
-        <div className="grid gap-2">
-          {snapshots.map((snapshot) => (
-            <Link key={snapshot.id} href={`/storyboards/${storyboard.id}?snapshotId=${snapshot.id}`} className="rounded-lg border border-slate-200 p-2 text-sm hover:bg-slate-50">
-              <div className="font-bold">{snapshot.versionLabel ?? snapshot.id.slice(0, 8)}</div>
-              <div className="text-xs text-slate-500">{formatDate(snapshot.createdAt)} · {snapshot.sections.length} sections</div>
-            </Link>
-          ))}
-        </div>
-      )}
-      {selectedSnapshot && (
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="mb-2 text-sm font-bold">Snapshot detail</div>
-          <div className="grid gap-2 text-xs text-slate-600">
-            <div>{selectedSnapshot.versionLabel ?? selectedSnapshot.id}</div>
-            <div>{selectedSnapshot.sections.length} frozen sections · {selectedSnapshot.sections.flatMap((section) => section.slots).length} frozen slots</div>
-            <div>Approval: {selectedSnapshot.approvalState}</div>
-          </div>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function StoryboardCommentForm({ storyboardId, sections }: { storyboardId: string; sections: StoryboardSection[] }) {
-  const slotOptions = sections.flatMap((section) =>
-    section.slots.map((slot) => ({
-      sectionId: section.id,
-      label: `${section.title} / ${slot.purpose ?? slot.id.slice(0, 8)}`,
-      slotId: slot.id
-    }))
-  );
-
-  return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-        <MessageSquarePlus size={16} color="var(--ai)" /> Anchored comment
-      </div>
-      <form action={createAnchoredCommentAction} className="grid gap-3">
-        <input type="hidden" name="storyboardId" value={storyboardId} />
-        <select name="targetAnchor" className="rounded-lg border border-slate-200 bg-white p-2 text-sm">
-          <option value="|">Storyboard-level</option>
-          {slotOptions.map((option) => (
-            <option key={option.slotId} value={`${option.sectionId}|${option.slotId}`}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <textarea name="body" className="min-h-24 w-full resize-none rounded-lg border border-slate-200 p-3 text-sm outline-none focus:border-blue-400" placeholder="Comment" required />
-        <Button variant="primary" type="submit">
-          <Sparkles size={14} /> Add comment
-        </Button>
-      </form>
-    </Card>
-  );
-}
-
-function CommentList({ comments }: { comments: Comment[] }) {
-  return (
-    <Card className="p-4">
-      <h2 className="m-0 mb-3 text-sm font-bold">Comments</h2>
-      {comments.length === 0 ? (
-        <p className="m-0 text-sm text-slate-500">No storyboard comments returned.</p>
-      ) : (
-        <div className="grid gap-2">
-          {comments.map((comment) => (
-            <div key={comment.id} className="rounded-lg bg-blue-50 p-3 text-blue-950">
-              <div className="text-xs font-bold uppercase text-blue-700">{anchorLabel(comment)}</div>
-              <div className="text-sm">{comment.body}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
 }
 
 function StoryboardNotFound({ id, storyboards }: { id: string; storyboards: Storyboard[] }) {
@@ -540,7 +291,7 @@ function StoryboardNotFound({ id, storyboards }: { id: string; storyboards: Stor
       <div className="two-col">
         <Card className="p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-            <GitBranchPlus size={16} /> Create Storyboard
+            <GitBranchPlus size={16} aria-hidden="true" /> Create Storyboard
           </div>
           <form action={createStoryboardAction} className="grid gap-3">
             <input name="title" className="rounded-lg border border-slate-200 p-2 text-sm" placeholder="Storyboard title" required />
@@ -550,7 +301,7 @@ function StoryboardNotFound({ id, storyboards }: { id: string; storyboards: Stor
               <option value="opportunity">Opportunity</option>
             </select>
             <Button variant="primary" type="submit">
-              <Plus size={14} /> Create
+              <Plus size={14} aria-hidden="true" /> Create
             </Button>
           </form>
         </Card>
@@ -579,7 +330,7 @@ function StoryboardError({ message }: { message: string }) {
       <PageHeader eyebrow="Storyboard" title="Storyboard request failed" description="The live Storyboard API could not be loaded." />
       <Card className="border-red-200 bg-red-50 p-5 text-red-900">
         <div className="flex items-start gap-3">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
+          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
           <div>
             <div className="font-bold">API error</div>
             <p className="m-0 mt-1 text-sm">{message}</p>
@@ -596,7 +347,7 @@ function RestrictedStoryboard() {
       <PageHeader eyebrow="Storyboard" title="Restricted Storyboard" description="The current user cannot access this composition workspace." />
       <Card className="border-amber-200 bg-amber-50 p-5 text-amber-900">
         <div className="flex items-start gap-3">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
+          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
           <div>
             <div className="font-bold">Access restricted</div>
             <p className="m-0 mt-1 text-sm">No sections, slots, comments, snapshots, previews, or diagnostics are shown for restricted Storyboards.</p>
@@ -605,52 +356,4 @@ function RestrictedStoryboard() {
       </Card>
     </div>
   );
-}
-
-function selectedObjectHref(slot: StoryboardSlot) {
-  if (slot.selectedObjectType === "content_block_version") return `/content-blocks/${slot.selectedObjectId}`;
-  if (slot.selectedObjectType === "content_unit_version") return `/content-units/${slot.selectedObjectId}`;
-  return `/work-products/${slot.selectedObjectId}`;
-}
-
-function slotTypeForSelectedObject(selectedObjectType: string | null): StoryboardSlotType {
-  if (selectedObjectType === "content_block_version") return "content_block";
-  if (selectedObjectType === "work_product_version") return "work_product_ref";
-  if (selectedObjectType === "content_unit_version") return "content_unit";
-  return "gap";
-}
-
-function anchorValue(comment: Comment, key: string) {
-  const value = comment.anchor?.[key];
-  return typeof value === "string" ? value : null;
-}
-
-function anchorLabel(comment: Comment) {
-  const slotId = anchorValue(comment, "slotId");
-  if (slotId) return `slot ${slotId.slice(0, 8)}`;
-  const sectionId = anchorValue(comment, "sectionId");
-  if (sectionId) return `section ${sectionId.slice(0, 8)}`;
-  return "storyboard";
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
-}
-
-function optionalNumberValue(formData: FormData, field: string) {
-  const value = optionalFormValue(formData, field);
-  if (value === null) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function requiredFormValue(formData: FormData, field: string) {
-  const value = optionalFormValue(formData, field);
-  if (!value) throw new Error(`${field} is required.`);
-  return value;
-}
-
-function optionalFormValue(formData: FormData, field: string) {
-  const value = formData.get(field);
-  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
