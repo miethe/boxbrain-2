@@ -340,6 +340,12 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
                 )
                 for row in session.scalars(select(StoredObjectRow))
             }
+            # Keep the O(1) key-index in sync with the freshly loaded dict.
+            self.stored_object_by_key = {
+                obj.metadata["key"]: obj
+                for obj in self.stored_objects.values()
+                if obj.metadata.get("key")
+            }
             self.provenance_records.update(
                 {
                     row.id: ProvenanceRecord(
@@ -785,7 +791,7 @@ class SqlAlchemyBoxBrainRepository(InMemoryBoxBrainRepository):
         )
 
     def save_stored_object(self, stored_object: StoredObject) -> None:
-        self.stored_objects[stored_object.id] = stored_object
+        self.register_stored_object(stored_object)
         with self._session() as session:
             session.merge(
                 StoredObjectRow(

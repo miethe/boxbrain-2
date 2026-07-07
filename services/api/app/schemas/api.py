@@ -11,6 +11,7 @@ ApprovalState = Literal["draft", "review", "approved", "deprecated", "archived"]
 FreshnessState = Literal["fresh", "aging", "stale"]
 LinkSource = Literal["manual", "ai", "hybrid"]
 Role = Literal["viewer", "contributor", "curator", "reviewer", "admin"]
+ContentUnitListMode = Literal["families", "variants"]
 
 
 class ErrorEnvelope(BaseModel):
@@ -429,6 +430,12 @@ class ReviewActionRequest(BaseModel):
     reason: str | None = None
     targetVariantId: UUID | None = None
     targetVersionId: UUID | None = None
+
+
+class GenerateReviewCandidatesRequest(BaseModel):
+    queueType: str | None = None
+    query: str | None = None
+    limit: int | None = Field(default=None, ge=1, le=200)
 
 
 class ReviewActionResponse(BaseModel):

@@ -174,6 +174,14 @@ paths:
           in: query
           schema:
             type: string
+        - name: mode
+          in: query
+          description: '"families" (default) lists all families; "variants" narrows to families with more than one variant.'
+          schema:
+            type: string
+            enum: [families, variants]
+        - $ref: '#/components/parameters/pageCursor'
+        - $ref: '#/components/parameters/pageLimit'
       responses:
         '200':
           description: Family list
@@ -351,6 +359,9 @@ paths:
     get:
       summary: List WorkProduct families
       operationId: listWorkProductFamilies
+      parameters:
+        - $ref: '#/components/parameters/pageCursor'
+        - $ref: '#/components/parameters/pageLimit'
       responses:
         '200':
           description: WorkProduct families
@@ -383,6 +394,9 @@ paths:
     get:
       summary: List ContentBlocks
       operationId: listContentBlocks
+      parameters:
+        - $ref: '#/components/parameters/pageCursor'
+        - $ref: '#/components/parameters/pageLimit'
       responses:
         '200':
           description: ContentBlocks
@@ -431,6 +445,9 @@ paths:
     get:
       summary: List storyboards
       operationId: listStoryboards
+      parameters:
+        - $ref: '#/components/parameters/pageCursor'
+        - $ref: '#/components/parameters/pageLimit'
       responses:
         '200':
           description: Storyboards
@@ -739,6 +756,12 @@ paths:
     post:
       summary: Generate deterministic review candidates
       operationId: generateReviewCandidates
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateReviewCandidatesRequest'
       responses:
         '200':
           description: Newly generated review candidates
@@ -1466,6 +1489,23 @@ components:
             auditPreview:
               type: object
               additionalProperties: true
+    GenerateReviewCandidatesRequest:
+      type: object
+      properties:
+        queueType:
+          type: string
+          nullable: true
+          description: 'Scope generation to a specific queue (duplicate/variant/similarity/stale/approval). Omit or pass "all" for all queues.'
+        query:
+          type: string
+          nullable: true
+          description: Optional search hint (reserved for future vector-guided scoping).
+        limit:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 200
+          description: Cap the number of new candidates persisted in this call.
     ReviewActionRequest:
       type: object
       properties:

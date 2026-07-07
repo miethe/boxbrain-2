@@ -5,6 +5,7 @@ from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from app.application import presenters as p
+from app.application.pagination import paginate
 from app.application.pptx_processor import extract_pptx_slides
 from app.application.ports import BoxBrainRepository
 from app.application.slide_renderer import (
@@ -477,7 +478,7 @@ class BoxBrainUseCases:
             metadata={"bucket": stored_artifact.bucket, "key": stored_artifact.key},
             created_at=timestamp,
         )
-        self.repository.stored_objects[stored_object.id] = stored_object
+        self.repository.register_stored_object(stored_object)
         self._save_stored_object(stored_object)
 
         provenance = ProvenanceRecord(
@@ -755,7 +756,10 @@ class BoxBrainUseCases:
         *,
         approval_state: str | None = None,
         freshness_state: str | None = None,
-    ) -> list[s.ContentUnitFamilyCard]:
+        mode: str | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[s.ContentUnitFamilyCard], str | None]:
         families = [
             family
             for family in self.repository.content_unit_families.values()
@@ -767,7 +771,16 @@ class BoxBrainUseCases:
                 actor=actor,
             )
         ]
-        return [
+        # ``mode`` toggles the Library view: "families" (default) lists every family,
+        # while "variants" narrows to families that have actually branched into more
+        # than one variant. Response shape stays ContentUnitFamilyCard either way.
+        if mode == "variants":
+            families = [
+                family
+                for family in families
+                if len(self._variants_for_family(family.id)) > 1
+            ]
+        cards = [
             p.content_unit_family_card(
                 family,
                 self._variants_for_family(family.id),
@@ -775,6 +788,7 @@ class BoxBrainUseCases:
             )
             for family in sorted(families, key=lambda item: item.family_title)
         ]
+        return paginate(cards, cursor, limit)
 
     def get_content_unit_family(self, family_id: UUID, actor: Actor) -> s.ContentUnitFamilyDetail:
         if not self._can_access_family(family_id, actor):
@@ -974,16 +988,23 @@ class BoxBrainUseCases:
                     )
         return used
 
-    def list_work_product_families(self, actor: Actor) -> list[s.WorkProductFamilyCard]:
+    def list_work_product_families(
+        self,
+        actor: Actor,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[s.WorkProductFamilyCard], str | None]:
         families = [
             family
             for family in self.repository.work_product_families.values()
             if self._can_access_work_product_family(family.id, actor)
         ]
-        return [
+        cards = [
             p.work_product_family_card(family, self._latest_work_product_version(family.id))
             for family in sorted(families, key=lambda item: item.title)
         ]
+        return paginate(cards, cursor, limit)
 
     def get_work_product_version(self, version_id: UUID, actor: Actor) -> s.WorkProductVersionDetail:
         version = self._get_work_product_version(version_id)
@@ -1031,7 +1052,13 @@ class BoxBrainUseCases:
         self._save_content_block(block)
         return p.content_block_model(block)
 
-    def list_content_blocks(self, actor: Actor) -> list[s.ContentBlockVersionDetail]:
+    def list_content_blocks(
+        self,
+        actor: Actor,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[s.ContentBlockVersionDetail], str | None]:
         self._refresh_repository()
         blocks = sorted(
             (
@@ -1041,7 +1068,7 @@ class BoxBrainUseCases:
             ),
             key=lambda item: item.title,
         )
-        return [p.content_block_model(block) for block in blocks]
+        return paginate([p.content_block_model(block) for block in blocks], cursor, limit)
 
     def get_content_block(self, block_id: UUID, actor: Actor) -> s.ContentBlockVersionDetail:
         self._refresh_repository()
@@ -1063,13 +1090,20 @@ class BoxBrainUseCases:
         self._save_storyboard(storyboard)
         return p.storyboard_model(storyboard)
 
-    def list_storyboards(self, actor: Actor) -> list[s.Storyboard]:
+    def list_storyboards(
+        self,
+        actor: Actor,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[s.Storyboard], str | None]:
         self._refresh_repository()
-        return [
+        storyboards = [
             p.storyboard_model(storyboard)
             for storyboard in sorted(self.repository.storyboards.values(), key=lambda item: item.title)
             if self._can_access_storyboard(storyboard, actor)
         ]
+        return paginate(storyboards, cursor, limit)
 
     def get_storyboard(self, storyboard_id: UUID, actor: Actor) -> s.StoryboardDetail:
         self._refresh_repository()
@@ -1378,11 +1412,27 @@ class BoxBrainUseCases:
         ]
         return [p.note_model(note) for note in sorted(notes, key=lambda item: item.created_at)]
 
-    def generate_review_candidates(self, actor: Actor) -> list[s.ReviewItem]:
+    def generate_review_candidates(
+        self,
+        actor: Actor,
+        *,
+        queue_type: str | None = None,
+        limit: int | None = None,
+    ) -> list[s.ReviewItem]:
         require_review_actor(actor)
         self._refresh_repository()
         created: list[ReviewItem] = []
+        # ``queueType`` scopes the sweep to a single queue (duplicate/variant/similarity/
+        # stale/approval). ``all`` and ``None`` mean "every queue" so the Reviews Hub
+        # "generate more" button keeps working when no filter is active.
+        scoped_queue = queue_type if queue_type and queue_type != "all" else None
+        # Cap at generation time (not response time) so accepted items still land in
+        # the repository — matches the pre-existing idempotent "never regenerate the
+        # same candidate" behavior surfaced by the second call in the test suite.
+        cap = max(1, limit) if limit and limit > 0 else None
         for item in self._deterministic_review_candidates():
+            if scoped_queue and item.queue_type != scoped_queue:
+                continue
             if self._review_candidate_exists(item):
                 continue
             self.repository.review_items[item.id] = item
@@ -1406,6 +1456,10 @@ class BoxBrainUseCases:
                     "confidence": item.confidence,
                 },
             )
+            if cap is not None and len(created) >= cap:
+                # Stop the sweep once the caller-requested cap is reached; already-
+                # persisted candidates remain in the repository (idempotent on retry).
+                break
         return [p.review_item_model(item) for item in sorted(created, key=lambda item: item.created_at)]
 
     def review_queues(self, actor: Actor) -> list[s.ReviewQueueSummary]:
@@ -1429,7 +1483,10 @@ class BoxBrainUseCases:
         actor: Actor,
         queue_type: str | None = None,
         status: str = "open",
-    ) -> list[s.ReviewItem]:
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[list[s.ReviewItem], str | None]:
         require_review_actor(actor)
         self._refresh_repository()
         items = list(self.repository.review_items.values())
@@ -1437,7 +1494,8 @@ class BoxBrainUseCases:
             items = [item for item in items if item.queue_type == queue_type]
         if status:
             items = [item for item in items if item.status == status]
-        return [p.review_item_model(item) for item in sorted(items, key=lambda item: item.created_at)]
+        models = [p.review_item_model(item) for item in sorted(items, key=lambda item: item.created_at)]
+        return paginate(models, cursor, limit)
 
     def get_review_item(self, review_item_id: UUID, actor: Actor) -> s.ReviewItemDetail:
         require_review_actor(actor)
@@ -2636,7 +2694,7 @@ class BoxBrainUseCases:
             metadata={"bucket": artifact.bucket, "key": artifact.key, "storageUri": artifact.storage_uri},
             created_at=now_utc(),
         )
-        self.repository.stored_objects[stored_object.id] = stored_object
+        self.repository.register_stored_object(stored_object)
         self._save_stored_object(stored_object)
         return stored_object
 
@@ -2807,6 +2865,21 @@ class BoxBrainUseCases:
             if str(job_id) in parent_ids and f"slide {source_order_index}" in source_refs:
                 return version
         return None
+
+    def is_asset_restricted(self, asset_uri: str) -> bool:
+        """Return True if *any* content-unit version or work-product version that
+        references ``asset_uri`` is restricted.  The caller is responsible for checking
+        whether the actor can view restricted objects and acting on this flag.
+        """
+        for cu_version in self.repository.content_unit_versions.values():
+            if cu_version.render_uri == asset_uri or cu_version.thumbnail_uri == asset_uri:
+                if self._is_content_unit_version_restricted(cu_version):
+                    return True
+        for wp_version in self.repository.work_product_versions.values():
+            if wp_version.preview_uri == asset_uri:
+                if self._is_work_product_version_restricted(wp_version):
+                    return True
+        return False
 
     def _refresh_repository(self) -> None:
         reload_repository = getattr(self.repository, "reload", None)

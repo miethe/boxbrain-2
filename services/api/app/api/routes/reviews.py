@@ -18,22 +18,33 @@ def review_queues(
     return use_cases.review_queues(actor)
 
 
-@router.get("/items", response_model=dict[str, list[s.ReviewItem] | None])
+@router.get("/items", response_model=dict[str, list[s.ReviewItem] | str | None])
 def list_review_items(
     queue_type: str | None = Query(default=None, alias="queueType"),
     status: str = "open",
+    cursor: str | None = Query(default=None),
+    limit: int | None = Query(default=None),
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
     actor: Actor = Depends(get_actor),
-) -> dict[str, list[s.ReviewItem] | None]:
-    return {"items": use_cases.list_review_items(actor, queue_type, status), "nextCursor": None}
+) -> dict[str, list[s.ReviewItem] | str | None]:
+    items, next_cursor = use_cases.list_review_items(
+        actor, queue_type, status, cursor=cursor, limit=limit
+    )
+    return {"items": items, "nextCursor": next_cursor}
 
 
 @router.post("/candidates/generate", response_model=list[s.ReviewItem])
 def generate_review_candidates(
+    request: s.GenerateReviewCandidatesRequest | None = None,
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
     actor: Actor = Depends(get_actor),
 ) -> list[s.ReviewItem]:
-    return use_cases.generate_review_candidates(actor)
+    payload = request or s.GenerateReviewCandidatesRequest()
+    return use_cases.generate_review_candidates(
+        actor,
+        queue_type=payload.queueType,
+        limit=payload.limit,
+    )
 
 
 @router.get("/items/{review_item_id}", response_model=s.ReviewItemDetail)

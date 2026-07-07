@@ -10,21 +10,25 @@ from app.schemas import api as s
 router = APIRouter(prefix="/content-units", tags=["content-units"])
 
 
-@router.get("/families", response_model=dict[str, list[s.ContentUnitFamilyCard] | None])
+@router.get("/families", response_model=dict[str, list[s.ContentUnitFamilyCard] | str | None])
 def list_families(
     approval_state: s.ApprovalState | None = Query(default=None, alias="approvalState"),
     freshness_state: s.FreshnessState | None = Query(default=None, alias="freshnessState"),
+    mode: s.ContentUnitListMode | None = Query(default=None),
+    cursor: str | None = Query(default=None),
+    limit: int | None = Query(default=None),
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
     actor: Actor = Depends(get_actor),
-) -> dict[str, list[s.ContentUnitFamilyCard] | None]:
-    return {
-        "items": use_cases.list_content_unit_families(
-            actor,
-            approval_state=approval_state,
-            freshness_state=freshness_state,
-        ),
-        "nextCursor": None,
-    }
+) -> dict[str, list[s.ContentUnitFamilyCard] | str | None]:
+    items, next_cursor = use_cases.list_content_unit_families(
+        actor,
+        approval_state=approval_state,
+        freshness_state=freshness_state,
+        mode=mode,
+        cursor=cursor,
+        limit=limit,
+    )
+    return {"items": items, "nextCursor": next_cursor}
 
 
 @router.get("/families/{family_id}", response_model=s.ContentUnitFamilyDetail)

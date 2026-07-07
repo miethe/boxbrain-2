@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_actor, get_use_cases
 from app.application.use_cases import BoxBrainUseCases
@@ -10,12 +10,15 @@ from app.schemas import api as s
 router = APIRouter(prefix="/content-blocks", tags=["content-blocks"])
 
 
-@router.get("", response_model=dict[str, list[s.ContentBlockVersionDetail] | None])
+@router.get("", response_model=dict[str, list[s.ContentBlockVersionDetail] | str | None])
 def list_content_blocks(
+    cursor: str | None = Query(default=None),
+    limit: int | None = Query(default=None),
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
     actor: Actor = Depends(get_actor),
-) -> dict[str, list[s.ContentBlockVersionDetail] | None]:
-    return {"items": use_cases.list_content_blocks(actor), "nextCursor": None}
+) -> dict[str, list[s.ContentBlockVersionDetail] | str | None]:
+    items, next_cursor = use_cases.list_content_blocks(actor, cursor=cursor, limit=limit)
+    return {"items": items, "nextCursor": next_cursor}
 
 
 @router.post("", response_model=s.ContentBlockVersionDetail, status_code=status.HTTP_201_CREATED)

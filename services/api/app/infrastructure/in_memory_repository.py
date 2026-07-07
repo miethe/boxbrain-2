@@ -118,6 +118,7 @@ class InMemoryBoxBrainRepository:
         self.similarity_edges: dict[UUID, SimilarityEdge] = {}
         self.audit_events: list[AuditEvent] = []
         self.stored_objects: dict[UUID, StoredObject] = {}
+        self.stored_object_by_key: dict[str, StoredObject] = {}
         self.embeddings: dict[UUID, EmbeddingRecord] = {}
         if seed:
             self.seed()
@@ -1103,6 +1104,18 @@ class InMemoryBoxBrainRepository:
         )
         self.audit_events.append(event)
         return event
+
+    def register_stored_object(self, obj: StoredObject) -> None:
+        """Keep ``stored_object_by_key`` in sync when a new StoredObject is added.
+
+        Call this every time a StoredObject is inserted into ``stored_objects``.
+        Both the in-memory and SQLAlchemy adapters rely on this hook to maintain the
+        O(1) key-based lookup used by ``GET /api/assets/{key}``.
+        """
+        self.stored_objects[obj.id] = obj
+        key = obj.metadata.get("key")
+        if key:
+            self.stored_object_by_key[key] = obj
 
     def save_content_block(self, block: ContentBlockVersion) -> None:
         self.content_blocks[block.id] = block

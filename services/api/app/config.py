@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 _SCHEMA_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
@@ -21,6 +21,9 @@ class Settings:
     redis_url: str = "redis://localhost:6379/0"
     enqueue_ingestion_jobs: bool = False
     renderer_mode: str = "libreoffice"
+    # Comma-separated list of allowed CORS origins.  When empty the default
+    # allow_origin_regex (localhost/127.0.0.1) is used so local dev is unaffected.
+    cors_origins: tuple[str, ...] = field(default_factory=tuple)
 
 
 def get_settings() -> Settings:
@@ -43,7 +46,15 @@ def get_settings() -> Settings:
         enqueue_ingestion_jobs=os.getenv("BOXBRAIN_ENQUEUE_INGESTION", "false").casefold()
         in {"1", "true", "yes"},
         renderer_mode=os.getenv("BOXBRAIN_RENDERER", "libreoffice").casefold(),
+        cors_origins=_cors_origins_from_env(),
     )
+
+
+def _cors_origins_from_env() -> tuple[str, ...]:
+    raw = os.getenv("BOXBRAIN_CORS_ORIGINS", "").strip()
+    if not raw:
+        return ()
+    return tuple(origin.strip() for origin in raw.split(",") if origin.strip())
 
 
 def database_schema_from_env() -> str | None:

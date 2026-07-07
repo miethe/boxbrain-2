@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_actor, get_use_cases
 from app.application.use_cases import BoxBrainUseCases
@@ -10,12 +10,15 @@ from app.schemas import api as s
 router = APIRouter(tags=["storyboards"])
 
 
-@router.get("/storyboards", response_model=dict[str, list[s.Storyboard] | None])
+@router.get("/storyboards", response_model=dict[str, list[s.Storyboard] | str | None])
 def list_storyboards(
+    cursor: str | None = Query(default=None),
+    limit: int | None = Query(default=None),
     use_cases: BoxBrainUseCases = Depends(get_use_cases),
     actor: Actor = Depends(get_actor),
-) -> dict[str, list[s.Storyboard] | None]:
-    return {"items": use_cases.list_storyboards(actor), "nextCursor": None}
+) -> dict[str, list[s.Storyboard] | str | None]:
+    items, next_cursor = use_cases.list_storyboards(actor, cursor=cursor, limit=limit)
+    return {"items": items, "nextCursor": next_cursor}
 
 
 @router.post("/storyboards", response_model=s.Storyboard, status_code=status.HTTP_201_CREATED)

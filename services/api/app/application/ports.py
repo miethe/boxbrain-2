@@ -41,7 +41,10 @@ class BoxBrainRepository(Protocol):
     similarity_edges: dict[UUID, SimilarityEdge]
     audit_events: list[AuditEvent]
     stored_objects: dict[UUID, StoredObject]
+    stored_object_by_key: dict[str, StoredObject]
     embeddings: dict[UUID, EmbeddingRecord]
+
+    def register_stored_object(self, obj: StoredObject) -> None: ...
 
     def record_audit(
         self,
