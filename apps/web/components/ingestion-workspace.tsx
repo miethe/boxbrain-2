@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, CheckCircle2, Clock3, FileUp, Loader2, RefreshCw, RotateCcw, SearchCheck, XCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock3, FileUp, Loader2, RefreshCw, RotateCcw, SearchCheck, ShieldAlert, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType, FormEvent, ReactNode } from "react";
 import {
+  ApiError,
   boxbrainApi,
   type ArtifactType,
   type IngestionJob,
@@ -22,12 +23,22 @@ const artifactTypes: Array<{ label: string; value: ArtifactType }> = [
   { label: "Other", value: "other" }
 ];
 
+function artifactTypeLabel(value: ArtifactType): string {
+  return artifactTypes.find((type) => type.value === value)?.label ?? value;
+}
+
 const statusCopy: Record<IngestionJobStatus, { tone: "ok" | "warn" | "danger" | "neutral"; icon: ComponentType<{ size?: number; className?: string }> }> = {
   queued: { tone: "neutral", icon: Clock3 },
   running: { tone: "warn", icon: Loader2 },
   failed: { tone: "danger", icon: XCircle },
   complete: { tone: "ok", icon: CheckCircle2 }
 };
+
+const JOB_PAGE_SIZE = 10;
+
+function isRestrictedError(error: unknown) {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
 
 export function IngestionWorkspace() {
   const [jobs, setJobs] = useState<IngestionJob[]>([]);
@@ -39,17 +50,31 @@ export function IngestionWorkspace() {
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [uploadRestricted, setUploadRestricted] = useState(false);
+  // `GET /api/ingestion-jobs` itself has no role gate today (any actor, even "viewer", can list
+  // jobs), but this still tracks a genuine 401/403 so the list panel degrades honestly rather than
+  // showing a generic error/empty state if that ever changes (audit-digest.md ## admin-ingestion,
+  // gap "Ingestion page has no restricted-state handling ... asymmetric with Admin").
+  const [jobsRestricted, setJobsRestricted] = useState(false);
+  const [detailRestricted, setDetailRestricted] = useState(false);
+  const [visibleJobCount, setVisibleJobCount] = useState(JOB_PAGE_SIZE);
 
   async function refreshJobs(nextSelectedId?: string) {
     setIsLoadingJobs(true);
     setError(null);
+    setJobsRestricted(false);
     try {
       const response = await boxbrainApi.listIngestionJobs();
       setJobs(response.items);
+      setVisibleJobCount(JOB_PAGE_SIZE);
       const nextId = nextSelectedId ?? selectedJobId ?? response.items[0]?.id ?? null;
       setSelectedJobId(nextId);
     } catch (refreshError) {
-      setError(refreshError instanceof Error ? refreshError.message : "Could not load ingestion jobs.");
+      if (isRestrictedError(refreshError)) {
+        setJobsRestricted(true);
+      } else {
+        setError(refreshError instanceof Error ? refreshError.message : "Could not load ingestion jobs.");
+      }
       setJobs([]);
     } finally {
       setIsLoadingJobs(false);
@@ -71,6 +96,7 @@ export function IngestionWorkspace() {
     let isActive = true;
     setSelectedJob(null);
     setIsLoadingDetail(true);
+    setDetailRestricted(false);
     boxbrainApi
       .getIngestionJob(selectedJobId)
       .then((job) => {
@@ -80,6 +106,10 @@ export function IngestionWorkspace() {
       })
       .catch((detailError) => {
         if (!isActive) return;
+        if (isRestrictedError(detailError)) {
+          setDetailRestricted(true);
+          return;
+        }
         setError(detailError instanceof Error ? detailError.message : "Could not load ingestion job detail.");
       })
       .finally(() => {
@@ -110,6 +140,7 @@ export function IngestionWorkspace() {
     setIsUploading(true);
     setError(null);
     setUploadMessage(null);
+    setUploadRestricted(false);
     try {
       const job = await boxbrainApi.uploadArtifact({
         file,
@@ -122,7 +153,12 @@ export function IngestionWorkspace() {
       setUploadMessage("Upload accepted. Ingestion job queued.");
       form.reset();
     } catch (uploadError) {
-      setUploadMessage(uploadError instanceof Error ? uploadError.message : "Upload failed.");
+      if (isRestrictedError(uploadError)) {
+        setUploadRestricted(true);
+        setUploadMessage("You do not have permission to upload artifacts (contributor role or higher required).");
+      } else {
+        setUploadMessage(uploadError instanceof Error ? uploadError.message : "Upload failed.");
+      }
     } finally {
       setIsUploading(false);
     }
@@ -139,7 +175,11 @@ export function IngestionWorkspace() {
       setSelectedJob(job);
       setUploadMessage("Retry queued for failed ingestion job.");
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : "Could not retry ingestion job.");
+      if (isRestrictedError(retryError)) {
+        setError("You do not have permission to retry ingestion jobs (contributor role or higher required).");
+      } else {
+        setError(retryError instanceof Error ? retryError.message : "Could not retry ingestion job.");
+      }
     } finally {
       setRetryingJobId(null);
     }
@@ -147,6 +187,7 @@ export function IngestionWorkspace() {
 
   const selected = selectedJob ?? jobs.find((job) => job.id === selectedJobId) ?? null;
   const summary = useMemo(() => summarizeJobs(jobs), [jobs]);
+  const visibleJobs = jobs.slice(0, visibleJobCount);
 
   return (
     <div className="grid gap-5" data-testid="ingestion-workspace">
@@ -194,8 +235,12 @@ export function IngestionWorkspace() {
             {isUploading ? "Uploading" : "Upload"}
           </Button>
         </form>
+        <p className="m-0 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          Artifact type is a classification tag only — regardless of type selected, only <span className="font-mono">.pptx</span> decks are ingested end-to-end in this milestone.
+        </p>
         {uploadMessage && (
-          <div className="border-t border-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">
+          <div className={`border-t border-slate-100 px-4 py-3 text-sm font-semibold ${uploadRestricted ? "text-amber-700" : "text-slate-700"}`}>
+            {uploadRestricted && <ShieldAlert size={14} className="mr-1.5 inline align-[-2px]" aria-hidden="true" />}
             {uploadMessage}
           </div>
         )}
@@ -227,12 +272,23 @@ export function IngestionWorkspace() {
             <p className="m-0 text-sm text-slate-500">Live job list from `/api/ingestion-jobs`.</p>
           </div>
           <div className="grid gap-2 p-3" data-testid="ingestion-job-list">
-            {isLoadingJobs ? (
+            {jobsRestricted ? (
+              <RestrictedJobs />
+            ) : isLoadingJobs ? (
               <LoadingRows />
             ) : jobs.length === 0 ? (
               <EmptyState title="No ingestion jobs yet" body="Upload a source artifact to create the first job, or refresh once the API has seeded data." />
             ) : (
-              jobs.map((job) => <JobRow key={job.id} job={job} selected={job.id === selectedJobId} onSelect={() => setSelectedJobId(job.id)} />)
+              <>
+                {visibleJobs.map((job) => (
+                  <JobRow key={job.id} job={job} selected={job.id === selectedJobId} onSelect={() => setSelectedJobId(job.id)} />
+                ))}
+                {visibleJobCount < jobs.length && (
+                  <Button type="button" className="justify-center" onClick={() => setVisibleJobCount((count) => count + JOB_PAGE_SIZE)}>
+                    Show more ({jobs.length - visibleJobCount} remaining)
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </Card>
@@ -243,7 +299,9 @@ export function IngestionWorkspace() {
             <p className="m-0 text-sm text-slate-500">Status, provenance links, and failure reason.</p>
           </div>
           <div className="p-4">
-            {isLoadingDetail ? (
+            {detailRestricted ? (
+              <RestrictedJobs compact />
+            ) : isLoadingDetail ? (
               <div className="flex min-h-40 items-center justify-center gap-2 text-sm font-semibold text-slate-500">
                 <Loader2 size={16} className="animate-spin" />
                 Loading job detail
@@ -260,6 +318,20 @@ export function IngestionWorkspace() {
   );
 }
 
+function RestrictedJobs({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={`rounded-lg border border-amber-200 bg-amber-50 text-amber-900 ${compact ? "p-4" : "p-5 text-center"}`} data-testid="ingestion-restricted">
+      <div className={`flex items-start gap-2 ${compact ? "" : "justify-center"}`}>
+        <ShieldAlert size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <div>
+          <div className="text-sm font-bold">Ingestion permissions required</div>
+          <p className="m-0 mt-1 text-sm text-amber-800">This user cannot view ingestion job status or detail for this workspace.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function JobRow({ job, selected, onSelect }: { job: IngestionJob; selected: boolean; onSelect: () => void }) {
   const status = statusCopy[job.status] ?? statusCopy.queued;
   const Icon = status.icon;
@@ -271,8 +343,10 @@ function JobRow({ job, selected, onSelect }: { job: IngestionJob; selected: bool
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-bold text-slate-900">{job.id}</div>
-          <div className="mt-1 text-xs text-slate-500">{job.stage}</div>
+          <div className="truncate text-sm font-bold text-slate-900">{job.title ?? "Untitled upload"}</div>
+          <div className="mt-1 truncate text-xs text-slate-500">
+            {job.id} · {job.stage}
+          </div>
         </div>
         <StatusBadge tone={status.tone}>
           <Icon size={12} className={job.status === "running" ? "animate-spin" : ""} />
@@ -280,6 +354,7 @@ function JobRow({ job, selected, onSelect }: { job: IngestionJob; selected: bool
         </StatusBadge>
       </div>
       <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+        <Tag>{artifactTypeLabel(job.artifactType)}</Tag>
         <Tag>created {formatDate(job.createdAt)}</Tag>
         <Tag>updated {formatDate(job.updatedAt)}</Tag>
       </div>
@@ -298,6 +373,8 @@ function JobDetail({ job, isRetrying, onRetry }: { job: IngestionJob; isRetrying
         <Tag>{job.stage}</Tag>
       </div>
       <dl className="grid gap-3 text-sm">
+        <DetailRow label="Title" value={job.title ?? "Untitled upload"} />
+        <DetailRow label="Artifact type" value={artifactTypeLabel(job.artifactType)} />
         <DetailRow label="Job ID" value={job.id} />
         <DetailRow label="Original object" value={job.originalObjectId ?? "Pending"} />
         <DetailRow

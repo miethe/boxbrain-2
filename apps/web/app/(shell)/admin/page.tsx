@@ -1,13 +1,22 @@
 import { Activity, AlertCircle, Clock3, Database, HardDrive, KeyRound, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Card, PageHeader, StatCard, StatusBadge, Tag } from "@/components/ui";
 import { IngestionWorkspace } from "@/components/ingestion-workspace";
-import { ApiError, boxbrainApi, type AdminHealth, type IngestionJob, type IngestionJobStatus } from "@/lib/api";
+import { ApiError, boxbrainApi, type AdminHealth, type IngestionJob } from "@/lib/api";
+import { AdminTabNav, resolveAdminTab } from "@/components/admin/tab-nav";
+import { QueueHealthCard, RecentFailuresCard, StageHealthCard } from "@/components/admin/pipeline-health";
+import { SearchEvalCard, SearchIndexCard } from "@/components/admin/search-index-card";
+import { GuardrailsCard } from "@/components/admin/guardrails-card";
+import { AuditLogCard, type AuditLogResult } from "@/components/admin/audit-log-card";
+import { AdminSurfacesGrid } from "@/components/admin/admin-surfaces";
+import { getRecentAuditEvents } from "@/features/admin/audit-events-api";
+import { buildReadinessChecks, getHealthStages, summarizeJobs, type JobSummary } from "@/features/admin/lib";
 
 type AdminReadinessResult =
   | {
       status: "ok";
       health: AdminHealth;
       ingestionJobs: IngestionJob[];
+      auditLog: AuditLogResult;
     }
   | {
       status: "restricted";
@@ -17,38 +26,34 @@ type AdminReadinessResult =
       message: string;
     };
 
-type ReadinessCheck = {
-  label: string;
-  value: string;
-  hint: string;
-  tone: "ok" | "warn" | "danger" | "neutral";
-};
-
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: { searchParams?: Promise<{ tab?: string }> }) {
+  const query = (await searchParams) ?? {};
+  const activeTab = resolveAdminTab(query.tab);
   const result = await loadAdminReadiness();
 
   if (result.status === "restricted") return <RestrictedAdmin />;
   if (result.status === "error") return <AdminError message={result.message} />;
 
-  const catalog = result.health.catalog ?? {};
-  const composition = result.health.composition ?? {};
-  const reviewAudit = result.health.reviewAudit ?? {};
-  const ingestion = result.health.ingestion ?? {};
-  const jobSummary = summarizeJobs(result.ingestionJobs);
+  const { health, ingestionJobs, auditLog } = result;
+  const catalog = health.catalog ?? {};
+  const composition = health.composition ?? {};
+  const reviewAudit = health.reviewAudit ?? {};
+  const ingestion = health.ingestion ?? {};
+  const jobSummary = summarizeJobs(ingestionJobs);
   const statCards = [
-    { label: "API health", value: result.health.status.toUpperCase(), hint: "FastAPI admin health endpoint", icon: Activity },
+    { label: "API health", value: health.status.toUpperCase(), hint: "FastAPI admin health endpoint", icon: Activity },
     { label: "Content units", value: String(catalog.contentUnitVersions ?? 0), hint: `${catalog.contentUnitFamilies ?? 0} governed families`, icon: Database },
     { label: "Composition", value: String(composition.storyboards ?? catalog.storyboards ?? 0), hint: `${composition.contentBlocks ?? catalog.contentBlocks ?? 0} ContentBlocks ready`, icon: HardDrive },
     { label: "Audit events", value: String(reviewAudit.auditEvents ?? 0), hint: "Governance mutations recorded", icon: KeyRound }
   ];
-  const readinessChecks = buildReadinessChecks(result.health, result.ingestionJobs, jobSummary);
+  const readinessChecks = buildReadinessChecks(health, ingestionJobs, jobSummary);
 
   return (
     <div className="route-body" data-testid="admin-page">
       <PageHeader
         eyebrow="Admin-lite"
         title="Pilot readiness observability"
-        description="API-backed health, ingestion, review, composition, audit, and restricted-content safeguards for pilot operators."
+        description="API-backed health, pipeline/queue, search-index/eval, audit-log, and restricted-content safeguards for pilot operators."
       />
 
       <div className="grid-auto mb-5" data-testid="admin-health-metrics">
@@ -57,76 +62,109 @@ export default async function AdminPage() {
         ))}
       </div>
 
-      <div className="two-col">
-        <Card className="p-4" data-testid="admin-readiness-checks">
-          <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-            <ShieldCheck size={16} color="var(--ok)" /> Readiness checks
-          </div>
-          <div className="grid gap-2">
-            {readinessChecks.map((check) => (
-              <div key={check.label} className="rounded-lg border border-slate-200 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-semibold text-slate-900">{check.label}</div>
-                  <StatusBadge tone={check.tone}>{check.value}</StatusBadge>
-                </div>
-                <p className="m-0 mt-1 text-sm text-slate-500">{check.hint}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
+      <AdminTabNav active={activeTab} />
 
-        <Card className="p-4" data-testid="admin-ingestion-observability">
-          <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-            <Clock3 size={16} /> Ingestion observability
-          </div>
-          {result.ingestionJobs.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center">
-              <div className="text-sm font-bold text-slate-800">No ingestion telemetry returned</div>
-              <p className="m-0 mt-1 text-sm text-slate-500">The Admin health API is reachable, but no ingestion jobs are visible for this workspace yet.</p>
-            </div>
-          ) : (
-            <div className="grid gap-3">
-              <div className="grid grid-cols-2 gap-2">
-                <MiniMetric label="Queued" value={jobSummary.queued} tone="neutral" />
-                <MiniMetric label="Running" value={jobSummary.running} tone="warn" />
-                <MiniMetric label="Complete" value={jobSummary.complete} tone="ok" />
-                <MiniMetric label="Failed" value={jobSummary.failed} tone="danger" />
-              </div>
-              <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-600">
-                <div className="font-bold text-slate-900">Oldest active job</div>
-                <div className="mt-1">{jobSummary.oldestActiveAge ?? "No queued or running jobs."}</div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Tag>{ingestion.totalJobs ?? result.ingestionJobs.length} total jobs</Tag>
-                <Tag tone={jobSummary.failed > 0 ? "danger" : "ok"}>{jobSummary.failed} failed</Tag>
-                {result.health.queue?.status && <Tag tone={result.health.queue.status === "healthy" ? "ok" : "warn"}>{result.health.queue.status}</Tag>}
-              </div>
-            </div>
-          )}
-        </Card>
-      </div>
+      {activeTab === "overview" && <OverviewTab readinessChecks={readinessChecks} ingestion={ingestion} queue={health.queue} ingestionJobs={ingestionJobs} jobSummary={jobSummary} />}
 
-      <Card className="mt-5 p-4" data-testid="admin-guardrails">
-        <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-          <ShieldAlert size={16} className="text-amber-600" /> Restricted-content guardrails
+      {activeTab === "pipeline" && (
+        <div className="grid gap-5" data-testid="admin-tab-panel-pipeline">
+          <div className="two-col">
+            <StageHealthCard stages={getHealthStages(health)} />
+            <QueueHealthCard queue={health.queue} />
+          </div>
+          <RecentFailuresCard failures={health.ingestion?.recentFailures} />
         </div>
-        <div className="grid gap-2 md:grid-cols-2">
-          {[
-            "Search, thumbnails, snippets, where-used, and similarity output use restricted filters before display.",
-            "Governance actions keep AI suggestions as reviewable candidates until an authorized reviewer acts.",
-            "Storyboards and ContentBlocks preserve ordered composition while retaining source provenance.",
-            "Audit counts are loaded from the live Admin health endpoint for pilot readiness checks."
-          ].map((check) => (
-            <div key={check} className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
-              <StatusBadge tone="ok">ready</StatusBadge> <span className="ml-2">{check}</span>
+      )}
+
+      {activeTab === "search-eval" && (
+        <div className="two-col" data-testid="admin-tab-panel-search-eval">
+          <SearchIndexCard searchIndex={health.searchIndex} />
+          <SearchEvalCard searchEval={health.searchEval} />
+        </div>
+      )}
+
+      {activeTab === "audit-log" && (
+        <div data-testid="admin-tab-panel-audit-log">
+          <AuditLogCard result={auditLog} />
+        </div>
+      )}
+
+      {activeTab === "surfaces" && (
+        <div data-testid="admin-tab-panel-surfaces">
+          <AdminSurfacesGrid />
+        </div>
+      )}
+
+      <GuardrailsCard health={health} />
+
+      <div className="mt-5" data-testid="admin-ingestion-workspace">
+        <IngestionWorkspace />
+      </div>
+    </div>
+  );
+}
+
+function OverviewTab({
+  readinessChecks,
+  ingestion,
+  queue,
+  ingestionJobs,
+  jobSummary
+}: {
+  readinessChecks: ReturnType<typeof buildReadinessChecks>;
+  ingestion: AdminHealth["ingestion"];
+  queue: AdminHealth["queue"];
+  ingestionJobs: IngestionJob[];
+  jobSummary: JobSummary;
+}) {
+  return (
+    <div className="two-col" data-testid="admin-tab-panel-overview">
+      <Card className="p-4" data-testid="admin-readiness-checks">
+        <div className="mb-3 flex items-center gap-2 text-sm font-bold">
+          <ShieldCheck size={16} color="var(--ok)" /> Readiness checks
+        </div>
+        <div className="grid gap-2">
+          {readinessChecks.map((check) => (
+            <div key={check.label} className="rounded-lg border border-slate-200 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-semibold text-slate-900">{check.label}</div>
+                <StatusBadge tone={check.tone}>{check.value}</StatusBadge>
+              </div>
+              <p className="m-0 mt-1 text-sm text-slate-500">{check.hint}</p>
             </div>
           ))}
         </div>
       </Card>
 
-      <div className="mt-5" data-testid="admin-ingestion-workspace">
-        <IngestionWorkspace />
-      </div>
+      <Card className="p-4" data-testid="admin-ingestion-observability">
+        <div className="mb-3 flex items-center gap-2 text-sm font-bold">
+          <Clock3 size={16} /> Ingestion observability
+        </div>
+        {ingestionJobs.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center">
+            <div className="text-sm font-bold text-slate-800">No ingestion telemetry returned</div>
+            <p className="m-0 mt-1 text-sm text-slate-500">The Admin health API is reachable, but no ingestion jobs are visible for this workspace yet.</p>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <MiniMetric label="Queued" value={jobSummary.queued} tone="neutral" />
+              <MiniMetric label="Running" value={jobSummary.running} tone="warn" />
+              <MiniMetric label="Complete" value={jobSummary.complete} tone="ok" />
+              <MiniMetric label="Failed" value={jobSummary.failed} tone="danger" />
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-600">
+              <div className="font-bold text-slate-900">Oldest active job</div>
+              <div className="mt-1">{jobSummary.oldestActiveAge ?? "No queued or running jobs."}</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Tag>{ingestion?.totalJobs ?? ingestionJobs.length} total jobs</Tag>
+              <Tag tone={jobSummary.failed > 0 ? "danger" : "ok"}>{jobSummary.failed} failed</Tag>
+              {queue?.status && <Tag tone={queue.status === "healthy" ? "ok" : "warn"}>{queue.status}</Tag>}
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -137,7 +175,8 @@ async function loadAdminReadiness(): Promise<AdminReadinessResult> {
     return {
       status: "ok",
       health,
-      ingestionJobs: ingestionResult.items
+      ingestionJobs: ingestionResult.items,
+      auditLog: await loadAuditLog()
     };
   } catch (error) {
     if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
@@ -147,62 +186,18 @@ async function loadAdminReadiness(): Promise<AdminReadinessResult> {
   }
 }
 
-function buildReadinessChecks(health: AdminHealth, ingestionJobs: IngestionJob[], jobSummary: ReturnType<typeof summarizeJobs>): ReadinessCheck[] {
-  const catalog = health.catalog ?? {};
-  const composition = health.composition ?? {};
-  const reviewAudit = health.reviewAudit ?? {};
-  const ingestion = health.ingestion ?? {};
-  const hasCatalog = (catalog.contentUnitFamilies ?? 0) > 0 && (catalog.contentUnitVersions ?? 0) > 0;
-  const hasComposition = (composition.contentBlocks ?? catalog.contentBlocks ?? 0) > 0 && (composition.storyboards ?? catalog.storyboards ?? 0) > 0;
-  const hasIngestion = (ingestion.totalJobs ?? 0) > 0 || ingestionJobs.length > 0;
-
-  return [
-    {
-      label: "Catalog telemetry",
-      value: hasCatalog ? "ready" : "empty",
-      hint: `${catalog.contentUnitFamilies ?? 0} families and ${catalog.contentUnitVersions ?? 0} versions returned by Admin health.`,
-      tone: hasCatalog ? "ok" : "warn"
-    },
-    {
-      label: "Composition telemetry",
-      value: hasComposition ? "ready" : "empty",
-      hint: `${composition.contentBlocks ?? catalog.contentBlocks ?? 0} ContentBlocks and ${composition.storyboards ?? catalog.storyboards ?? 0} Storyboards returned by Admin health.`,
-      tone: hasComposition ? "ok" : "warn"
-    },
-    {
-      label: "Ingestion telemetry",
-      value: jobSummary.failed > 0 ? "attention" : hasIngestion ? "ready" : "empty",
-      hint: `${ingestionJobs.length} visible jobs with ${jobSummary.running} running and ${jobSummary.failed} failed.`,
-      tone: jobSummary.failed > 0 ? "danger" : hasIngestion ? "ok" : "warn"
-    },
-    {
-      label: "Audit telemetry",
-      value: (reviewAudit.auditEvents ?? 0) > 0 ? "ready" : "empty",
-      hint: `${reviewAudit.auditEvents ?? 0} audit events are visible to the pilot readiness surface; ${reviewAudit.openReviewItems ?? 0} review items remain open.`,
-      tone: (reviewAudit.auditEvents ?? 0) > 0 ? "ok" : "warn"
+/** Isolated so an audit-events-specific failure only degrades the Audit Log tab, not the whole
+ * Admin dashboard (health + ingestion jobs still render even if this call fails independently). */
+async function loadAuditLog(): Promise<AuditLogResult> {
+  try {
+    const events = await getRecentAuditEvents();
+    return { status: "ok", events };
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+      return { status: "restricted" };
     }
-  ];
-}
-
-function summarizeJobs(jobs: IngestionJob[]) {
-  const counts: Record<IngestionJobStatus, number> = {
-    queued: 0,
-    running: 0,
-    failed: 0,
-    complete: 0
-  };
-  for (const job of jobs) counts[job.status] += 1;
-
-  const oldestActive = jobs
-    .filter((job) => job.status === "queued" || job.status === "running")
-    .map((job) => new Date(job.createdAt))
-    .filter((date) => !Number.isNaN(date.getTime()))
-    .sort((left, right) => left.getTime() - right.getTime())[0];
-
-  return {
-    ...counts,
-    oldestActiveAge: oldestActive ? formatAge(oldestActive) : null
-  };
+    return { status: "error", message: error instanceof Error ? error.message : "The audit events API request failed." };
+  }
 }
 
 function MiniMetric({ label, value, tone }: { label: string; value: number; tone: "ok" | "warn" | "danger" | "neutral" }) {
@@ -249,14 +244,4 @@ function AdminError({ message }: { message: string }) {
       </Card>
     </div>
   );
-}
-
-function formatAge(date: Date) {
-  const elapsedMs = Date.now() - date.getTime();
-  if (elapsedMs < 0) return "Scheduled in the future";
-  const elapsedMinutes = Math.floor(elapsedMs / 60_000);
-  if (elapsedMinutes < 1) return "Less than 1 minute old";
-  if (elapsedMinutes < 60) return `${elapsedMinutes} minute${elapsedMinutes === 1 ? "" : "s"} old`;
-  const elapsedHours = Math.floor(elapsedMinutes / 60);
-  return `${elapsedHours} hour${elapsedHours === 1 ? "" : "s"} old`;
 }
