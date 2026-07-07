@@ -1,15 +1,12 @@
 import {
   Archive,
   BookOpen,
-  Building2,
   CheckCircle2,
   FileStack,
   Flag,
   Home,
-  Inbox,
   LayoutGrid,
   Library,
-  LineChart,
   Search,
   Settings,
   ShieldCheck,
@@ -29,6 +26,7 @@ export type NavItem = {
   icon: LucideIcon;
   count?: string;
   preview?: boolean;
+  kbd?: string;
 };
 
 export type ContentFamily = {
@@ -88,20 +86,19 @@ export type StoryboardSection = {
 
 export const navItems: NavItem[] = [
   { href: "/", label: "Home", icon: Home },
-  { href: "/ask", label: "Ask BoxBrain", icon: Search },
+  { href: "/ask", label: "Search", icon: Search, kbd: "⌘K" },
+  { href: "/plays", label: "Plays", icon: BookOpen, preview: true },
+  { href: "/opportunities", label: "Opportunities", icon: Target, preview: true },
   { href: "/library", label: "Library", icon: Library },
   { href: "/storyboards/sb-cloud-modernization", label: "Storyboards", icon: LayoutGrid },
   { href: "/reviews", label: "Reviews", icon: ShieldCheck, count: "12" },
-  { href: "/plays", label: "Plays", icon: BookOpen, preview: true },
-  { href: "/opportunities", label: "Opportunities", icon: Target, preview: true },
   { href: "/admin", label: "Admin", icon: Settings }
 ];
 
 export const secondaryNav: NavItem[] = [
-  { href: "/ask", label: "Inbox", icon: Inbox, count: "8" },
-  { href: "/library", label: "Accounts", icon: Building2 },
+  { href: "/ingestion", label: "Ingestion", icon: Archive },
   { href: "/variation-explorer", label: "Variation Explorer", icon: FileStack },
-  { href: "/admin", label: "Reports", icon: LineChart }
+  { href: "/publish", label: "Publish", icon: CheckCircle2 }
 ];
 
 export const favoriteItems = [
