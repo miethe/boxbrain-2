@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Folder,
   HelpCircle,
-  Layers,
   Search,
   Sparkles,
   Star
@@ -15,6 +14,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { MySelectionButton } from "@/components/selection";
 import { favoriteItems, navItems, secondaryNav, type NavItem } from "@/features/demo/data";
 
 const primaryNavOrder = [
@@ -163,7 +163,7 @@ function Topbar() {
       <Link className="icon-btn borderless" href="/ask" aria-label="Ask BoxBrain">
         <Sparkles size={16} color="var(--ai)" />
       </Link>
-      <SelectionTray />
+      <MySelectionButton />
       <button className="icon-btn borderless" aria-label="Notifications">
         <Bell size={16} />
         <span className="badge-dot" aria-hidden="true" />
@@ -173,15 +173,5 @@ function Topbar() {
       </button>
       <div className="grid h-9 w-9 place-items-center rounded-full bg-slate-900 text-xs font-bold text-white">AK</div>
     </header>
-  );
-}
-
-function SelectionTray() {
-  return (
-    <Link className="btn hidden lg:inline-flex" href="/storyboards/sb-cloud-modernization">
-      <Layers size={14} />
-      My Selection
-      <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">4</span>
-    </Link>
   );
 }

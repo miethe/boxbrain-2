@@ -8,7 +8,7 @@ export default defineConfig({
     }
   },
   test: {
-    include: ["features/**/*.test.ts", "features/**/*.test.tsx", "components/**/*.test.tsx", "lib/**/*.test.ts"],
+    include: ["features/**/*.test.ts", "features/**/*.test.tsx", "components/**/*.test.ts", "components/**/*.test.tsx", "lib/**/*.test.ts"],
     exclude: ["tests/e2e/**", "node_modules/**", ".next/**"]
   }
 });
