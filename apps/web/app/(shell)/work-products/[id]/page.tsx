@@ -1,247 +1,239 @@
-import Link from "next/link";
-import { AlertCircle, Download, FileText, Layers, PackageCheck, ShieldCheck } from "lucide-react";
-import { ApiError, API_BASE_URL, boxbrainApi, type ContentUnitVersion, type WorkProductVersionDetail } from "@/lib/api";
-import { Button, Card, PageHeader, SlideThumb, StatusBadge, Tag } from "@/components/ui";
-import { contentFamilies, workProducts, type WorkProduct } from "@/features/demo/data";
+import { revalidatePath } from "next/cache";
+import { AlertCircle, FileQuestion } from "lucide-react";
+import {
+  ApiError,
+  API_BASE_URL,
+  boxbrainApi,
+  type Comment,
+  type ContentUnitWhereUsedReference,
+  type Note,
+  type SearchResultItem,
+  type WorkProductFamilyCard,
+  type WorkProductVersionDetail
+} from "@/lib/api";
+import { Card, PageHeader } from "@/components/ui";
+import { WorkProductDetail } from "@/components/work-products/work-product-detail";
 
-type WorkProductPageModel =
+export const dynamic = "force-dynamic";
+
+type WorkProductLoadResult =
   | {
-      source: "api";
+      status: "ok";
       workProduct: WorkProductVersionDetail;
+      families: WorkProductFamilyCard[];
+      comments: Comment[];
+      notes: Note[];
+      similarByUnit: Record<string, SearchResultItem[]>;
+      whereUsedByUnit: Record<string, ContentUnitWhereUsedReference[]>;
     }
-  | {
-      source: "demo";
-      workProduct: WorkProduct;
-    };
+  | { status: "restricted" }
+  | { status: "not_found"; id: string }
+  | { status: "error"; message: string };
 
 export default async function WorkProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const result = await loadWorkProduct(id);
 
-  if (result.status === "restricted") {
-    return <RestrictedWorkProduct />;
-  }
-
-  const model = result.model;
-  const isApiBacked = model.source === "api";
-  const title = model.workProduct.title;
-  const description = isApiBacked
-    ? model.workProduct.provenance.sourceRefs?.join(" · ") || "API-backed WorkProduct version with governed provenance."
-    : model.workProduct.summary;
-  const status = isApiBacked ? model.workProduct.approvalState : model.workProduct.status;
-  const version = isApiBacked ? model.workProduct.versionNumber : model.workProduct.version;
-  const artifactType = isApiBacked ? model.workProduct.artifactType : model.workProduct.type;
-  const slideCount = isApiBacked ? model.workProduct.filmstrip.length : model.workProduct.slideCount;
+  if (result.status === "restricted") return <RestrictedWorkProduct />;
+  if (result.status === "not_found") return <WorkProductNotFound id={result.id} />;
+  if (result.status === "error") return <WorkProductError message={result.message} />;
 
   return (
-    <div className="route-body">
-      <PageHeader
-        eyebrow={isApiBacked ? "WorkProduct version" : "WorkProduct detail"}
-        title={title}
-        description={description}
-        actions={
-          <>
-            <Link className="btn" href="/storyboards/sb-cloud-modernization">
-              <Layers size={14} /> Storyboard
-            </Link>
-            <Link className="btn btn-primary" href="/publish">
-              <PackageCheck size={14} /> Publish review
-            </Link>
-          </>
-        }
-      />
-      <div className="two-col">
-        <Card className="overflow-hidden">
-          <div className="grid gap-5 p-5 lg:grid-cols-[minmax(320px,0.8fr)_minmax(0,1fr)]">
-            <WorkProductPreview model={model} title={title} />
-            <div>
-              <div className="flex flex-wrap gap-2">
-                <StatusBadge tone={status === "approved" ? "ok" : "warn"}>{status}</StatusBadge>
-                <Tag>{version}</Tag>
-                <Tag>{slideCount} slides</Tag>
-                <StatusBadge tone="ai">{isApiBacked ? "api indexed" : "demo indexed"}</StatusBadge>
-              </div>
-              <dl className="mt-5 grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <dt className="text-slate-500">Owner</dt>
-                  <dd className="m-0 font-bold">{isApiBacked ? "Repository" : model.workProduct.owner}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Updated</dt>
-                  <dd className="m-0 font-bold">{isApiBacked ? formatDate(model.workProduct.provenance.createdAt) : model.workProduct.updatedAt}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Type</dt>
-                  <dd className="m-0 font-bold">{artifactType}</dd>
-                </div>
-                <div>
-                  <dt className="text-slate-500">Source</dt>
-                  <dd className="m-0 font-bold">{isApiBacked ? model.workProduct.provenance.originType : "PPTX upload"}</dd>
-                </div>
-              </dl>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Button>
-                  <Download size={14} /> Original
-                </Button>
-                <Button>
-                  <FileText size={14} /> Build manifest
-                </Button>
-              </div>
-            </div>
-          </div>
-          <div className="border-t border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-500">
-            {isApiBacked
-              ? "Loaded from /api/work-products/versions with ordered ContentUnit membership and provenance."
-              : "Demo fallback shown because the API version detail was unavailable."}
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-            <ShieldCheck size={16} color="var(--ok)" /> Governance checklist
-          </div>
-          {["All restricted units are permission checked", "Approved content has provenance", "Snapshot-compatible manifest is ready", "AI metadata is traceable"].map((item) => (
-            <div key={item} className="mb-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
-              {item}
-            </div>
-          ))}
-        </Card>
-      </div>
+    <WorkProductDetail
+      workProduct={result.workProduct}
+      families={result.families}
+      comments={result.comments}
+      notes={result.notes}
+      similarByUnit={result.similarByUnit}
+      whereUsedByUnit={result.whereUsedByUnit}
+      apiBaseUrl={API_BASE_URL}
+      createCommentAction={createWorkProductCommentAction}
+      createNoteAction={createWorkProductNoteAction}
+    />
+  );
+}
 
-      <Card className="mt-5 overflow-hidden">
-        <div className="border-b border-slate-200 p-4">
-          <h2 className="m-0 text-base font-bold">Contained ContentUnits</h2>
-          <p className="m-0 text-sm text-slate-500">Each slide/page is modeled as one atomic unit with ordered source membership.</p>
+async function loadWorkProduct(id: string): Promise<WorkProductLoadResult> {
+  try {
+    const workProduct = await boxbrainApi.getWorkProductVersion(id);
+    const [families, comments, notes, ancillary] = await Promise.all([
+      safeListWorkProductFamilies(),
+      safeListComments(workProduct.id),
+      safeListNotes(workProduct.id),
+      loadFilmstripAncillary(workProduct)
+    ]);
+    return {
+      status: "ok",
+      workProduct,
+      families,
+      comments,
+      notes,
+      similarByUnit: ancillary.similarByUnit,
+      whereUsedByUnit: ancillary.whereUsedByUnit
+    };
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return { status: "restricted" };
+    if (error instanceof ApiError && error.status === 404) return { status: "not_found", id };
+    return { status: "error", message: error instanceof Error ? error.message : "The WorkProduct API request failed." };
+  }
+}
+
+async function loadFilmstripAncillary(workProduct: WorkProductVersionDetail) {
+  const entries = await Promise.all(
+    workProduct.filmstrip.map(async (unit) => {
+      const [similar, whereUsed] = await Promise.all([safeListSimilar(unit.id), safeListWhereUsed(unit.id)]);
+      return [unit.id, { similar, whereUsed }] as const;
+    })
+  );
+
+  return entries.reduce(
+    (acc, [id, value]) => {
+      acc.similarByUnit[id] = value.similar;
+      acc.whereUsedByUnit[id] = value.whereUsed;
+      return acc;
+    },
+    {
+      similarByUnit: {} as Record<string, SearchResultItem[]>,
+      whereUsedByUnit: {} as Record<string, ContentUnitWhereUsedReference[]>
+    }
+  );
+}
+
+async function safeListWorkProductFamilies() {
+  try {
+    return (await boxbrainApi.listWorkProductFamilies()).items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function safeListSimilar(versionId: string) {
+  try {
+    return await boxbrainApi.listSimilarContentUnits(versionId);
+  } catch {
+    return [];
+  }
+}
+
+async function safeListWhereUsed(versionId: string) {
+  try {
+    return await boxbrainApi.listContentUnitWhereUsed(versionId);
+  } catch {
+    return [];
+  }
+}
+
+async function safeListComments(versionId: string) {
+  try {
+    return await boxbrainApi.listComments("work_product_version", versionId);
+  } catch {
+    return [];
+  }
+}
+
+async function safeListNotes(versionId: string) {
+  try {
+    return await boxbrainApi.listNotes("work_product_version", versionId);
+  } catch {
+    return [];
+  }
+}
+
+async function createWorkProductCommentAction(formData: FormData) {
+  "use server";
+
+  const pageId = requiredFormValue(formData, "pageId");
+  const versionId = requiredFormValue(formData, "versionId");
+  await boxbrainApi.createComment({
+    kind: "persistent_comment",
+    targetType: "work_product_version",
+    targetId: versionId,
+    body: requiredFormValue(formData, "body")
+  });
+  revalidateWorkProductPaths(pageId, versionId);
+}
+
+async function createWorkProductNoteAction(formData: FormData) {
+  "use server";
+
+  const pageId = requiredFormValue(formData, "pageId");
+  const versionId = requiredFormValue(formData, "versionId");
+  await boxbrainApi.createNote({
+    targetType: "work_product_version",
+    targetId: versionId,
+    title: optionalFormValue(formData, "title"),
+    body: requiredFormValue(formData, "body"),
+    noteType: optionalFormValue(formData, "noteType") ?? "review_note",
+    isPinned: formData.get("isPinned") === "on"
+  });
+  revalidateWorkProductPaths(pageId, versionId);
+}
+
+function revalidateWorkProductPaths(pageId: string, versionId: string) {
+  revalidatePath(`/work-products/${pageId}`);
+  revalidatePath(`/publish/${versionId}`);
+}
+
+function requiredFormValue(formData: FormData, field: string) {
+  const value = optionalFormValue(formData, field);
+  if (!value) throw new Error(`${field} is required.`);
+  return value;
+}
+
+function optionalFormValue(formData: FormData, field: string) {
+  const value = formData.get(field);
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function WorkProductError({ message }: { message: string }) {
+  return (
+    <div className="route-body" data-testid="work-product-error">
+      <PageHeader eyebrow="WorkProduct detail" title="WorkProduct unavailable" description="The live WorkProduct API could not be loaded." />
+      <Card className="border-red-200 bg-red-50 p-5 text-red-900">
+        <div className="flex items-start gap-3">
+          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div>
+            <div className="font-bold">WorkProduct request failed</div>
+            <p className="m-0 mt-1 text-sm">{message}</p>
+          </div>
         </div>
-        {isApiBacked ? <ApiFilmstrip items={model.workProduct.filmstrip} /> : <DemoFilmstrip />}
       </Card>
     </div>
   );
 }
 
-async function loadWorkProduct(id: string): Promise<{ status: "ok"; model: WorkProductPageModel } | { status: "restricted" }> {
-  try {
-    const workProduct = await boxbrainApi.getWorkProductVersion(id);
-    return { status: "ok", model: { source: "api", workProduct } };
-  } catch (error) {
-    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-      return { status: "restricted" };
-    }
-    const workProduct = workProducts.find((item) => item.id === id) ?? workProducts[0];
-    return { status: "ok", model: { source: "demo", workProduct } };
-  }
-}
-
-function WorkProductPreview({ model, title }: { model: WorkProductPageModel; title: string }) {
-  if (model.source === "api" && model.workProduct.previewUri) {
-    return <RenderedPreview uri={model.workProduct.previewUri} title={title} />;
-  }
-  if (model.source === "demo") {
-    return <SlideThumb title={title} variant={model.workProduct.thumb} brand="BB" />;
-  }
-  const firstFilmstripItem = model.workProduct.filmstrip.find((item) => item.thumbnailUri || item.renderUri);
-  if (firstFilmstripItem?.thumbnailUri || firstFilmstripItem?.renderUri) {
-    return <RenderedPreview uri={firstFilmstripItem.thumbnailUri ?? firstFilmstripItem.renderUri ?? ""} title={title} />;
-  }
-  return <SlideThumb title={title} variant="dark" brand="BB" />;
-}
-
-function ApiFilmstrip({ items }: { items: ContentUnitVersion[] }) {
-  if (items.length === 0) {
-    return (
-      <div className="p-6 text-center">
-        <div className="text-sm font-bold text-slate-800">No ContentUnits returned</div>
-        <p className="mx-auto mt-1 max-w-lg text-sm text-slate-500">This WorkProduct version exists, but the API did not return ordered filmstrip membership.</p>
-      </div>
-    );
-  }
-
+function WorkProductNotFound({ id }: { id: string }) {
   return (
-    <div className="grid-auto p-4">
-      {items.map((item, index) => (
-        <Link href={`/content-units/${item.id}`} key={item.id} className="rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
-          {item.thumbnailUri || item.renderUri ? (
-            <RenderedPreview uri={item.thumbnailUri ?? item.renderUri ?? ""} title={item.summary ?? `Slide ${index + 1}`} />
-          ) : (
-            <SlideThumb title={item.summary ?? `Slide ${index + 1}`} variant={index % 2 === 0 ? "light" : "teal"} />
-          )}
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <div className="min-w-0 truncate text-sm font-bold">
-              {index + 1}. {item.summary ?? item.id}
-            </div>
-            <StatusBadge tone={item.approvalState === "approved" ? "ok" : "warn"}>{item.approvalState}</StatusBadge>
+    <div className="route-body" data-testid="work-product-not-found">
+      <PageHeader eyebrow="WorkProduct detail" title="WorkProduct not found" description={`No visible WorkProduct version was returned for ${id}.`} />
+      <Card className="border-slate-200 p-5">
+        <div className="flex items-start gap-3">
+          <FileQuestion size={18} className="mt-0.5 shrink-0 text-[var(--ink-3)]" aria-hidden="true" />
+          <div>
+            <div className="font-bold">No detail available</div>
+            <p className="m-0 mt-1 text-sm text-[var(--ink-3)]">The detail endpoint requires a WorkProduct version id. Family cards do not currently expose a latest version id.</p>
           </div>
-          <div className="mt-1 text-xs text-slate-500">{item.versionNumber}</div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function DemoFilmstrip() {
-  return (
-    <div className="grid-auto p-4">
-      {contentFamilies.map((family, index) => (
-        <Link href={`/content-units/${family.id}`} key={family.id} className="rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
-          <SlideThumb title={family.title} variant={family.thumb} />
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <div className="min-w-0 truncate text-sm font-bold">
-              {index + 1}. {family.title}
-            </div>
-            <StatusBadge tone={family.trust === "approved" ? "ok" : "warn"}>{family.trust}</StatusBadge>
-          </div>
-          <div className="mt-1 text-xs text-slate-500">{family.provenance}</div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function RenderedPreview({ uri, title }: { uri: string; title: string }) {
-  return (
-    <div
-      className="slide-thumb light bg-cover bg-center"
-      aria-label={`${title} preview`}
-      style={{
-        backgroundImage: `url("${assetUrl(uri)}")`
-      }}
-    >
-      <div className="slide-content bg-white/75">
-        <div className="slide-brand">BB</div>
-        <div className="slide-title">{title}</div>
-      </div>
+        </div>
+      </Card>
     </div>
   );
 }
 
 function RestrictedWorkProduct() {
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="work-product-restricted">
       <PageHeader eyebrow="WorkProduct detail" title="Restricted WorkProduct" description="This WorkProduct version is not available to the current user." />
       <Card className="border-amber-200 bg-amber-50 p-5 text-amber-900">
         <div className="flex items-start gap-3">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
+          <AlertCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
           <div>
             <div className="font-bold">Access restricted</div>
-            <p className="m-0 mt-1 text-sm">No preview, snippets, filmstrip items, or provenance details are shown for restricted content.</p>
+            <p className="m-0 mt-1 text-sm">No preview, snippets, filmstrip items, comments, notes, or provenance details are shown for restricted content.</p>
           </div>
         </div>
       </Card>
     </div>
   );
-}
-
-function assetUrl(uri: string) {
-  if (/^https?:\/\//.test(uri)) return uri;
-  return `${API_BASE_URL}${uri.startsWith("/") ? "" : "/"}${uri}`;
-}
-
-function formatDate(value?: string) {
-  if (!value) return "Unknown";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  }).format(date);
 }

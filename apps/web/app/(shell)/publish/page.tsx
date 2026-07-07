@@ -1,67 +1,35 @@
 import Link from "next/link";
-import { CheckCircle2, Download, FileText, Link2, ShieldCheck } from "lucide-react";
-import { Button, Card, PageHeader, SlideThumb, StatusBadge } from "@/components/ui";
-import { contentFamilies, workProducts } from "@/features/demo/data";
+import { redirect } from "next/navigation";
+import { FileQuestion } from "lucide-react";
+import { Card, PageHeader } from "@/components/ui";
 
-export default function PublishPage() {
-  const workProduct = workProducts[0];
+export const dynamic = "force-dynamic";
+
+export default async function PublishPage({ searchParams }: { searchParams?: Promise<{ versionId?: string }> }) {
+  const query = (await searchParams) ?? {};
+  if (query.versionId) redirect(`/publish/${query.versionId}`);
+
   return (
-    <div className="route-body">
+    <div className="route-body" data-testid="publish-unscoped">
       <PageHeader
         eyebrow="Publish and package"
-        title="Final governance review"
-        description="Package generation is deferred, but the MVP records manifest-compatible review state and provenance checks."
-        actions={
-          <>
-            <Link className="btn" href={`/work-products/${workProduct.id}`}>Back to WorkProduct</Link>
-            <Button variant="primary">
-              <Download size={14} /> Export package
-            </Button>
-          </>
-        }
+        title="Choose a WorkProduct version"
+        description="Publish review is scoped to a specific WorkProduct version. Open it from a WorkProduct detail page so package and provenance checks can use live data."
       />
-      <div className="three-col">
-        <Card className="p-4">
-          <SlideThumb title={workProduct.title} variant={workProduct.thumb} brand="BB" />
-          <h2 className="mt-4 text-base font-bold">{workProduct.title}</h2>
-          <p className="text-sm text-slate-500">{workProduct.summary}</p>
-          <div className="mt-3 grid gap-2">
-            <StatusBadge tone="ok">snapshot ready</StatusBadge>
-            <StatusBadge tone="ok">build manifest compatible</StatusBadge>
-            <StatusBadge tone="warn">manual export placeholder</StatusBadge>
+      <Card className="max-w-2xl p-5">
+        <div className="flex items-start gap-3">
+          <FileQuestion size={18} className="mt-0.5 shrink-0 text-[var(--ink-3)]" aria-hidden="true" />
+          <div>
+            <div className="font-bold">No WorkProduct version selected</div>
+            <p className="m-0 mt-1 text-sm text-[var(--ink-3)]">
+              The WorkProduct families API does not expose latest version ids, so this page cannot safely pick a default deck.
+            </p>
+            <Link href="/work-products/00000000-0000-4000-8000-000000001102" className="btn btn-primary btn-sm mt-3">
+              Open seeded Q2 WorkProduct
+            </Link>
           </div>
-        </Card>
-        <Card className="p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-            <ShieldCheck size={16} color="var(--ok)" /> Review checklist
-          </div>
-          {[
-            "All content has provenance",
-            "No unresolved restricted-content exposure",
-            "AI suggestions are tied to review records",
-            "Comments and notes remain separate",
-            "Snapshot is immutable after save"
-          ].map((item) => (
-            <div key={item} className="mb-2 flex items-center gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
-              <CheckCircle2 size={15} /> {item}
-            </div>
-          ))}
-        </Card>
-        <Card className="p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-            <FileText size={16} /> Manifest slots
-          </div>
-          {contentFamilies.slice(0, 4).map((family, index) => (
-            <div key={family.id} className="mb-2 rounded-lg border border-slate-200 p-3 text-sm">
-              <div className="font-bold">{index + 1}. {family.title}</div>
-              <div className="text-xs text-slate-500">{family.provenance}</div>
-            </div>
-          ))}
-          <Button className="mt-2 w-full">
-            <Link2 size={14} /> Copy manifest link
-          </Button>
-        </Card>
-      </div>
+        </div>
+      </Card>
     </div>
   );
 }
