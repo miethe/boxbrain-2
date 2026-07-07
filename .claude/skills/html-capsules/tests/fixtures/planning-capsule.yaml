@@ -1,0 +1,100 @@
+html_capsule:
+  schema_version: 0.1
+  capsule_id: fixture_planning_capsule_template_lib
+  title: "HTML Capsules · Template Library Planning"
+  capsule_type: planning-capsule
+  status: draft
+  created_at: "2026-05-15T10:00:00-04:00"
+  owner: Nick Miethe
+  confidentiality: personal
+  interactivity_level: L2_exportable
+  safe_html_mode: strict
+
+  source_of_truth:
+    design_spec: .claude/plans/html_capsules_agentic_os_bundle/HTML_Capsules_and_Agentic_Run_Cards_Spec.md
+    manifest: tests/fixtures/planning-capsule.yaml
+
+  planning_capsule:
+    summary: "Planning board for the HTML Capsules Template Library v1. Tracks template selection, implementation sequencing, and open architectural questions across six capsule types."
+
+    key_takeaways:
+      - "Six templates cover the full v1 spectrum: operational (run-card), strategic (planning, GTM), epistemic (research, decision), and skill-management (skill-card)."
+      - "All templates extend _base.html.j2 — DRY layout, shared writeback JS, shared CSP."
+      - "Fixtures must validate against capsule-manifest.schema.json before smoke tests pass."
+
+    decision_matrix:
+      - option: "Vanilla JS only"
+        description: "No external scripts, all inline JS"
+        pros:
+          - "No CDN dependency"
+          - "Passes safe_html policy"
+        cons:
+          - "More verbose JS"
+        score: 10
+      - option: "Alpine.js via CDN"
+        description: "Lightweight reactivity layer from unpkg"
+        pros:
+          - "Less boilerplate"
+        cons:
+          - "Violates safe_html policy"
+          - "Requires connect-src exception"
+        score: 2
+      - option: "HTMX via CDN"
+        description: "Hypermedia-driven interactions"
+        pros:
+          - "Elegant for server-driven updates"
+        cons:
+          - "Overkill for L2"
+          - "External dependency"
+        score: 1
+
+    decision_rationale: "Vanilla JS is the only option that satisfies the safe_html policy (no external scripts). Score: 10/10."
+
+    open_questions:
+      - question: "Should decision-card support multi-stakeholder voting at L2?"
+        status: OPEN
+        owner: Nick Miethe
+        context: "Potential v1.1 feature — deferred for now."
+      - question: "Should research-capsule claim map support D3-rendered force graph?"
+        status: IN_DEBATE
+        context: "D3 would require bundling — conflicts with inline-only policy."
+      - question: "Should _base.html.j2 provide a shared tab component?"
+        status: RESOLVED
+        context: "Resolved: each template implements its own tab UX to preserve template independence."
+
+    board:
+      NOW:
+        - title: "P2-T01: run-card.html.j2"
+          notes: "Sections: intent, task node, agent, IO, evidence, risks, decisions, next actions"
+          owner: frontend-developer
+        - title: "P2-T02: planning-capsule.html.j2"
+          notes: "Decision matrix, OQ chips, kanban board, localStorage round-trip"
+          owner: frontend-developer
+        - title: "P2-T07: fixtures"
+          notes: "6 YAML manifests, one per template"
+          owner: frontend-developer
+      NEXT:
+        - title: "P2-T03: skill-card.html.j2"
+          notes: "SkillBOM normalization, promotion status"
+          owner: frontend-developer
+        - title: "P2-T04: decision-card.html.j2"
+          notes: "ADR-style, options table, consequences"
+          owner: frontend-developer
+      LATER:
+        - title: "Phase 3: meaty-capsule CLI"
+          notes: "After all templates pass smoke tests"
+          owner: Nick Miethe
+        - title: "Phase 4: Workflow integration"
+          notes: "Hook into SkillMeat workflows"
+          owner: Nick Miethe
+      DEBATE:
+        - title: "D3 force graph for claim map"
+          notes: "Would require bundling D3 inline — 80KB gzipped"
+          owner: Nick Miethe
+
+  writebacks:
+    meatywiki: proposed
+    ccdash: proposed
+    skillmeat: proposed
+    intenttree: proposed
+    control_plane: proposed

@@ -1,0 +1,558 @@
+{% extends "_base.html.j2" %}
+
+{% block title %}{{ capsule.title | default("GTM Brief") }} · GTM Brief{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* -----------------------------------------------------------------------
+     GTM Brief — Executive / Business narrative aesthetic
+     Deep slate + electric indigo + crisp white type. Authoritative,
+     polished — feels like a well-designed board deck slide.
+  ----------------------------------------------------------------------- */
+  :root {
+    --bg:       #09090e;
+    --fg:       #f0f0f8;
+    --accent:   #818cf8;
+    --accent2:  #34d399;
+    --muted:    #71717a;
+    --border:   #1e1e2e;
+    --surface:  #13131c;
+    --surface2: #1a1a28;
+    --surface3: #222236;
+    --radius:   8px;
+    --gold:     #f59e0b;
+    --red:      #f87171;
+    --green:    #34d399;
+    --blue:     #60a5fa;
+  }
+
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse at 60% 0%, rgba(129,140,248,.09) 0%, transparent 50%),
+      radial-gradient(ellipse at 0% 80%, rgba(52,211,153,.05) 0%, transparent 40%);
+  }
+
+  .capsule-wrapper { max-width: 900px; }
+
+  .capsule-header h1 {
+    font-size: 1.7rem;
+    letter-spacing: -0.035em;
+    font-weight: 800;
+    color: var(--fg);
+  }
+
+  .capsule-header h1 .brief-eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  /* Tabs */
+  .gtm-nav {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: var(--space-lg);
+    overflow-x: auto;
+  }
+
+  .gtm-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 9px 18px 11px;
+    white-space: nowrap;
+    transition: color 0.12s, border-color 0.12s;
+    font-family: var(--font-sans);
+  }
+
+  .gtm-tab:hover { color: var(--fg); }
+
+  .gtm-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .gtm-view { display: none; }
+  .gtm-view.active { display: block; animation: gtm-fade .16s ease; }
+  @keyframes gtm-fade { from { opacity:.3; transform:translateY(3px); } to { opacity:1; transform:none; } }
+
+  /* Executive narrative */
+  .exec-narrative {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-xl);
+    margin-bottom: var(--space-lg);
+  }
+
+  .exec-narrative .narrative-text {
+    font-size: 1.05rem;
+    line-height: 1.75;
+    color: #d4d4f0;
+  }
+
+  .exec-narrative .narrative-text p:last-child { margin-bottom: 0; }
+
+  /* KPI strip */
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: var(--space-lg);
+  }
+
+  .kpi-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    text-align: center;
+  }
+
+  .kpi-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .kpi-label {
+    font-size: 0.74rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* Options table */
+  .gtm-options-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+
+  .gtm-options-table th {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 9px 14px;
+    text-align: left;
+    font-size: 0.73rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .gtm-options-table td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    vertical-align: top;
+    color: var(--fg);
+    line-height: 1.5;
+  }
+
+  .gtm-options-table tr:nth-child(even) td { background: rgba(255,255,255,.012); }
+
+  .gtm-options-table tr.recommended td {
+    background: rgba(129,140,248,.04);
+    border-color: rgba(129,140,248,.2);
+  }
+
+  .gtm-options-table tr.recommended td:first-child {
+    border-left: 3px solid var(--accent);
+  }
+
+  .recommended-pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    font-weight: 700;
+    background: rgba(129,140,248,.15);
+    border: 1px solid rgba(129,140,248,.35);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  /* Recommendation block */
+  .recommendation-block {
+    background: linear-gradient(135deg, rgba(129,140,248,.08), rgba(52,211,153,.05));
+    border: 1px solid rgba(129,140,248,.25);
+    border-radius: var(--radius);
+    padding: var(--space-lg);
+    margin-bottom: var(--space-lg);
+  }
+
+  .recommendation-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .recommendation-text {
+    font-size: 1rem;
+    color: #c8c8f0;
+    line-height: 1.7;
+  }
+
+  .recommendation-text p:last-child { margin-bottom: 0; }
+
+  /* Risks and open questions */
+  .oq-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 11px 14px;
+    margin-bottom: 8px;
+    font-size: 0.88rem;
+  }
+
+  .oq-item:last-child { margin-bottom: 0; }
+
+  .priority-chip {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 3px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+
+  .priority-HIGH {
+    background: rgba(248,113,113,.1);
+    border-color: rgba(248,113,113,.3);
+    color: var(--red);
+  }
+
+  .priority-MED, .priority-MEDIUM {
+    background: rgba(245,158,11,.1);
+    border-color: rgba(245,158,11,.3);
+    color: var(--gold);
+  }
+
+  .priority-LOW {
+    background: rgba(52,211,153,.1);
+    border-color: rgba(52,211,153,.3);
+    color: var(--green);
+  }
+
+  /* Export / writeback */
+  .export-panel {
+    background: var(--surface2);
+    border: 1px solid rgba(129,140,248,.2);
+    border-radius: var(--radius);
+    padding: var(--space-lg);
+  }
+
+  .export-panel h3 {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    margin-bottom: var(--space-md);
+  }
+
+  @media (max-width: 700px) {
+    .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+    .gtm-options-table { font-size: 0.8rem; }
+    .oq-item { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block header %}
+<header class="capsule-header">
+  <h1>
+    <span class="brief-eyebrow">GTM Brief</span>
+    {{ capsule.title | default(capsule_id) }}
+  </h1>
+  <div class="meta">
+    {% if capsule.status %}
+    <span class="badge">{{ capsule.status }}</span>
+    {% endif %}
+    {% if capsule.owner %}
+    <span>{{ capsule.owner }}</span>
+    {% endif %}
+    {% if capsule.created_at %}
+    <span>{{ capsule.created_at }}</span>
+    {% endif %}
+    {% if capsule.confidentiality %}
+    <span class="badge">{{ capsule.confidentiality }}</span>
+    {% endif %}
+  </div>
+</header>
+{% endblock %}
+
+{% block content %}
+{% set gtm = capsule.gtm_brief | default({}) %}
+{% set narrative = gtm.executive_narrative | default(capsule.executive_narrative | default('')) %}
+{% set options_list = gtm.options | default(capsule.options | default([])) %}
+{% set recommendation = gtm.recommendation | default(capsule.recommendation | default('')) %}
+{% set open_questions = gtm.open_questions | default(capsule.open_questions | default([])) %}
+{% set kpis = gtm.kpis | default(capsule.kpis | default([])) %}
+
+{# Navigation tabs #}
+<nav class="gtm-nav" aria-label="GTM brief sections">
+  <button class="gtm-tab active" onclick="gtmSwitch('narrative', this)">Narrative</button>
+  {% if options_list %}
+  <button class="gtm-tab" onclick="gtmSwitch('options', this)">Options</button>
+  {% endif %}
+  {% if recommendation %}
+  <button class="gtm-tab" onclick="gtmSwitch('recommendation', this)">Recommendation</button>
+  {% endif %}
+  {% if open_questions %}
+  <button class="gtm-tab" onclick="gtmSwitch('questions', this)">Open Questions</button>
+  {% endif %}
+  <button class="gtm-tab" onclick="gtmSwitch('export', this)">Export</button>
+</nav>
+
+{# Narrative view #}
+<div class="gtm-view active" id="gtm-view-narrative">
+  {% if kpis %}
+  <div class="kpi-strip">
+    {% for kpi in kpis %}
+    <div class="kpi-card">
+      <div class="kpi-value">{{ kpi.value if kpi is mapping else kpi }}</div>
+      <div class="kpi-label">{{ kpi.label if kpi is mapping else '' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if narrative %}
+  <div class="exec-narrative">
+    <div class="narrative-text">
+      {% if narrative is string %}
+      <p>{{ narrative }}</p>
+      {% else %}
+      {% for para in narrative %}
+      <p>{{ para }}</p>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p style="color:var(--muted)">No executive narrative provided.</p>
+  {% endif %}
+
+  {% if capsule.source_of_truth %}
+  <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-md)">
+    <div style="font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Source of Truth</div>
+    {% for key, val in capsule.source_of_truth.items() %}
+    <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
+      <span style="font-family:var(--font-mono);font-size:0.76rem;color:var(--muted);min-width:110px">{{ key }}</span>
+      <code style="font-size:0.8em;color:var(--fg)">{{ val }}</code>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{# Options view #}
+{% if options_list %}
+<div class="gtm-view" id="gtm-view-options">
+  <div style="overflow-x:auto">
+    <table class="gtm-options-table" aria-label="GTM options">
+      <thead>
+        <tr>
+          <th>Option</th>
+          <th>Description</th>
+          <th>Investment</th>
+          <th>Upside</th>
+          <th>Risk</th>
+          <th>Timeline</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set rec_name = gtm.recommended_option | default('') %}
+        {% for opt in options_list %}
+        {% set is_rec = (opt.name | default(opt.option | default(''))) == rec_name or opt.recommended | default(false) %}
+        <tr class="{{ 'recommended' if is_rec else '' }}">
+          <td>
+            <strong>{{ opt.name | default(opt.option | default(opt)) }}</strong>
+            {% if is_rec %}<span class="recommended-pill">Rec</span>{% endif %}
+          </td>
+          <td>{{ opt.description | default('') }}</td>
+          <td>{{ opt.investment | default(opt.cost | default('—')) }}</td>
+          <td>{{ opt.upside | default(opt.benefit | default('—')) }}</td>
+          <td>
+            {% if opt.risk %}
+            {% set r = opt.risk | string | upper %}
+            <span class="priority-chip priority-{{ r }}">{{ opt.risk }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ opt.timeline | default('—') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# Recommendation view #}
+{% if recommendation %}
+<div class="gtm-view" id="gtm-view-recommendation">
+  <div class="recommendation-block">
+    <div class="recommendation-label">Recommendation</div>
+    <div class="recommendation-text">
+      {% if recommendation is string %}
+      <p>{{ recommendation }}</p>
+      {% else %}
+      {% for para in recommendation %}
+      <p>{{ para }}</p>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+  {% if gtm.next_steps %}
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-md)">
+    <div style="font-size:0.73rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px">Next Steps</div>
+    {% for step in gtm.next_steps %}
+    <div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:0.88rem">
+      <span style="font-family:var(--font-mono);font-size:0.7rem;background:rgba(129,140,248,.1);border:1px solid rgba(129,140,248,.2);color:var(--accent);padding:2px 6px;border-radius:3px;flex-shrink:0">{{ '%02d' | format(loop.index) }}</span>
+      <span>{{ step.step if step is mapping else step }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# Open Questions view #}
+{% if open_questions %}
+<div class="gtm-view" id="gtm-view-questions">
+  {% for q in open_questions %}
+  <div class="oq-item">
+    <div>
+      <div style="color:var(--fg);font-size:0.9rem">{{ q.question if q is mapping else q }}</div>
+      {% if q is mapping and q.context %}
+      <div style="color:var(--muted);font-size:0.82em;margin-top:3px">{{ q.context }}</div>
+      {% endif %}
+    </div>
+    <div>
+      {% if q is mapping and q.priority %}
+      {% set p = q.priority | string | upper %}
+      <span class="priority-chip priority-{{ p }}">{{ q.priority }}</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# Export view #}
+<div class="gtm-view" id="gtm-view-export">
+  <div class="export-panel">
+    <h3>Export Brief</h3>
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:var(--space-md)">
+      Serialize this brief for distribution, writeback, or archival.
+    </p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">
+      <button class="btn btn-primary" onclick="gtmExport(event)" aria-label="Export full GTM brief">
+        &#10515; Export Brief JSON
+      </button>
+      {% if capsule.writebacks %}
+      {% for target_name in capsule.writebacks %}
+      <button class="btn" onclick="exportWriteback({{ target_name | tojson }})">
+        Copy {{ target_name }}
+      </button>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block writeback_actions %}{% endblock %}
+
+{% block scripts %}
+{% autoescape false %}
+<script>
+(function() {
+  'use strict';
+
+  window.gtmSwitch = function(viewId, btn) {
+    document.querySelectorAll('.gtm-view').forEach(function(el) { el.classList.remove('active'); });
+    document.querySelectorAll('.gtm-tab').forEach(function(el) { el.classList.remove('active'); });
+    var view = document.getElementById('gtm-view-' + viewId);
+    if (view) view.classList.add('active');
+    if (btn) btn.classList.add('active');
+  };
+
+  window.__capsule_writeback__ = {{ capsule.writebacks | default({}) | tojson }};
+  var CAPSULE_ID = {{ capsule_id | tojson }};
+
+  window.gtmExport = function(evt) {
+    var payload = {
+      schema_version: 0.1,
+      capsule_id: CAPSULE_ID,
+      capsule_type: 'gtm-brief',
+      exported_at: new Date().toISOString(),
+      brief: {{ capsule.gtm_brief | default({}) | tojson }},
+      writebacks: window.__capsule_writeback__
+    };
+    var json = JSON.stringify(payload, null, 2);
+    var btn = evt && evt.target ? evt.target.closest('button') : null;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json).then(function() {
+        showToast('Brief exported to clipboard');
+        if (btn) { var o = btn.textContent; btn.textContent = 'Copied!'; setTimeout(function(){ btn.textContent = o; }, 1500); }
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = json; ta.style.cssText = 'position:fixed;opacity:0;top:-9999px';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); showToast('Exported'); } catch(e) {}
+      document.body.removeChild(ta);
+    }
+  };
+
+  window.exportWriteback = function(target) {
+    var bundle = window.__capsule_writeback__;
+    var payload = target
+      ? { schema_version: 0.1, capsule_id: CAPSULE_ID, generated_at: new Date().toISOString(), target: target, writeback: bundle[target] }
+      : { schema_version: 0.1, capsule_id: CAPSULE_ID, generated_at: new Date().toISOString(), writebacks: bundle };
+    var json = JSON.stringify(payload, null, 2);
+    var btn = window.event && window.event.target ? window.event.target.closest('button') : null;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json).then(function() {
+        showToast('Copied!');
+        if (btn) { var o = btn.textContent; btn.textContent = 'Copied!'; setTimeout(function(){ btn.textContent = o; }, 1400); }
+      });
+    }
+  };
+
+  function showToast(msg) {
+    var el = document.getElementById('capsule-toast');
+    if (!el) return;
+    el.textContent = msg; el.classList.add('visible');
+    setTimeout(function() { el.classList.remove('visible'); }, 2000);
+  }
+}());
+</script>
+{% endautoescape %}
+{% endblock %}

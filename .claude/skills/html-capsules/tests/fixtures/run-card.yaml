@@ -1,0 +1,81 @@
+html_capsule:
+  schema_version: 0.1
+  capsule_id: fixture_run_card_phase2_test
+  title: "Phase 2 Template Build · Run Card"
+  capsule_type: run-card
+  status: reviewed
+  created_at: "2026-05-15T10:00:00-04:00"
+  owner: Nick Miethe
+  confidentiality: personal
+  interactivity_level: L2_exportable
+  safe_html_mode: strict
+
+  agentic_context:
+    intent_id: intent_html_capsules_phase2
+    task_node_id: P2-T01
+    posture_chain:
+      - implementer
+      - critic
+    skillbom_id: skill_html_capsule_generator_v0
+
+  source_of_truth:
+    manifest: tests/fixtures/run-card.yaml
+    design_spec: .claude/plans/html_capsules_agentic_os_bundle/HTML_Capsules_and_Agentic_Run_Cards_Spec.md
+
+  evidence:
+    validation:
+      - static_file_generated
+      - no_external_scripts
+      - schema_validated
+
+  run_card:
+    intent: "Build the run-card.html.j2 Jinja2 template implementing the Run Card capsule type per Phase 2 of the HTML Capsules implementation plan."
+    goal: "Produce a self-contained, accessible HTML run card with all required sections."
+    task_node: P2-T01
+    agent: frontend-developer
+    model: claude-sonnet-4-6
+    duration: "~8 minutes"
+
+    inputs:
+      - name: "_base.html.j2"
+        type: jinja2_template
+        description: "Base layout template to extend"
+      - name: "HTML_Capsules_and_Agentic_Run_Cards_Spec.md"
+        type: design_spec
+        description: "Template UX requirements §15-16"
+      - name: "capsule-manifest.schema.json"
+        type: json_schema
+        description: "Schema for manifest validation"
+
+    outputs:
+      - name: "run-card.html.j2"
+        type: jinja2_template
+        description: "Fully implemented run card template"
+
+    evidence:
+      - label: "Schema validation"
+        value: "passed"
+      - label: "safe_html check"
+        value: "no external URLs detected"
+      - label: "Sections rendered"
+        value: "9 of 9"
+
+    risks:
+      - title: "Optional field collapse"
+        severity: low
+        description: "Sections with missing fields should collapse gracefully — verified."
+
+    decisions:
+      - decision: "Terminal/utilitarian dark aesthetic"
+        rationale: "Run cards are agentic artifacts; amber-on-black command-center feel signals machine-generated data clearly."
+
+    next_actions:
+      - action: "Render fixture against template"
+        owner: "smoke-test"
+        description: "Verify render produces valid HTML passing safe_html assertion"
+      - action: "Proceed to P2-T02 planning-capsule"
+        owner: "Nick Miethe"
+
+  writebacks:
+    meatywiki: proposed
+    skillmeat: proposed

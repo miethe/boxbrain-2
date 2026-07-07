@@ -1,0 +1,488 @@
+{% extends "_base.html.j2" %}
+
+{% block title %}{{ capsule.title | default("SkillCard") }} · SkillCard{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* -----------------------------------------------------------------------
+     SkillCard — Refined technical documentation aesthetic
+     Clean white on near-black, teal accent, structured reference card.
+     Dense but breathable — like a well-designed API reference.
+  ----------------------------------------------------------------------- */
+  :root {
+    --bg:       #0e1218;
+    --fg:       #cdd9e5;
+    --accent:   #2dd4bf;
+    --accent2:  #818cf8;
+    --muted:    #768390;
+    --border:   #1e2730;
+    --surface:  #161c25;
+    --surface2: #1a2231;
+    --radius:   6px;
+    --green:    #56d364;
+    --red:      #f47067;
+    --yellow:   #e3b341;
+    --blue:     #79c0ff;
+  }
+
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 100% 0%, rgba(45,212,191,.05) 0%, transparent 45%),
+      radial-gradient(circle at 0% 100%, rgba(129,140,248,.04) 0%, transparent 40%);
+  }
+
+  /* Header with skill name prominence */
+  .capsule-header h1 {
+    font-size: 1.5rem;
+    letter-spacing: -0.025em;
+    font-weight: 700;
+  }
+
+  .skill-version-badge {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    background: rgba(45,212,191,.12);
+    border: 1px solid rgba(45,212,191,.3);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+
+  /* Promotion status banner */
+  .promotion-banner {
+    border: 1px solid;
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: var(--space-lg);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.88rem;
+  }
+
+  .promotion-banner.candidate {
+    background: rgba(227,179,65,.07);
+    border-color: rgba(227,179,65,.3);
+    color: #e3b341;
+  }
+
+  .promotion-banner.promoted {
+    background: rgba(86,211,100,.07);
+    border-color: rgba(86,211,100,.3);
+    color: var(--green);
+  }
+
+  .promotion-banner.deprecated {
+    background: rgba(244,112,103,.07);
+    border-color: rgba(244,112,103,.3);
+    color: var(--red);
+  }
+
+  .promotion-icon { font-size: 1.1em; flex-shrink: 0; }
+
+  /* Section grid */
+  .sk-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+  }
+
+  .sk-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .sk-section.full { grid-column: 1 / -1; }
+
+  .sk-section-head {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 7px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .sk-section-title {
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--accent);
+  }
+
+  .sk-section-body {
+    padding: 12px 14px;
+  }
+
+  /* Purpose block */
+  .purpose-text {
+    font-size: 0.96rem;
+    line-height: 1.65;
+    color: #b5c4d4;
+  }
+
+  /* Input/Output items */
+  .skill-io {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .skill-io li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.86rem;
+    align-items: baseline;
+  }
+
+  .skill-io li:last-child { border-bottom: none; }
+
+  .io-tag {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .io-tag.input {
+    background: rgba(121,192,255,.1);
+    border: 1px solid rgba(121,192,255,.25);
+    color: #79c0ff;
+  }
+
+  .io-tag.output {
+    background: rgba(45,212,191,.1);
+    border: 1px solid rgba(45,212,191,.25);
+    color: var(--accent);
+  }
+
+  /* Validation criteria */
+  .validation-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.86rem;
+  }
+
+  .validation-item:last-child { border-bottom: none; }
+
+  .validation-check {
+    color: var(--green);
+    font-weight: 700;
+    flex-shrink: 0;
+    font-size: 0.85em;
+  }
+
+  /* Failure modes */
+  .failure-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.86rem;
+  }
+
+  .failure-item:last-child { border-bottom: none; }
+
+  .failure-icon {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    background: rgba(244,112,103,.1);
+    border: 1px solid rgba(244,112,103,.25);
+    color: var(--red);
+    padding: 2px 5px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  /* Usage evidence */
+  .evidence-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.86rem;
+  }
+
+  .evidence-row:last-child { border-bottom: none; }
+
+  .ev-bullet {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+
+  /* Metrics */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+  }
+
+  .metric-cell {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    text-align: center;
+  }
+
+  .metric-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+  }
+
+  .metric-value {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  /* SkillBOM raw view */
+  .skillbom-raw {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-md);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: #79c0ff;
+    overflow-x: auto;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  @media (max-width: 640px) {
+    .sk-grid { grid-template-columns: 1fr; }
+    .sk-section.full { grid-column: 1; }
+  }
+</style>
+{% endblock %}
+
+{% block header %}
+<header class="capsule-header">
+  <h1>
+    {{ capsule.title | default(capsule_id) }}
+    {% if capsule.skill_version %}
+    <span class="skill-version-badge">v{{ capsule.skill_version }}</span>
+    {% elif capsule.version %}
+    <span class="skill-version-badge">v{{ capsule.version }}</span>
+    {% endif %}
+  </h1>
+  <div class="meta">
+    <span class="badge" style="background:rgba(45,212,191,.1);border-color:rgba(45,212,191,.3);color:var(--accent)">SkillCard</span>
+    {% if capsule.status %}
+    <span class="badge">{{ capsule.status }}</span>
+    {% endif %}
+    {% if capsule.owner %}
+    <span>{{ capsule.owner }}</span>
+    {% endif %}
+    {% if capsule.created_at %}
+    <span>{{ capsule.created_at }}</span>
+    {% endif %}
+  </div>
+</header>
+{% endblock %}
+
+{% block content %}
+{# Normalize: skill content can come from skillbom key or skill_card key or top-level capsule #}
+{% set sb = capsule.skillbom if capsule.skillbom is defined else {} %}
+{% set sk = capsule.skill_card if capsule.skill_card is defined else {} %}
+
+{# Merge: prefer skillbom > skill_card > top-level capsule fields #}
+{% set skill_id = sb.id | default(sk.id | default(capsule.skill_id | default(''))) %}
+{% set skill_name = sb.name | default(sk.name | default(capsule.title | default(''))) %}
+{% set skill_purpose = sb.purpose | default(sk.purpose | default(capsule.purpose | default(''))) %}
+{% set skill_posture = sb.posture | default(sk.posture | default(capsule.posture | default(''))) %}
+{% set skill_inputs = sb.inputs | default(sk.inputs | default(capsule.inputs | default([]))) %}
+{% set skill_outputs = sb.outputs | default(sk.outputs | default(capsule.outputs | default([]))) %}
+{% set skill_validation = sb.validation | default(sk.validation | default(capsule.validation | default([]))) %}
+{% set skill_failures = sb.known_failure_modes | default(sk.known_failure_modes | default(capsule.known_failure_modes | default([]))) %}
+{% set skill_evidence = sk.usage_evidence | default(capsule.usage_evidence | default([])) %}
+{% set skill_promotion = sk.promotion_status | default(capsule.promotion_status | default('')) %}
+{% set skill_metrics = sb.metrics | default(sk.metrics | default(capsule.metrics | default([]))) %}
+
+{# Promotion banner #}
+{% if skill_promotion %}
+{% set promo_class = 'promoted' if skill_promotion in ['promoted', 'approved'] else ('deprecated' if skill_promotion == 'deprecated' else 'candidate') %}
+<div class="promotion-banner {{ promo_class }}">
+  <span class="promotion-icon">{% if promo_class == 'promoted' %}&#10003;{% elif promo_class == 'deprecated' %}&#9888;{% else %}&#9646;{% endif %}</span>
+  <span><strong>Promotion Status:</strong> {{ skill_promotion }}</span>
+</div>
+{% endif %}
+
+<div class="sk-grid">
+
+  {# Purpose — full width #}
+  {% if skill_purpose %}
+  <div class="sk-section full">
+    <div class="sk-section-head"><span class="sk-section-title">Purpose</span></div>
+    <div class="sk-section-body">
+      <p class="purpose-text">{{ skill_purpose }}</p>
+      {% if skill_posture %}
+      <div style="margin-top:8px;display:flex;gap:6px;align-items:center;font-size:0.82rem">
+        <span style="color:var(--muted)">Posture:</span>
+        <span style="font-family:var(--font-mono);background:rgba(129,140,248,.1);border:1px solid rgba(129,140,248,.25);color:var(--accent2);padding:2px 8px;border-radius:3px">{{ skill_posture }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Inputs #}
+  {% if skill_inputs %}
+  <div class="sk-section">
+    <div class="sk-section-head"><span class="sk-section-title">Inputs</span></div>
+    <div class="sk-section-body">
+      <ul class="skill-io">
+        {% for item in skill_inputs %}
+        <li>
+          <span class="io-tag input">IN</span>
+          <span>{% if item is mapping %}
+            <strong>{{ item.name | default('?') }}</strong>
+            {% if item.required is defined and not item.required %} <em style="color:var(--muted);font-size:0.82em">(optional)</em>{% endif %}
+            {% if item.description %}<br><span style="color:var(--muted);font-size:0.82em">{{ item.description }}</span>{% endif %}
+          {% else %}{{ item }}{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Outputs #}
+  {% if skill_outputs %}
+  <div class="sk-section">
+    <div class="sk-section-head"><span class="sk-section-title">Outputs</span></div>
+    <div class="sk-section-body">
+      <ul class="skill-io">
+        {% for item in skill_outputs %}
+        <li>
+          <span class="io-tag output">OUT</span>
+          <span>{% if item is mapping %}
+            <strong>{{ item.name | default('?') }}</strong>
+            {% if item.description %}<br><span style="color:var(--muted);font-size:0.82em">{{ item.description }}</span>{% endif %}
+          {% else %}{{ item }}{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Validation Criteria #}
+  {% if skill_validation %}
+  <div class="sk-section">
+    <div class="sk-section-head"><span class="sk-section-title">Validation Criteria</span></div>
+    <div class="sk-section-body">
+      {% for v in skill_validation %}
+      <div class="validation-item">
+        <span class="validation-check">&#10003;</span>
+        <span>{{ v }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Known Failure Modes #}
+  {% if skill_failures %}
+  <div class="sk-section">
+    <div class="sk-section-head"><span class="sk-section-title">Known Failure Modes</span></div>
+    <div class="sk-section-body">
+      {% for f in skill_failures %}
+      <div class="failure-item">
+        <span class="failure-icon">FAIL</span>
+        <span>{% if f is mapping %}
+          <strong>{{ f.mode | default(f.title | default('')) }}</strong>
+          {% if f.description %}<br><span style="color:var(--muted);font-size:0.83em">{{ f.description }}</span>{% endif %}
+        {% else %}{{ f }}{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Usage Evidence #}
+  {% if skill_evidence %}
+  <div class="sk-section full">
+    <div class="sk-section-head"><span class="sk-section-title">Usage Evidence</span></div>
+    <div class="sk-section-body">
+      {% for ev in skill_evidence %}
+      <div class="evidence-row">
+        <div class="ev-bullet"></div>
+        <span>{% if ev is mapping %}
+          <strong>{{ ev.title | default(ev.context | default('Evidence')) }}</strong>
+          {% if ev.capsule_id %} <code style="font-size:0.78em;color:var(--muted)">{{ ev.capsule_id }}</code>{% endif %}
+          {% if ev.date %} <span style="color:var(--muted);font-size:0.82em">{{ ev.date }}</span>{% endif %}
+          {% if ev.notes %}<br><span style="color:var(--muted);font-size:0.83em">{{ ev.notes }}</span>{% endif %}
+        {% else %}{{ ev }}{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Metrics #}
+  {% if skill_metrics %}
+  <div class="sk-section full">
+    <div class="sk-section-head"><span class="sk-section-title">Metrics</span></div>
+    <div class="sk-section-body">
+      <div class="metrics-grid">
+        {% for m in skill_metrics %}
+        <div class="metric-cell">
+          <div class="metric-label">{% if m is mapping %}{{ m.name | default(m) }}{% else %}{{ m }}{% endif %}</div>
+          {% if m is mapping and m.value is defined %}
+          <div class="metric-value">{{ m.value }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {# Required Context Packs #}
+  {% set req_packs = sb.required_context_packs | default([]) %}
+  {% if req_packs %}
+  <div class="sk-section full">
+    <div class="sk-section-head"><span class="sk-section-title">Required Context Packs</span></div>
+    <div class="sk-section-body" style="display:flex;flex-wrap:wrap;gap:6px">
+      {% for pack in req_packs %}
+      <span style="font-family:var(--font-mono);font-size:0.78rem;background:rgba(129,140,248,.08);border:1px solid rgba(129,140,248,.2);color:var(--accent2);padding:3px 10px;border-radius:999px">{{ pack }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+{# Raw SkillBOM if present #}
+{% if sb and sb | length > 0 %}
+<details style="margin-top:var(--space-md)">
+  <summary style="cursor:pointer;color:var(--muted);font-size:0.83rem;padding:8px 0">View raw SkillBOM</summary>
+  <pre class="skillbom-raw">{{ sb | tojson(indent=2) }}</pre>
+</details>
+{% endif %}
+{% endblock %}

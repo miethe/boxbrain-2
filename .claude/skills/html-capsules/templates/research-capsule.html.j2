@@ -1,0 +1,471 @@
+{% extends "_base.html.j2" %}
+
+{% block title %}{{ capsule.title | default("Research Capsule") }}{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* -----------------------------------------------------------------------
+     Research Capsule — Academic/Intelligence aesthetic
+     Forest green + warm cream on deep forest dark. Dense but organized.
+     Inspired by research brief PDFs and intelligence reports.
+  ----------------------------------------------------------------------- */
+  :root {
+    --bg:       #0b100d;
+    --fg:       #d4e0d0;
+    --accent:   #4ade80;
+    --accent2:  #fbbf24;
+    --muted:    #6b7e6b;
+    --border:   #1a2a1e;
+    --surface:  #111a14;
+    --surface2: #172019;
+    --radius:   5px;
+    --blue:     #60a5fa;
+    --red:      #f87171;
+    --teal:     #2dd4bf;
+  }
+
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 5% 5%, rgba(74,222,128,.06) 0%, transparent 40%),
+      radial-gradient(circle at 95% 95%, rgba(251,191,36,.04) 0%, transparent 35%);
+  }
+
+  .capsule-header h1 {
+    font-size: 1.6rem;
+    letter-spacing: -0.03em;
+    font-weight: 700;
+  }
+
+  /* Quality signal badges in header */
+  .quality-signals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 8px;
+  }
+
+  .qs-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+
+  .qs-HIGH {
+    background: rgba(74,222,128,.1);
+    border-color: rgba(74,222,128,.3);
+    color: var(--accent);
+  }
+
+  .qs-MED, .qs-MEDIUM, .qs-MODERATE {
+    background: rgba(251,191,36,.1);
+    border-color: rgba(251,191,36,.3);
+    color: var(--accent2);
+  }
+
+  .qs-LOW {
+    background: rgba(248,113,113,.1);
+    border-color: rgba(248,113,113,.3);
+    color: var(--red);
+  }
+
+  /* Section structure */
+  .rc-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: var(--space-md);
+    overflow: hidden;
+  }
+
+  .rc-panel-head {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 7px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .rc-panel-title {
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+  }
+
+  .rc-panel-body { padding: 14px; }
+
+  /* Source cards */
+  .source-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    position: relative;
+  }
+
+  .source-card:last-child { margin-bottom: 0; }
+
+  .source-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .source-index {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    background: rgba(74,222,128,.1);
+    border: 1px solid rgba(74,222,128,.2);
+    color: var(--accent);
+    padding: 2px 6px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .source-title {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--fg);
+    flex: 1;
+  }
+
+  .source-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 5px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  .source-excerpt {
+    margin-top: 6px;
+    font-size: 0.85rem;
+    color: #a8bca8;
+    line-height: 1.55;
+    border-left: 2px solid rgba(74,222,128,.2);
+    padding-left: 10px;
+  }
+
+  /* Claim map */
+  .claim-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    align-items: start;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+  }
+
+  .claim-item:last-child { border-bottom: none; }
+
+  .claim-strength {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 2px;
+    border: 1px solid;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .strength-STRONG {
+    background: rgba(74,222,128,.08);
+    border-color: rgba(74,222,128,.25);
+    color: var(--accent);
+  }
+
+  .strength-MODERATE, .strength-MED {
+    background: rgba(251,191,36,.08);
+    border-color: rgba(251,191,36,.25);
+    color: var(--accent2);
+  }
+
+  .strength-WEAK, .strength-SPECULATIVE {
+    background: rgba(248,113,113,.08);
+    border-color: rgba(248,113,113,.25);
+    color: var(--red);
+  }
+
+  .claim-text { color: var(--fg); line-height: 1.5; }
+
+  .claim-source-ref {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    white-space: nowrap;
+    padding-top: 2px;
+  }
+
+  /* Caveats */
+  .caveat-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+  }
+
+  .caveat-item:last-child { border-bottom: none; }
+
+  .caveat-icon {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    background: rgba(251,191,36,.08);
+    border: 1px solid rgba(251,191,36,.2);
+    color: var(--accent2);
+    padding: 2px 6px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* Next actions */
+  .action-item {
+    display: flex;
+    gap: 8px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+    align-items: flex-start;
+  }
+
+  .action-item:last-child { border-bottom: none; }
+
+  .action-num {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    background: rgba(96,165,250,.08);
+    border: 1px solid rgba(96,165,250,.2);
+    color: var(--blue);
+    padding: 2px 6px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* Quality signals section */
+  .qs-full-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 8px;
+  }
+
+  .qs-cell {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .qs-cell-label {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+
+  .qs-cell-value { font-size: 0.88rem; color: var(--fg); font-weight: 600; }
+
+  @media (max-width: 600px) {
+    .claim-item { grid-template-columns: auto 1fr; }
+    .claim-source-ref { grid-column: 2; }
+  }
+</style>
+{% endblock %}
+
+{% block header %}
+<header class="capsule-header">
+  <h1>{{ capsule.title | default(capsule_id) }}</h1>
+  <div class="meta">
+    <span class="badge" style="background:rgba(74,222,128,.1);border-color:rgba(74,222,128,.25);color:var(--accent)">Research</span>
+    {% if capsule.status %}
+    <span class="badge">{{ capsule.status }}</span>
+    {% endif %}
+    {% if capsule.owner %}
+    <span>{{ capsule.owner }}</span>
+    {% endif %}
+    {% if capsule.created_at %}
+    <span>{{ capsule.created_at }}</span>
+    {% endif %}
+  </div>
+  {# Quality signals in header if available #}
+  {% set rc = capsule.research_capsule | default({}) %}
+  {% set qs = rc.quality_signals | default(capsule.quality_signals | default({})) %}
+  {% if qs and qs is mapping %}
+  <div class="quality-signals">
+    {% for key, val in qs.items() %}
+    {% set val_str = val | string | upper %}
+    <span class="qs-badge qs-{{ val_str }}">{{ key }}: {{ val }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</header>
+{% endblock %}
+
+{% block content %}
+{% set rc = capsule.research_capsule | default({}) %}
+{% set source_cards = rc.source_cards | default(capsule.sources | default([])) %}
+{% set claim_map = rc.claim_map | default(capsule.claims | default([])) %}
+{% set caveats = rc.caveats | default(capsule.caveats | default([])) %}
+{% set next_actions = rc.next_actions | default(capsule.next_actions | default([])) %}
+{% set research_question = rc.question | default(capsule.research_question | default('')) %}
+{% set summary = rc.summary | default(capsule.summary | default('')) %}
+
+{# Research question + summary #}
+{% if research_question or summary %}
+<div style="background:var(--surface);border:1px solid rgba(74,222,128,.15);border-left:3px solid var(--accent);border-radius:0 var(--radius) var(--radius) 0;padding:12px 16px;margin-bottom:var(--space-md)">
+  {% if research_question %}
+  <div style="font-family:var(--font-mono);font-size:0.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:5px">Research Question</div>
+  <div style="font-size:1rem;font-weight:600;color:var(--fg);margin-bottom:{{ '8px' if summary else '0' }}">{{ research_question }}</div>
+  {% endif %}
+  {% if summary %}
+  <div style="font-size:0.9rem;color:#a8c8a0;line-height:1.65">{{ summary }}</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# Source Cards #}
+{% if source_cards %}
+<div class="rc-panel">
+  <div class="rc-panel-head">
+    <span class="rc-panel-title">Source Cards</span>
+    <span style="font-family:var(--font-mono);font-size:0.72rem;color:var(--muted)">{{ source_cards | length }} sources</span>
+  </div>
+  <div class="rc-panel-body">
+    {% for src in source_cards %}
+    <div class="source-card">
+      <div class="source-card-header">
+        <span class="source-index">{{ '%02d' | format(loop.index) }}</span>
+        <div>
+          <div class="source-title">{{ src.title if src is mapping else src }}</div>
+          {% if src is mapping %}
+          <div class="source-meta">
+            {% if src.type %}<span style="font-family:var(--font-mono);font-size:0.72rem">{{ src.type }}</span>{% endif %}
+            {% if src.date %}<span>{{ src.date }}</span>{% endif %}
+            {% if src.author %}<span>{{ src.author }}</span>{% endif %}
+            {% if src.quality %}
+            {% set q = src.quality | string | upper %}
+            <span class="qs-badge qs-{{ q }}" style="font-size:0.65rem;padding:1px 6px">{{ q }}</span>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% if src is mapping and src.excerpt %}
+      <div class="source-excerpt">{{ src.excerpt }}</div>
+      {% endif %}
+      {% if src is mapping and src.url and not src.url.startswith('http') %}
+      <div style="margin-top:5px;font-family:var(--font-mono);font-size:0.75rem;color:var(--muted)">{{ src.url }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# Claim Map #}
+{% if claim_map %}
+<div class="rc-panel">
+  <div class="rc-panel-head">
+    <span class="rc-panel-title">Claim Map</span>
+    <span style="font-family:var(--font-mono);font-size:0.72rem;color:var(--muted)">{{ claim_map | length }} claims</span>
+  </div>
+  <div class="rc-panel-body">
+    {% for claim in claim_map %}
+    <div class="claim-item">
+      {% if claim is mapping %}
+      {% set strength = claim.strength | default(claim.confidence | default('MED')) | string | upper %}
+      <span class="claim-strength strength-{{ strength }}">{{ strength[:3] }}</span>
+      <span class="claim-text">
+        {{ claim.claim | default(claim.text | default('')) }}
+        {% if claim.evidence_ids %}
+        <span style="color:var(--muted);font-size:0.78em"> [{{ claim.evidence_ids | join(', ') }}]</span>
+        {% endif %}
+      </span>
+      <span class="claim-source-ref">
+        {% if claim.source %} {{ claim.source }}{% endif %}
+      </span>
+      {% else %}
+      <span class="claim-strength strength-MED">CLM</span>
+      <span class="claim-text">{{ claim }}</span>
+      <span></span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# Caveats #}
+{% if caveats %}
+<div class="rc-panel">
+  <div class="rc-panel-head"><span class="rc-panel-title">Caveats</span></div>
+  <div class="rc-panel-body">
+    {% for c in caveats %}
+    <div class="caveat-item">
+      <span class="caveat-icon">CAVT</span>
+      <span>{{ c.text if c is mapping else c }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# Quality Signals — detailed #}
+{% set qs = rc.quality_signals | default(capsule.quality_signals | default({})) %}
+{% if qs and qs is mapping and qs | length > 0 %}
+<div class="rc-panel">
+  <div class="rc-panel-head"><span class="rc-panel-title">Quality Signals</span></div>
+  <div class="rc-panel-body">
+    <div class="qs-full-grid">
+      {% for key, val in qs.items() %}
+      {% set val_str = val | string | upper %}
+      <div class="qs-cell">
+        <div class="qs-cell-label">{{ key | replace('_', ' ') }}</div>
+        <div class="qs-cell-value qs-badge qs-{{ val_str }}" style="border:none;background:none;padding:0;font-size:0.85rem">{{ val }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# Next Actions #}
+{% if next_actions %}
+<div class="rc-panel">
+  <div class="rc-panel-head"><span class="rc-panel-title">Next Actions</span></div>
+  <div class="rc-panel-body">
+    {% for a in next_actions %}
+    <div class="action-item">
+      <span class="action-num">{{ '%02d' | format(loop.index) }}</span>
+      <span>
+        {% if a is mapping %}
+          <strong>{{ a.action | default(a.title | default('?')) }}</strong>
+          {% if a.owner %} <span style="color:var(--muted);font-size:0.82em">— {{ a.owner }}</span>{% endif %}
+          {% if a.notes %}<br><span style="color:var(--muted);font-size:0.83em">{{ a.notes }}</span>{% endif %}
+        {% else %}{{ a }}{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

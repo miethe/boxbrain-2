@@ -1,0 +1,87 @@
+html_capsule:
+  schema_version: 0.1
+  capsule_id: fixture_decision_card_template_renderer
+  title: "Template Renderer Selection"
+  capsule_type: decision-card
+  status: approved
+  created_at: "2026-05-15T10:00:00-04:00"
+  owner: Nick Miethe
+  confidentiality: personal
+  interactivity_level: static
+
+  source_of_truth:
+    design_spec: .claude/plans/html_capsules_agentic_os_bundle/HTML_Capsules_and_Agentic_Run_Cards_Spec.md
+    manifest: tests/fixtures/decision-card.yaml
+
+  adr_number: "001"
+
+  decision_card:
+    decision_status: "accepted"
+    decided_at: "2026-05-15"
+    decision_maker: "Nick Miethe"
+
+    context: >
+      The HTML Capsules system needs a template renderer to transform YAML manifests
+      into self-contained HTML pages. The renderer must support multiple capsule types,
+      enforce safe HTML policy (no external resources), validate manifests against a
+      JSON schema, and integrate with the SkillMeat bundle packaging system.
+      Python was already in use for the SkillMeat CLI, making it the natural host language.
+
+    options:
+      - name: "Python + Jinja2"
+        description: "Use Python's Jinja2 templating engine with a CapsuleRenderer class"
+        pros:
+          - "Already in Python ecosystem (SkillMeat CLI)"
+          - "Jinja2 is mature with autoescape support"
+          - "jsonschema available for manifest validation"
+          - "No new runtime dependencies"
+        cons:
+          - "Requires Python environment"
+        chosen: true
+      - name: "Node.js + Nunjucks"
+        description: "JavaScript-native templating matching browser syntax"
+        pros:
+          - "Closer to browser environment"
+          - "npm ecosystem"
+        cons:
+          - "Adds Node.js dependency to Python project"
+          - "Harder to integrate with existing CLI"
+      - name: "Next.js static export"
+        description: "Full React-based SSG with Tailwind"
+        pros:
+          - "Rich component ecosystem"
+        cons:
+          - "Massive overkill for static capsule generation"
+          - "Build complexity far exceeds requirements"
+          - "Slow iteration cycle"
+
+    decision: "Python + Jinja2"
+    decision_text: >
+      We select Python + Jinja2 as the template renderer. The CapsuleRenderer class
+      validates manifests against a JSON schema, resolves per-type templates with
+      a base fallback, and enforces safe HTML policy post-render via
+      assert_no_external_urls(). This keeps the renderer inside the existing Python/SkillMeat
+      ecosystem with no new runtime dependencies.
+
+    consequences:
+      - type: positive
+        text: "Zero new runtime dependencies — Jinja2 and jsonschema already available."
+      - type: positive
+        text: "Autoescape enabled by default prevents XSS in manifest data."
+      - type: positive
+        text: "Base template fallback means renderer degrades gracefully for unimplemented types."
+      - type: neutral
+        text: "Templates must use |tojson filter for any JS-side data interpolation."
+      - type: negative
+        text: "Requires Python environment to render — not browser-native."
+
+    related:
+      - "ADR-002: Safe HTML Policy"
+      - "ADR-003: Capsule Manifest Schema"
+
+  writebacks:
+    meatywiki:
+      target: projects/meatywiki/decisions/adr-001-template-renderer.md
+      status: proposed
+      operation: create
+    skillmeat: proposed

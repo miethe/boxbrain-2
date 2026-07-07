@@ -1,0 +1,69 @@
+html_capsule:
+  schema_version: 0.1
+  capsule_id: fixture_skill_card_html_capsule_generator
+  title: "HTML Capsule Generator"
+  capsule_type: skill-card
+  status: draft
+  created_at: "2026-05-15T10:00:00-04:00"
+  owner: Nick Miethe
+  confidentiality: personal
+  interactivity_level: static
+
+  source_of_truth:
+    structured_data: .claude/plans/html_capsules_agentic_os_bundle/html_capsule_generator.skillbom.yaml
+    manifest: tests/fixtures/skill-card.yaml
+
+  # SkillBOM content lifted from html_capsule_generator.skillbom.yaml
+  skillbom:
+    id: skill_html_capsule_generator_v0
+    name: HTML Capsule Generator
+    version: 0.1.0
+    owner: Nick Miethe
+    posture: implementer
+    purpose: Generate safe, self-contained HTML capsules from canonical Markdown and structured data.
+    inputs:
+      - source.md
+      - capsule.manifest.yaml
+      - evidence.json
+      - optional screenshots
+      - optional git diff
+    required_context_packs:
+      - agentic_operating_system_core
+      - meatywiki_memory_model
+      - ccdash_execution_event_schema
+    outputs:
+      - index.html
+      - writeback.bundle.json
+    validation:
+      - no_external_scripts
+      - canonical_source_preserved
+      - writeback_bundle_generated
+      - safe_html_mode
+      - human_review_required
+    known_failure_modes:
+      - pretty_but_weak_analysis
+      - source_of_truth_confusion
+      - unsafe_javascript
+      - inconsistent_layout
+      - excessive_scope
+    metrics:
+      - review_acceptance_rate
+      - writeback_acceptance_rate
+      - reuse_count
+      - time_to_understand_run
+      - rework_count
+
+  skill_card:
+    promotion_status: candidate
+    usage_evidence:
+      - title: "Phase 1 renderer implementation"
+        date: "2026-05-15"
+        notes: "CapsuleRenderer + schema + safe_html built; first working render."
+        capsule_id: fixture_skill_card_html_capsule_generator
+      - title: "Phase 2 template library"
+        date: "2026-05-15"
+        notes: "Six templates covering operational, strategic, epistemic capsule types."
+
+  writebacks:
+    meatywiki: proposed
+    skillmeat: proposed

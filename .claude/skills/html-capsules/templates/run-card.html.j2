@@ -1,0 +1,650 @@
+{% extends "_base.html.j2" %}
+
+{% block title %}{{ capsule.title | default("Run Card") }} · Run Card{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* -----------------------------------------------------------------------
+     Run Card — Utilitarian/Terminal aesthetic
+     Dark command-center feel: amber on near-black, monospace accents,
+     structured data density. Every section is a "read-out".
+  ----------------------------------------------------------------------- */
+  :root {
+    --bg:      #0a0c0f;
+    --fg:      #d4dbe8;
+    --accent:  #f5a623;
+    --muted:   #6b7a90;
+    --border:  #1e2533;
+    --surface: #111520;
+    --surface2: #171d2a;
+    --radius:  4px;
+    --green:   #3fcf8e;
+    --red:     #f87171;
+    --blue:    #60a5fa;
+    --amber:   #f5a623;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+
+  body {
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(ellipse at 20% 0%, rgba(245,166,35,.06) 0%, transparent 55%),
+      radial-gradient(ellipse at 80% 100%, rgba(63,207,142,.04) 0%, transparent 50%);
+  }
+
+  .capsule-header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--space-lg);
+  }
+
+  .capsule-header h1 {
+    font-family: var(--font-mono);
+    font-size: 1.4rem;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+
+  .capsule-header h1 .type-prefix {
+    color: var(--accent);
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  /* Section readout */
+  .rc-section {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    margin-bottom: var(--space-md);
+    overflow: hidden;
+  }
+
+  .rc-section-head {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .rc-section-label {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .rc-section-body {
+    padding: 14px;
+  }
+
+  .rc-section-body p:last-child { margin-bottom: 0; }
+
+  /* Grid layout for compact sections */
+  .rc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+  }
+
+  /* Key-value rows */
+  .rc-kv {
+    display: flex;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+    align-items: baseline;
+  }
+
+  .rc-kv:last-child { border-bottom: none; }
+
+  .rc-kv .key {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    min-width: 120px;
+    flex-shrink: 0;
+  }
+
+  .rc-kv .val {
+    color: var(--fg);
+    word-break: break-word;
+  }
+
+  /* Posture chain */
+  .posture-chain {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+  }
+
+  .posture-node {
+    background: rgba(245,166,35,.1);
+    border: 1px solid rgba(245,166,35,.3);
+    color: var(--amber);
+    padding: 3px 10px;
+    border-radius: 2px;
+  }
+
+  .posture-arrow {
+    color: var(--muted);
+    font-size: 0.7rem;
+  }
+
+  /* IO items */
+  .io-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .io-list li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+  }
+
+  .io-list li:last-child { border-bottom: none; }
+
+  .io-bullet {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    margin-top: 2px;
+  }
+
+  /* Evidence list */
+  .evidence-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+  }
+
+  .evidence-item:last-child { border-bottom: none; }
+
+  .evidence-icon {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    background: rgba(63,207,142,.1);
+    border: 1px solid rgba(63,207,142,.25);
+    color: var(--green);
+    padding: 1px 6px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .evidence-icon.risk {
+    background: rgba(248,113,113,.1);
+    border-color: rgba(248,113,113,.25);
+    color: var(--red);
+  }
+
+  /* Risk items */
+  .risk-item {
+    display: flex;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+    align-items: flex-start;
+  }
+
+  .risk-item:last-child { border-bottom: none; }
+
+  /* Decision items */
+  .decision-item {
+    background: rgba(245,166,35,.04);
+    border: 1px solid rgba(245,166,35,.15);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    font-size: 0.88rem;
+  }
+
+  .decision-item .decision-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+
+  /* Next actions */
+  .next-action {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+  }
+
+  .next-action:last-child { border-bottom: none; }
+
+  .next-action-index {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--blue);
+    background: rgba(96,165,250,.1);
+    border: 1px solid rgba(96,165,250,.2);
+    padding: 1px 6px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* Status badge overrides */
+  .badge-ok {
+    background: rgba(63,207,142,.1);
+    border-color: rgba(63,207,142,.3);
+    color: var(--green);
+  }
+
+  .badge-warn {
+    background: rgba(245,166,35,.1);
+    border-color: rgba(245,166,35,.3);
+    color: var(--amber);
+  }
+
+  .badge-err {
+    background: rgba(248,113,113,.1);
+    border-color: rgba(248,113,113,.3);
+    color: var(--red);
+  }
+
+  /* Intent block — highlighted */
+  .intent-block {
+    border-left: 3px solid var(--accent);
+    padding: 10px 16px;
+    background: rgba(245,166,35,.04);
+    font-size: 1rem;
+    font-style: italic;
+    color: #e8c98a;
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-style: italic;
+    padding: 4px 0;
+  }
+
+  /* Writeback section */
+  .capsule-writeback {
+    background: var(--surface2);
+    border-color: rgba(245,166,35,.2);
+  }
+
+  .capsule-writeback h2 {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+  }
+
+  @media (max-width: 640px) {
+    .rc-grid { grid-template-columns: 1fr; }
+    .posture-chain { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+{% endblock %}
+
+{% block header %}
+<header class="capsule-header">
+  <h1>
+    <span class="type-prefix">&#9632; Run Card</span>
+    {{ capsule.title | default(capsule_id) }}
+  </h1>
+  <div class="meta">
+    {% if capsule.status %}
+    <span class="badge {% if capsule.status == 'approved' %}badge-ok{% elif capsule.status == 'draft' %}badge-warn{% endif %}">
+      {{ capsule.status }}
+    </span>
+    {% endif %}
+    {% if capsule.owner %}
+    <span>{{ capsule.owner }}</span>
+    {% endif %}
+    {% if capsule.created_at %}
+    <span>{{ capsule.created_at }}</span>
+    {% endif %}
+    {% if capsule.confidentiality %}
+    <span class="badge">{{ capsule.confidentiality }}</span>
+    {% endif %}
+  </div>
+</header>
+{% endblock %}
+
+{% block content %}
+{% set rc = capsule.run_card | default({}) %}
+
+{# ── Intent ── #}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">01 · Intent</span></div>
+  <div class="rc-section-body">
+    {% if rc.intent %}
+    <div class="intent-block">{{ rc.intent }}</div>
+    {% else %}
+    <p class="empty-hint">No intent recorded.</p>
+    {% endif %}
+    {% if rc.goal %}
+    <div class="rc-kv" style="margin-top:10px">
+      <span class="key">goal</span>
+      <span class="val">{{ rc.goal }}</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Task Node ── #}
+{% if capsule.agentic_context or rc.task_node %}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">02 · Task Node</span></div>
+  <div class="rc-section-body">
+    {% set ctx = capsule.agentic_context | default({}) %}
+    {% if ctx.task_node_id %}
+    <div class="rc-kv"><span class="key">task_node_id</span><span class="val">{{ ctx.task_node_id }}</span></div>
+    {% endif %}
+    {% if ctx.intent_id %}
+    <div class="rc-kv"><span class="key">intent_id</span><span class="val">{{ ctx.intent_id }}</span></div>
+    {% endif %}
+    {% if ctx.skillbom_id %}
+    <div class="rc-kv"><span class="key">skillbom_id</span><span class="val">{{ ctx.skillbom_id }}</span></div>
+    {% endif %}
+    {% if rc.task_node %}
+    <div class="rc-kv"><span class="key">task_node</span><span class="val">{{ rc.task_node }}</span></div>
+    {% endif %}
+    {% if not ctx.task_node_id and not ctx.intent_id and not rc.task_node %}
+    <p class="empty-hint">No task node context recorded.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Agent & Posture ── #}
+{% if rc.agent or (capsule.agentic_context and capsule.agentic_context.posture_chain) %}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">03 · Agent / Posture</span></div>
+  <div class="rc-section-body">
+    {% if rc.agent %}
+    <div class="rc-kv"><span class="key">agent</span><span class="val">{{ rc.agent }}</span></div>
+    {% endif %}
+    {% set posture = capsule.agentic_context.posture_chain | default([]) %}
+    {% if posture %}
+    <div style="margin-top:8px">
+      <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">posture chain</div>
+      <div class="posture-chain">
+        {% for p in posture %}
+        <span class="posture-node">{{ p }}</span>
+        {% if not loop.last %}<span class="posture-arrow">&#8594;</span>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if rc.model %}
+    <div class="rc-kv" style="margin-top:8px"><span class="key">model</span><span class="val">{{ rc.model }}</span></div>
+    {% endif %}
+    {% if rc.duration %}
+    <div class="rc-kv"><span class="key">duration</span><span class="val">{{ rc.duration }}</span></div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Inputs ── #}
+{% if rc.inputs %}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">04 · Inputs</span></div>
+  <div class="rc-section-body">
+    <ul class="io-list">
+      {% for item in rc.inputs %}
+      <li>
+        <span class="io-bullet">IN</span>
+        <span>
+          {% if item is mapping %}
+            <strong>{{ item.name | default('?') }}</strong>
+            {% if item.type %} <span style="color:var(--muted);font-size:0.8em">({{ item.type }})</span>{% endif %}
+            {% if item.description %} — {{ item.description }}{% endif %}
+          {% else %}
+            {{ item }}
+          {% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{# ── Outputs ── #}
+{% if rc.outputs %}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">05 · Outputs</span></div>
+  <div class="rc-section-body">
+    <ul class="io-list">
+      {% for item in rc.outputs %}
+      <li>
+        <span class="io-bullet" style="color:var(--green)">OUT</span>
+        <span>
+          {% if item is mapping %}
+            <strong>{{ item.name | default('?') }}</strong>
+            {% if item.type %} <span style="color:var(--muted);font-size:0.8em">({{ item.type }})</span>{% endif %}
+            {% if item.description %} — {{ item.description }}{% endif %}
+          {% else %}
+            {{ item }}
+          {% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{# ── Evidence ── #}
+{% if rc.evidence or capsule.evidence %}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">06 · Evidence</span></div>
+  <div class="rc-section-body">
+    {% set ev_items = rc.evidence | default([]) %}
+    {% set ev_validation = (capsule.evidence.validation) | default([]) %}
+    {% for item in ev_items %}
+    <div class="evidence-item">
+      <span class="evidence-icon">EVD</span>
+      <span>
+        {% if item is mapping %}
+          <strong>{{ item.label | default(item.type | default('Evidence')) }}</strong>
+          {% if item.value %}: {{ item.value }}{% endif %}
+          {% if item.path %} <code style="font-size:0.78em;color:var(--muted)">{{ item.path }}</code>{% endif %}
+        {% else %}
+          {{ item }}
+        {% endif %}
+      </span>
+    </div>
+    {% endfor %}
+    {% for v in ev_validation %}
+    <div class="evidence-item">
+      <span class="evidence-icon">CHK</span>
+      <span style="font-family:var(--font-mono);font-size:0.82rem">{{ v }}</span>
+    </div>
+    {% endfor %}
+    {% if not ev_items and not ev_validation %}
+    <p class="empty-hint">No evidence recorded.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Risks ── #}
+{% if rc.risks %}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">07 · Risks</span></div>
+  <div class="rc-section-body">
+    {% for risk in rc.risks %}
+    <div class="risk-item">
+      <span class="evidence-icon risk">RISK</span>
+      <span>
+        {% if risk is mapping %}
+          <strong>{{ risk.title | default('Risk') }}</strong>
+          {% if risk.severity %} <span style="font-size:0.78em;color:var(--muted)">[{{ risk.severity }}]</span>{% endif %}
+          {% if risk.description %}<br><span style="color:var(--muted);font-size:0.85em">{{ risk.description }}</span>{% endif %}
+        {% else %}
+          {{ risk }}
+        {% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Decisions ── #}
+{% if rc.decisions %}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">08 · Decisions</span></div>
+  <div class="rc-section-body">
+    {% for d in rc.decisions %}
+    <div class="decision-item">
+      <div class="decision-label">Decision {{ loop.index }}</div>
+      {% if d is mapping %}
+        <div>{{ d.decision | default(d.title | default('')) }}</div>
+        {% if d.rationale %}<div style="color:var(--muted);font-size:0.82em;margin-top:4px">{{ d.rationale }}</div>{% endif %}
+      {% else %}
+        <div>{{ d }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Next Actions ── #}
+{% if rc.next_actions %}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">09 · Next Actions</span></div>
+  <div class="rc-section-body">
+    {% for action in rc.next_actions %}
+    <div class="next-action">
+      <span class="next-action-index">{{ '%02d' | format(loop.index) }}</span>
+      <span>
+        {% if action is mapping %}
+          <strong>{{ action.action | default(action.title | default('?')) }}</strong>
+          {% if action.owner %} <span style="color:var(--muted);font-size:0.82em">— {{ action.owner }}</span>{% endif %}
+          {% if action.description %}<br><span style="color:var(--muted);font-size:0.83em">{{ action.description }}</span>{% endif %}
+        {% else %}
+          {{ action }}
+        {% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Source of Truth ── #}
+{% if capsule.source_of_truth %}
+<div class="rc-section">
+  <div class="rc-section-head"><span class="rc-section-label">Source of Truth</span></div>
+  <div class="rc-section-body">
+    {% for key, val in capsule.source_of_truth.items() %}
+    <div class="rc-kv">
+      <span class="key">{{ key }}</span>
+      <span class="val"><code style="font-size:0.82em">{{ val }}</code></span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block writeback_actions %}
+<section class="capsule-writeback" aria-label="Writeback actions">
+  <h2>Export Run Data</h2>
+  <div class="writeback-actions">
+    <button class="btn btn-primary" onclick="exportRunCard(event)" aria-label="Export run card to JSON">
+      &#10515; Export Run JSON
+    </button>
+    {% if capsule.writebacks %}
+    {% for target_name in capsule.writebacks %}
+    <button class="btn" onclick="exportWriteback({{ target_name | tojson }})" aria-label="Copy {{ target_name }} writeback">
+      Copy {{ target_name }}
+    </button>
+    {% endfor %}
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{% autoescape false %}
+<script>
+(function() {
+  'use strict';
+  var CAPSULE_DATA = {{ capsule | tojson }};
+
+  window.__capsule_writeback__ = {{ capsule.writebacks | default({}) | tojson }};
+
+  window.exportRunCard = function(evt) {
+    var payload = {
+      schema_version: 0.1,
+      capsule_id: {{ capsule_id | tojson }},
+      capsule_type: 'run-card',
+      exported_at: new Date().toISOString(),
+      run_details: CAPSULE_DATA.run_card || {},
+      agentic_context: CAPSULE_DATA.agentic_context || {},
+      evidence: CAPSULE_DATA.evidence || {},
+      writebacks: CAPSULE_DATA.writebacks || {}
+    };
+    var json = JSON.stringify(payload, null, 2);
+    var btn = evt && evt.target ? evt.target.closest('button') : null;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json).then(function() {
+        showRunToast('Run Card exported to clipboard');
+        if (btn) {
+          var orig = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(function() { btn.textContent = orig; }, 1500);
+        }
+      });
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = json;
+      ta.style.cssText = 'position:fixed;opacity:0;top:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); showRunToast('Exported to clipboard'); } catch(e) {}
+      document.body.removeChild(ta);
+    }
+  };
+
+  function showRunToast(msg) {
+    var el = document.getElementById('capsule-toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add('visible');
+    setTimeout(function() { el.classList.remove('visible'); }, 2000);
+  }
+}());
+</script>
+{% endautoescape %}
+{% endblock %}

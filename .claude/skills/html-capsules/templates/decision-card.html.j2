@@ -1,0 +1,411 @@
+{% extends "_base.html.j2" %}
+
+{% block title %}{{ capsule.title | default("Decision Card") }} · ADR{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* -----------------------------------------------------------------------
+     Decision Card — Editorial / legal-document aesthetic
+     Warm off-white paper on deep charcoal, serif display, structured ADR.
+     Feels authoritative and archival — a record that matters.
+  ----------------------------------------------------------------------- */
+  :root {
+    --bg:       #13110f;
+    --fg:       #e8e4df;
+    --accent:   #d4a853;
+    --accent2:  #8b9cf4;
+    --muted:    #7a7470;
+    --border:   #2a2520;
+    --surface:  #1c1915;
+    --surface2: #221e1a;
+    --radius:   4px;
+    --green:    #6abf69;
+    --red:      #e07070;
+    --blue:     #7babd4;
+  }
+
+  body {
+    background: var(--bg);
+    background-image: radial-gradient(ellipse at 50% 0%, rgba(212,168,83,.05) 0%, transparent 60%);
+  }
+
+  .capsule-wrapper {
+    max-width: 780px;
+  }
+
+  .capsule-header h1 {
+    font-size: 1.5rem;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+
+  /* ADR number display */
+  .adr-number {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    background: rgba(212,168,83,.1);
+    border: 1px solid rgba(212,168,83,.25);
+    color: var(--accent);
+    padding: 2px 10px;
+    border-radius: 2px;
+    letter-spacing: 0.08em;
+  }
+
+  /* Status badge prominent */
+  .decision-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    margin-bottom: var(--space-lg);
+    font-size: 0.88rem;
+  }
+
+  .decision-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .status-proposed .decision-status-dot { background: var(--accent); }
+  .status-accepted .decision-status-dot { background: var(--green); }
+  .status-rejected .decision-status-dot { background: var(--red); }
+  .status-superseded .decision-status-dot { background: var(--muted); }
+  .status-deprecated .decision-status-dot { background: var(--red); }
+
+  .decision-status-text { font-weight: 600; color: var(--fg); }
+  .decision-status-sub { color: var(--muted); font-size: 0.82em; }
+
+  /* Section layout */
+  .adr-section {
+    margin-bottom: var(--space-lg);
+  }
+
+  .adr-section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .adr-section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .adr-body {
+    color: #cdc8c0;
+    line-height: 1.7;
+    font-size: 0.92rem;
+  }
+
+  /* Options table */
+  .options-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+    margin-top: 4px;
+  }
+
+  .options-table th {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .options-table td {
+    border: 1px solid var(--border);
+    padding: 9px 12px;
+    vertical-align: top;
+    color: var(--fg);
+    line-height: 1.5;
+  }
+
+  .options-table tr.chosen td {
+    background: rgba(212,168,83,.05);
+    border-color: rgba(212,168,83,.2);
+  }
+
+  .options-table tr.chosen td:first-child {
+    border-left: 3px solid var(--accent);
+  }
+
+  .chosen-badge {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    background: rgba(212,168,83,.15);
+    border: 1px solid rgba(212,168,83,.35);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 2px;
+    margin-left: 6px;
+    vertical-align: middle;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Decision highlight */
+  .decision-block {
+    border: 1px solid rgba(212,168,83,.3);
+    background: rgba(212,168,83,.05);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: var(--space-md) var(--space-lg);
+    color: #e8d4a8;
+    font-size: 0.95rem;
+    line-height: 1.65;
+  }
+
+  /* Consequences */
+  .consequence-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .consequence-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+    color: var(--fg);
+  }
+
+  .consequence-item:last-child { border-bottom: none; }
+
+  .consequence-marker {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .marker-positive {
+    background: rgba(106,191,105,.1);
+    border: 1px solid rgba(106,191,105,.25);
+    color: var(--green);
+  }
+
+  .marker-negative {
+    background: rgba(224,112,112,.1);
+    border: 1px solid rgba(224,112,112,.25);
+    color: var(--red);
+  }
+
+  .marker-neutral {
+    background: rgba(255,255,255,.05);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+
+  /* Related decisions */
+  .related-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .related-tag {
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    background: rgba(139,156,244,.08);
+    border: 1px solid rgba(139,156,244,.2);
+    color: var(--accent2);
+    padding: 3px 10px;
+    border-radius: 3px;
+  }
+
+  @media (max-width: 600px) {
+    .options-table { font-size: 0.8rem; }
+  }
+</style>
+{% endblock %}
+
+{% block header %}
+<header class="capsule-header">
+  <h1>
+    {% if capsule.adr_number %}
+    <span class="adr-number">ADR-{{ capsule.adr_number }}</span>
+    {% endif %}
+    {{ capsule.title | default(capsule_id) }}
+  </h1>
+  <div class="meta">
+    {% if capsule.status %}
+    <span class="badge">{{ capsule.status }}</span>
+    {% endif %}
+    {% if capsule.decision_card.decision_status is defined %}
+    <span class="badge">{{ capsule.decision_card.decision_status }}</span>
+    {% endif %}
+    {% if capsule.owner %}
+    <span>{{ capsule.owner }}</span>
+    {% endif %}
+    {% if capsule.created_at %}
+    <span>{{ capsule.created_at }}</span>
+    {% endif %}
+  </div>
+</header>
+{% endblock %}
+
+{% block content %}
+{% set dc = capsule.decision_card | default({}) %}
+
+{# Decision status bar #}
+{% set ds = dc.decision_status | default(capsule.decision_status | default('')) %}
+{% if ds %}
+<div class="decision-status-bar status-{{ ds | lower | replace(' ', '-') }}">
+  <div class="decision-status-dot"></div>
+  <div>
+    <span class="decision-status-text">{{ ds | upper }}</span>
+    {% if dc.decided_at or capsule.updated_at %}
+    <span class="decision-status-sub"> · {{ dc.decided_at | default(capsule.updated_at | default('')) }}</span>
+    {% endif %}
+  </div>
+  {% if dc.decision_maker %}
+  <span style="margin-left:auto;color:var(--muted);font-size:0.82em">{{ dc.decision_maker }}</span>
+  {% endif %}
+</div>
+{% endif %}
+
+{# Context #}
+{% set ctx_text = dc.context | default(capsule.context | default('')) %}
+{% if ctx_text %}
+<div class="adr-section">
+  <div class="adr-section-label">Context</div>
+  <div class="adr-body">{{ ctx_text }}</div>
+</div>
+{% endif %}
+
+{# Options table #}
+{% set options = dc.options | default(capsule.options | default([])) %}
+{% if options %}
+<div class="adr-section">
+  <div class="adr-section-label">Options Considered</div>
+  <div style="overflow-x:auto">
+    <table class="options-table" aria-label="Options considered">
+      <thead>
+        <tr>
+          <th>Option</th>
+          <th>Description</th>
+          <th>Trade-offs</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set chosen_opt = dc.decision | default('') %}
+        {% for opt in options %}
+        {% set is_chosen = (opt.name | default(opt.option | default(''))) == chosen_opt or opt.chosen | default(false) %}
+        <tr class="{{ 'chosen' if is_chosen else '' }}">
+          <td>
+            <strong>{{ opt.name | default(opt.option | default(opt)) }}</strong>
+            {% if is_chosen %}<span class="chosen-badge">Chosen</span>{% endif %}
+          </td>
+          <td>{{ opt.description | default('') }}</td>
+          <td>
+            {% if opt.pros %}
+            <div style="color:#8fc88f;font-size:0.82em;margin-bottom:3px">
+              {% if opt.pros is string %}+ {{ opt.pros }}
+              {% else %}{% for p in opt.pros %}+ {{ p }}<br>{% endfor %}{% endif %}
+            </div>
+            {% endif %}
+            {% if opt.cons %}
+            <div style="color:#d08080;font-size:0.82em">
+              {% if opt.cons is string %}- {{ opt.cons }}
+              {% else %}{% for c in opt.cons %}- {{ c }}<br>{% endfor %}{% endif %}
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# Decision #}
+{% set decision_text = dc.decision_text | default(dc.rationale | default('')) %}
+{% if decision_text %}
+<div class="adr-section">
+  <div class="adr-section-label">Decision</div>
+  <div class="decision-block">{{ decision_text }}</div>
+</div>
+{% elif dc.decision %}
+<div class="adr-section">
+  <div class="adr-section-label">Decision</div>
+  <div class="decision-block"><strong>{{ dc.decision }}</strong></div>
+</div>
+{% endif %}
+
+{# Consequences #}
+{% set consequences = dc.consequences | default([]) %}
+{% if consequences %}
+<div class="adr-section">
+  <div class="adr-section-label">Consequences</div>
+  <ul class="consequence-list">
+    {% for c in consequences %}
+    {% if c is mapping %}
+    {% set tone = c.type | default(c.tone | default('neutral')) %}
+    <li class="consequence-item">
+      <span class="consequence-marker {% if tone in ['positive', 'benefit', 'pro'] %}marker-positive{% elif tone in ['negative', 'risk', 'con'] %}marker-negative{% else %}marker-neutral{% endif %}">
+        {{ tone | upper | truncate(4, true, '') }}
+      </span>
+      <span>{{ c.text | default(c.consequence | default('')) }}</span>
+    </li>
+    {% else %}
+    <li class="consequence-item">
+      <span class="consequence-marker marker-neutral">NOTE</span>
+      <span>{{ c }}</span>
+    </li>
+    {% endif %}
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# Related Decisions #}
+{% set related = dc.related | default([]) %}
+{% if related %}
+<div class="adr-section">
+  <div class="adr-section-label">Related Decisions</div>
+  <div class="related-list">
+    {% for r in related %}
+    <span class="related-tag">{{ r }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# Source of Truth #}
+{% if capsule.source_of_truth %}
+<div class="adr-section">
+  <div class="adr-section-label">Source of Truth</div>
+  {% for key, val in capsule.source_of_truth.items() %}
+  <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
+    <span style="font-family:var(--font-mono);font-size:0.76rem;color:var(--muted);min-width:120px">{{ key }}</span>
+    <code style="font-size:0.8em;color:var(--fg)">{{ val }}</code>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

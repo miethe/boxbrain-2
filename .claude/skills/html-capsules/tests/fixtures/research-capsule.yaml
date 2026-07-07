@@ -1,0 +1,90 @@
+html_capsule:
+  schema_version: 0.1
+  capsule_id: fixture_research_capsule_html_vs_markdown
+  title: "HTML vs Markdown for Agentic Artifact Storage"
+  capsule_type: research-capsule
+  status: reviewed
+  created_at: "2026-05-15T10:00:00-04:00"
+  owner: Nick Miethe
+  confidentiality: personal
+  interactivity_level: L1_local
+
+  source_of_truth:
+    human_brief: .claude/plans/html_capsules_agentic_os_bundle/HTML_Capsules_Key_Takeaways_and_Next_Direction.md
+    design_spec: .claude/plans/html_capsules_agentic_os_bundle/HTML_Capsules_and_Agentic_Run_Cards_Spec.md
+    manifest: tests/fixtures/research-capsule.yaml
+
+  research_capsule:
+    question: "Should agentic work artifacts be stored and reviewed as HTML or Markdown?"
+    summary: >
+      After reviewing Simon Willison's analysis, community discussions, and prior Agentic OS
+      specs, the answer is neither exclusively. The correct synthesis is: Markdown is memory,
+      JSON/YAML is state, HTML is the interface. Each format has a distinct role in the
+      agentic artifact layer.
+
+    source_cards:
+      - title: "Simon Willison: HTML Artifacts from Claude"
+        type: blog_post
+        author: "Simon Willison"
+        date: "2024"
+        quality: HIGH
+        excerpt: "Claude generates HTML artifacts that are more useful than Markdown for explanations, diagrams, dashboards, mockups, and timelines."
+      - title: "Thariq Shihipar: Companion HTML Examples"
+        type: examples
+        author: "Thariq Shihipar"
+        quality: HIGH
+        excerpt: "Practical demonstrations of Claude-generated HTML artifacts for data visualization and interactive content."
+      - title: "Prior Agentic OS Seed Specs"
+        type: internal_spec
+        author: "Nick Miethe"
+        quality: MED
+        excerpt: "Earlier specs exploring HTML render layer for agentic work output — later refined into this capsule system."
+      - title: "HTML vs Markdown Community Review"
+        type: community_discussion
+        quality: MED
+        excerpt: "Community consensus: HTML and Markdown are complementary, not competing. Markdown wins for ingestion and search; HTML wins for presentation."
+
+    claim_map:
+      - claim: "Markdown is superior for agent ingestion, search, and long-term memory."
+        strength: STRONG
+        source: "Community consensus"
+      - claim: "HTML is superior for human review, spatial information, and interactivity."
+        strength: STRONG
+        source: "Simon Willison"
+      - claim: "YAML/JSON is the canonical structured state layer between generation and rendering."
+        strength: STRONG
+        source: "Agentic OS Spec"
+      - claim: "HTML artifacts increase review acceptance rate by making agentic work scannable."
+        strength: MODERATE
+        source: "Hypothesis — not yet measured"
+      - claim: "Self-contained HTML (no CDN) with inline CSS/JS can match framework-built dashboards for capsule use cases."
+        strength: MODERATE
+        source: "Phase 2 implementation"
+
+    caveats:
+      - text: "Review acceptance rate is hypothesized, not yet empirically measured."
+      - text: "HTML artifacts increase file size significantly vs plain Markdown — not suitable for high-frequency context packs."
+      - text: "Inline JS can become unmaintainable at scale — Jinja2 templates mitigate this but add a build step."
+
+    quality_signals:
+      source_diversity: MED
+      recency: HIGH
+      evidence_strength: MODERATE
+      practical_validation: HIGH
+
+    next_actions:
+      - action: "Measure review acceptance rate after Phase 2 templates land"
+        owner: Nick Miethe
+        notes: "Track capsules reviewed vs capsules exported/written back"
+      - action: "Add D3 claim-map visualization as Phase 3 optional feature"
+        notes: "Bundle D3 inline if <100KB gzipped; otherwise defer"
+      - action: "Publish research synthesis to MeatyWiki"
+        owner: Nick Miethe
+
+  writebacks:
+    meatywiki:
+      target: projects/meatywiki/research/html-vs-markdown-agentic-artifacts.md
+      status: proposed
+      operation: create_or_update
+    ccdash: proposed
+    skillmeat: proposed

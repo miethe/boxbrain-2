@@ -1,0 +1,99 @@
+html_capsule:
+  schema_version: 0.1
+  capsule_id: fixture_gtm_brief_html_capsules_bundle
+  title: "HTML Capsules · SkillMeat Bundle GTM Brief"
+  capsule_type: gtm-brief
+  status: draft
+  created_at: "2026-05-15T10:00:00-04:00"
+  owner: Nick Miethe
+  confidentiality: personal
+  interactivity_level: L2_exportable
+  safe_html_mode: strict
+
+  source_of_truth:
+    design_spec: .claude/plans/html_capsules_agentic_os_bundle/HTML_Capsules_and_Agentic_Run_Cards_Spec.md
+    human_brief: .claude/plans/html_capsules_agentic_os_bundle/HTML_Capsules_Key_Takeaways_and_Next_Direction.md
+    manifest: tests/fixtures/gtm-brief.yaml
+
+  gtm_brief:
+    executive_narrative: >
+      HTML Capsules is a rendered artifact layer that turns agentic work into
+      reviewable, writeback-ready HTML pages. The system addresses a key gap in
+      current AI toolchains: agent outputs are trapped in chat transcripts, terminal
+      logs, and one-off Markdown files that are hard to skim, share, or act on.
+
+      The SkillMeat bundle packages the complete capsule generation skill — schema,
+      renderer, templates, and CLI — as a cross-project artifact that any SkillMeat
+      user can deploy to their .claude/ directory. Phase 5 completes the go-to-market
+      by validating bundle installation, rendering, and writeback export across
+      six capsule types.
+
+      Target users are Claude Code power users who want structured, visual records
+      of their agentic sessions — specifically those already using SkillMeat for
+      skill management.
+
+    kpis:
+      - value: "6"
+        label: "Capsule Types"
+      - value: "L2"
+        label: "Interactivity"
+      - value: "0"
+        label: "External Deps"
+      - value: "v0.1"
+        label: "Schema Version"
+
+    options:
+      - name: "SkillMeat Bundle (Current)"
+        description: "Package as a SkillMeat bundle for cross-project propagation via skillmeat add"
+        investment: "1 sprint"
+        upside: "Reaches all SkillMeat users at install; version-controlled"
+        risk: LOW
+        timeline: "Phase 5 (this sprint)"
+        recommended: true
+      - name: "Standalone Python Package"
+        description: "Publish as pip-installable package on PyPI"
+        investment: "2-3 sprints"
+        upside: "Broader Python ecosystem reach"
+        risk: MED
+        timeline: "v0.2 milestone"
+      - name: "MeatyWiki Portal Integration"
+        description: "Render capsules server-side via MeatyWiki portal"
+        investment: "Full v2 project"
+        upside: "Authenticated writeback (L3+)"
+        risk: HIGH
+        timeline: "v0.3+ milestone"
+
+    recommended_option: "SkillMeat Bundle (Current)"
+
+    recommendation: >
+      Launch via SkillMeat bundle immediately. The bundle path requires zero new
+      infrastructure and reaches the target user segment directly. Ship Phase 5,
+      validate round-trip install and rendering, then revisit PyPI packaging
+      once usage patterns are established. MeatyWiki integration is a Phase 4+
+      initiative — not MVP.
+
+    next_steps:
+      - step: "Complete Phase 2 template library (current task)"
+      - step: "Build meaty-capsule CLI surface (Phase 3)"
+      - step: "Integrate capsule emission into existing SkillMeat workflows (Phase 4)"
+      - step: "Package and validate SkillMeat bundle (Phase 5)"
+
+    open_questions:
+      - question: "Should the bundle include a demo capsule pre-rendered for first-run UX?"
+        priority: MED
+        context: "Would help new users understand output format immediately."
+      - question: "Is L2 (copy-to-clipboard) sufficient for v0.1 or should we target L3 (local API writeback)?"
+        priority: HIGH
+        context: "L3 requires a local SkillMeat API server — not available in all environments."
+      - question: "Should we support incremental template installation (install only needed types)?"
+        priority: LOW
+
+  writebacks:
+    meatywiki:
+      target: projects/skillmeat/gtm/html-capsules-bundle-brief.md
+      status: proposed
+      operation: create
+    ccdash: proposed
+    skillmeat: proposed
+    intenttree: proposed
+    control_plane: proposed

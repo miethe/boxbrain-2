@@ -1,0 +1,1 @@
+"""meaty-capsule CLI package."""

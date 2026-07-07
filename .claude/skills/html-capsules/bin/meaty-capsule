@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""meaty-capsule shell shim.
+
+Allows direct invocation:
+    .../html-capsules/bin/meaty-capsule [subcommand] [flags]
+
+Future SkillMeat integration: once html-capsules is packaged via pyproject.toml,
+replace this shim with a proper entry_point:
+    [project.scripts]
+    meaty-capsule = "html_capsules.cli.__main__:main"
+"""
+
+import sys
+from pathlib import Path
+
+# Resolve the html-capsules skills root (parent of bin/).
+_BIN_DIR = Path(__file__).resolve().parent
+_SKILLS_ROOT = _BIN_DIR.parent
+
+# Ensure skills root and its parent are on sys.path.
+for _p in (_SKILLS_ROOT, _SKILLS_ROOT.parent):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+# Delegate to the CLI dispatcher.
+from cli.__main__ import main  # noqa: E402
+
+sys.exit(main())

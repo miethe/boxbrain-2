@@ -1,0 +1,189 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "instances-schema.json",
+  "title": "SkillMeat Instance Registry",
+  "description": "Registry of managed SkillMeat instances across all editions and deployment methods",
+  "type": "object",
+  "required": ["instances"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "instances": {
+      "type": "object",
+      "description": "Map of instance name to instance configuration",
+      "additionalProperties": {
+        "$ref": "#/definitions/Instance"
+      }
+    }
+  },
+  "definitions": {
+    "Instance": {
+      "type": "object",
+      "required": ["name", "edition", "deployment_method", "host", "api_port", "web_port", "api_url", "web_url", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for this instance. Must match the parent key.",
+          "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+          "maxLength": 64
+        },
+        "edition": {
+          "type": "string",
+          "enum": ["local", "local-auth", "enterprise"],
+          "description": "SkillMeat edition. Controls backend storage (SQLite vs PostgreSQL) and auth."
+        },
+        "deployment_method": {
+          "type": "string",
+          "enum": ["compose", "aws-ec2", "aws-fargate", "azure-aca"],
+          "description": "How the instance is deployed and managed."
+        },
+        "profile": {
+          "type": "string",
+          "enum": ["local", "local-auth", "enterprise", "full", "api-only"],
+          "description": "Docker Compose profile in use. Required for compose and aws-ec2 methods."
+        },
+        "host": {
+          "type": "string",
+          "description": "Hostname or IP of the instance. Use 'localhost' for local compose deployments."
+        },
+        "api_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Port the FastAPI backend listens on. Default 8080."
+        },
+        "web_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Port the Next.js frontend listens on. Default 3000."
+        },
+        "api_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Full URL to reach the API from outside the instance (may differ from host:api_port for HTTPS/ALB)."
+        },
+        "web_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Full URL to reach the web frontend."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["running", "stopped", "unknown", "deploying", "updating", "error"],
+          "description": "Last known status. Updated by manage-instances.py or health-check.sh."
+        },
+        "last_deployed": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of the last successful deployment."
+        },
+        "last_health_check": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of the last health check run."
+        },
+        "terraform_root": {
+          "type": ["string", "null"],
+          "description": "Relative path from repo root to Terraform environment directory. Required for aws-ec2, aws-fargate, azure-aca methods. Null for compose-only instances.",
+          "examples": [
+            "deploy/aws/terraform/envs/dev-ec2",
+            "deploy/aws/terraform/envs/dev-fargate",
+            "deploy/azure/terraform/envs/dev-container-apps"
+          ]
+        },
+        "ssh_key": {
+          "type": ["string", "null"],
+          "description": "Path to SSH private key for remote access. Required for aws-ec2 instances. Null otherwise.",
+          "examples": ["~/.ssh/skillmeat-aws.pem", "~/.ssh/skillmeat-demo.pem"]
+        },
+        "ssh_port": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "SSH port. Default is 22; demo box uses 2222 via socat forwarder."
+        },
+        "ssh_user": {
+          "type": ["string", "null"],
+          "description": "SSH username. Default ec2-user for Amazon Linux instances.",
+          "examples": ["ec2-user", "ubuntu"]
+        },
+        "aws_profile": {
+          "type": ["string", "null"],
+          "description": "AWS CLI profile name for Terraform and CLI operations. Null for non-AWS instances."
+        },
+        "aws_region": {
+          "type": ["string", "null"],
+          "description": "AWS region for cloud operations.",
+          "examples": ["us-east-1", "ap-southeast-1"]
+        },
+        "azure_subscription": {
+          "type": ["string", "null"],
+          "description": "Azure subscription ID for Terraform operations. Null for non-Azure instances."
+        },
+        "azure_resource_group": {
+          "type": ["string", "null"],
+          "description": "Azure resource group name where this instance is deployed."
+        },
+        "compose_project_name": {
+          "type": ["string", "null"],
+          "description": "COMPOSE_PROJECT_NAME override. Required when multiple compose projects share a directory (e.g., demo box with Backstage). Null to use directory basename.",
+          "examples": ["skillmeat"]
+        },
+        "container_runtime": {
+          "type": "string",
+          "enum": ["docker", "podman", "auto"],
+          "default": "auto",
+          "description": "Container runtime to use. 'auto' lets compose.sh detect. Demo box uses 'docker'; dev workstations use 'podman'."
+        },
+        "database": {
+          "$ref": "#/definitions/DatabaseConfig"
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Free-form notes about this instance. Useful for documenting quirks or maintenance status."
+        }
+      }
+    },
+    "DatabaseConfig": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["sqlite", "postgresql"],
+          "description": "Database type. local/local-auth editions use sqlite; enterprise uses postgresql."
+        },
+        "connection": {
+          "type": ["string", "null"],
+          "description": "PostgreSQL connection string. Null for SQLite. May contain credentials — keep instances.json gitignored.",
+          "examples": ["postgres://skillmeat:***@localhost:5432/skillmeat"]
+        },
+        "backup_bucket": {
+          "type": ["string", "null"],
+          "description": "S3 bucket name for automated backups. Null if not configured.",
+          "examples": ["skillmeat-backups", "my-company-skillmeat-db-backups"]
+        },
+        "backup_prefix": {
+          "type": ["string", "null"],
+          "description": "S3 key prefix for backup files. Defaults to instance name if null.",
+          "examples": ["backups/aws-enterprise", "db-dumps/production"]
+        },
+        "last_backup": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of the last successful backup."
+        },
+        "rds_identifier": {
+          "type": ["string", "null"],
+          "description": "RDS DB instance identifier for snapshot operations. Null for non-RDS PostgreSQL.",
+          "examples": ["skillmeat-dev-fargate-db"]
+        }
+      }
+    }
+  }
+}

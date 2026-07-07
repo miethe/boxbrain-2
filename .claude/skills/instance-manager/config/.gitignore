@@ -1,0 +1,3 @@
+# Instance registry contains credentials (connection strings, SSH keys, AWS profiles)
+# Never commit — use instances.example.json as the committed template
+instances.json

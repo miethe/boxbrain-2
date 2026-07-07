@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="{{ CSP_HEADER }}">
+  <title>{% block title %}{{ capsule.title | default(capsule_id) }}{% endblock %}</title>
+  <style>
+    /* -----------------------------------------------------------------------
+       CSS custom properties — theme tokens
+       Override in derived templates via :root { --bg: ...; }
+    ----------------------------------------------------------------------- */
+    :root {
+      --bg:       #ffffff;
+      --fg:       #1a1a1a;
+      --accent:   #4f6ef2;
+      --muted:    #6b7280;
+      --border:   #e5e7eb;
+      --surface:  #f9fafb;
+      --radius:   6px;
+      --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Helvetica Neue", Arial, sans-serif;
+      --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier,
+                   monospace;
+      --space-xs:  0.25rem;
+      --space-sm:  0.5rem;
+      --space-md:  1rem;
+      --space-lg:  1.5rem;
+      --space-xl:  2rem;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:       #0f1117;
+        --fg:       #e8eaf0;
+        --accent:   #7b9cf8;
+        --muted:    #9ca3af;
+        --border:   #2d2f3a;
+        --surface:  #1a1c26;
+      }
+    }
+
+    /* -----------------------------------------------------------------------
+       Base reset and typography
+    ----------------------------------------------------------------------- */
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-sans);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin: 0 0 var(--space-sm);
+      line-height: 1.25;
+      font-weight: 600;
+    }
+
+    p { margin: 0 0 var(--space-md); }
+
+    code, pre {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--space-md);
+      overflow-x: auto;
+    }
+
+    a { color: var(--accent); }
+    a:hover { opacity: 0.8; }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: var(--space-lg) 0;
+    }
+
+    /* -----------------------------------------------------------------------
+       Layout
+    ----------------------------------------------------------------------- */
+    .capsule-wrapper {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: var(--space-xl) var(--space-lg);
+    }
+
+    .capsule-header {
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: var(--space-md);
+      margin-bottom: var(--space-lg);
+    }
+
+    .capsule-header h1 {
+      font-size: 1.6rem;
+      margin-bottom: var(--space-xs);
+    }
+
+    .capsule-header .meta {
+      color: var(--muted);
+      font-size: 0.85rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      align-items: center;
+    }
+
+    .capsule-header .meta .badge {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 1px 8px;
+      font-size: 0.78rem;
+      font-weight: 500;
+    }
+
+    .capsule-content {
+      margin-bottom: var(--space-xl);
+    }
+
+    .capsule-writeback {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--space-lg);
+      margin-bottom: var(--space-xl);
+    }
+
+    .capsule-writeback h2 {
+      font-size: 1rem;
+      margin-bottom: var(--space-md);
+    }
+
+    .writeback-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-xs);
+      padding: 6px 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn:hover {
+      background: var(--surface);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      opacity: 0.88;
+      color: #fff;
+    }
+
+    .btn-copied {
+      border-color: #22c55e;
+      color: #22c55e;
+    }
+
+    .capsule-footer {
+      border-top: 1px solid var(--border);
+      padding-top: var(--space-md);
+      font-size: 0.78rem;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-md);
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .capsule-footer .footer-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-md);
+    }
+
+    .capsule-footer .footer-item {
+      display: flex;
+      gap: var(--space-xs);
+    }
+
+    .capsule-footer .footer-label {
+      font-weight: 600;
+    }
+
+    /* -----------------------------------------------------------------------
+       Not-implemented notice (Phase 1 placeholder)
+    ----------------------------------------------------------------------- */
+    .not-implemented {
+      background: var(--surface);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      padding: var(--space-lg);
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .not-implemented code {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1px 6px;
+      font-size: 0.9em;
+    }
+
+    /* -----------------------------------------------------------------------
+       Toast notification for copy feedback
+    ----------------------------------------------------------------------- */
+    .toast {
+      position: fixed;
+      bottom: var(--space-lg);
+      right: var(--space-lg);
+      background: #22c55e;
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      font-weight: 500;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+  <div class="capsule-wrapper">
+
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Header                                                               -->
+    <!-- ------------------------------------------------------------------ -->
+    {% block header %}
+    <header class="capsule-header">
+      <h1>{{ capsule.title | default(capsule_id) }}</h1>
+      <div class="meta">
+        {% if capsule_type %}
+        <span class="badge">{{ capsule_type }}</span>
+        {% endif %}
+        {% if capsule.status %}
+        <span class="badge">{{ capsule.status }}</span>
+        {% endif %}
+        {% if capsule.owner %}
+        <span>Owner: {{ capsule.owner }}</span>
+        {% endif %}
+        {% if capsule.confidentiality %}
+        <span class="badge">{{ capsule.confidentiality }}</span>
+        {% endif %}
+      </div>
+    </header>
+    {% endblock %}
+
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Main content                                                         -->
+    <!-- ------------------------------------------------------------------ -->
+    <main class="capsule-content">
+      {% block content %}
+      {% if not template_implemented %}
+      <div class="not-implemented">
+        <p>
+          Template <code>{{ template_name }}</code> is not yet implemented for
+          capsule type <code>{{ capsule_type or "(unset)" }}</code>.
+        </p>
+        <p>
+          This is the base fallback layout. Implement
+          <code>{{ capsule_type | default("your-type") }}.html.j2</code>
+          in the templates directory to replace this notice.
+        </p>
+        {% if capsule %}
+        <details style="text-align:left; margin-top: 1rem;">
+          <summary style="cursor:pointer; font-size:0.85rem;">
+            Show raw manifest data
+          </summary>
+          <pre style="margin-top:0.5rem; font-size:0.8rem;">{{ capsule | tojson(indent=2) }}</pre>
+        </details>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% endblock %}
+    </main>
+
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Writeback actions                                                    -->
+    <!-- ------------------------------------------------------------------ -->
+    {% block writeback_actions %}
+    {% if capsule.writebacks %}
+    <section class="capsule-writeback" aria-label="Writeback actions">
+      <h2>Proposed Writebacks</h2>
+      <div class="writeback-actions">
+        {% for target_name in capsule.writebacks %}
+        <button
+          class="btn"
+          onclick="exportWriteback({{ target_name | tojson }})"
+          aria-label="Export {{ target_name }} writeback to clipboard"
+        >
+          Copy {{ target_name }} writeback
+        </button>
+        {% endfor %}
+        <button
+          class="btn btn-primary"
+          onclick="exportWriteback(null)"
+          aria-label="Copy full writeback bundle to clipboard"
+        >
+          Copy full bundle
+        </button>
+      </div>
+    </section>
+    {% endif %}
+    {% endblock %}
+
+    <!-- ------------------------------------------------------------------ -->
+    <!-- Footer                                                               -->
+    <!-- ------------------------------------------------------------------ -->
+    {% block footer %}
+    <footer class="capsule-footer">
+      <div class="footer-meta">
+        {% if capsule_id %}
+        <span class="footer-item">
+          <span class="footer-label">ID:</span>
+          <span>{{ capsule_id }}</span>
+        </span>
+        {% endif %}
+        {% if capsule_type %}
+        <span class="footer-item">
+          <span class="footer-label">Type:</span>
+          <span>{{ capsule_type }}</span>
+        </span>
+        {% endif %}
+        {% if capsule.schema_version is defined %}
+        <span class="footer-item">
+          <span class="footer-label">Schema:</span>
+          <span>v{{ capsule.schema_version }}</span>
+        </span>
+        {% endif %}
+        {% if capsule.created_at %}
+        <span class="footer-item">
+          <span class="footer-label">Created:</span>
+          <span>{{ capsule.created_at }}</span>
+        </span>
+        {% endif %}
+      </div>
+      <div>
+        <span title="HTML Capsule — Agentic OS">&#9632; HTML Capsule</span>
+      </div>
+    </footer>
+    {% endblock %}
+
+  </div><!-- /.capsule-wrapper -->
+
+  <!-- Toast element for clipboard feedback -->
+  <div id="capsule-toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- -------------------------------------------------------------------- -->
+  <!-- Vanilla JS — no external dependencies                                  -->
+  <!-- capsule_id is embedded via |tojson to remain safe inside JS strings   -->
+  <!-- -------------------------------------------------------------------- -->
+  {% autoescape false %}
+  <script>
+  (function () {
+    'use strict';
+
+    // -----------------------------------------------------------------------
+    // Capsule identity (injected at render time)
+    // -----------------------------------------------------------------------
+    var CAPSULE_ID = {{ capsule_id | tojson }};
+    var STATE_KEY = 'capsule:' + CAPSULE_ID + ':state';
+
+    // -----------------------------------------------------------------------
+    // Writeback bundle — populated from manifest.writebacks at render time.
+    // Each key is a target system name; value is the writeback descriptor.
+    // -----------------------------------------------------------------------
+    window.__capsule_writeback__ = {{ capsule.writebacks | default({}) | tojson }};
+
+    // -----------------------------------------------------------------------
+    // Persistent local state (localStorage)
+    // -----------------------------------------------------------------------
+    function loadState() {
+      try {
+        var raw = localStorage.getItem(STATE_KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function saveState(state) {
+      try {
+        localStorage.setItem(STATE_KEY, JSON.stringify(state));
+      } catch (e) {
+        // Quota exceeded or private browsing — silently continue.
+      }
+    }
+
+    window.__capsule_state__ = loadState();
+
+    // -----------------------------------------------------------------------
+    // Toast helper
+    // -----------------------------------------------------------------------
+    function showToast(message) {
+      var el = document.getElementById('capsule-toast');
+      if (!el) return;
+      el.textContent = message;
+      el.classList.add('visible');
+      setTimeout(function () {
+        el.classList.remove('visible');
+      }, 2000);
+    }
+
+    // -----------------------------------------------------------------------
+    // Copy-to-clipboard helper
+    // -----------------------------------------------------------------------
+    function copyToClipboard(text, btn) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          showToast('Copied to clipboard');
+          if (btn) {
+            var orig = btn.textContent;
+            btn.classList.add('btn-copied');
+            btn.textContent = 'Copied!';
+            setTimeout(function () {
+              btn.textContent = orig;
+              btn.classList.remove('btn-copied');
+            }, 1500);
+          }
+        }, function () {
+          fallbackCopy(text);
+        });
+      } else {
+        fallbackCopy(text);
+      }
+    }
+
+    function fallbackCopy(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast('Copied to clipboard');
+      } catch (e) {
+        showToast('Copy failed — please copy manually');
+      }
+      document.body.removeChild(ta);
+    }
+
+    // -----------------------------------------------------------------------
+    // exportWriteback(target)
+    //   Serialises window.__capsule_writeback__ to JSON and copies to clipboard.
+    //   Pass a target system name (string) to export only that target's data,
+    //   or null to export the full bundle.
+    // -----------------------------------------------------------------------
+    window.exportWriteback = function (target) {
+      var bundle = window.__capsule_writeback__;
+      var payload;
+
+      if (target && bundle[target] !== undefined) {
+        payload = {
+          schema_version: 0.1,
+          capsule_id: CAPSULE_ID,
+          generated_at: new Date().toISOString(),
+          target: target,
+          writeback: bundle[target]
+        };
+      } else {
+        payload = {
+          schema_version: 0.1,
+          capsule_id: CAPSULE_ID,
+          generated_at: new Date().toISOString(),
+          writebacks: bundle
+        };
+      }
+
+      var json = JSON.stringify(payload, null, 2);
+      var btn = null;
+
+      // Locate the triggering button by checking the event target chain.
+      if (window.event && window.event.target) {
+        btn = window.event.target.closest('button');
+      }
+
+      copyToClipboard(json, btn);
+
+      // Persist export timestamp in local state.
+      var state = loadState();
+      state.lastExport = new Date().toISOString();
+      state.lastExportTarget = target || 'all';
+      saveState(state);
+      window.__capsule_state__ = state;
+    };
+
+    // -----------------------------------------------------------------------
+    // Auto-restore any persisted local state on load
+    // -----------------------------------------------------------------------
+    document.addEventListener('DOMContentLoaded', function () {
+      var state = loadState();
+      if (state.lastExport) {
+        // Future hook: restore UI state from localStorage.
+        void state;
+      }
+    });
+
+  }());
+  </script>
+  {% endautoescape %}
+
+  {# Child templates inject capsule-type-specific JS (e.g. tab switching) here. #}
+  {% block scripts %}{% endblock %}
+
+</body>
+</html>

@@ -1,0 +1,699 @@
+{% extends "_base.html.j2" %}
+
+{% block title %}{{ capsule.title | default("Planning Capsule") }}{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* -----------------------------------------------------------------------
+     Planning Capsule — Dark command board aesthetic
+     Deep navy + electric blue + violet accents, glassmorphic cards,
+     4-column kanban board with status chips.
+  ----------------------------------------------------------------------- */
+  :root {
+    --bg:       #0d1117;
+    --fg:       #e6edf3;
+    --accent:   #7dd3fc;
+    --accent2:  #c084fc;
+    --muted:    #8b949e;
+    --border:   #21262d;
+    --surface:  #161b22;
+    --surface2: #1c2128;
+    --radius:   12px;
+    --radius-sm: 6px;
+    --green:    #3fb950;
+    --yellow:   #d29922;
+    --red:      #f85149;
+    --shadow:   0 8px 32px rgba(0,0,0,.4);
+  }
+
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(circle at 10% 0%, rgba(125,211,252,.08) 0%, transparent 40%),
+      radial-gradient(circle at 90% 80%, rgba(192,132,252,.07) 0%, transparent 40%);
+  }
+
+  .capsule-header h1 {
+    font-size: 1.8rem;
+    letter-spacing: -0.03em;
+    font-weight: 700;
+  }
+
+  .capsule-header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--space-lg);
+  }
+
+  /* Nav tabs */
+  .pc-nav {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: var(--space-lg);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .pc-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 600;
+    padding: 8px 16px 10px;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+    font-family: var(--font-sans);
+  }
+
+  .pc-tab:hover { color: var(--fg); }
+
+  .pc-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .pc-view { display: none; }
+  .pc-view.active { display: block; animation: pc-fade .18s ease; }
+  @keyframes pc-fade { from { opacity:.4; transform: translateY(4px); } to { opacity:1; transform:none; } }
+
+  /* Decision matrix table */
+  .dm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+
+  .dm-table th {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .dm-table td {
+    border: 1px solid var(--border);
+    padding: 9px 12px;
+    vertical-align: top;
+    color: var(--fg);
+  }
+
+  .dm-table tr:nth-child(even) td { background: rgba(255,255,255,.018); }
+  .dm-table tr:hover td { background: rgba(125,211,252,.04); }
+
+  .dm-score {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+  }
+
+  .dm-bar {
+    flex: 1;
+    height: 5px;
+    background: rgba(255,255,255,.08);
+    border-radius: 999px;
+    overflow: hidden;
+    min-width: 40px;
+  }
+
+  .dm-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 999px;
+  }
+
+  /* Open Questions */
+  .oq-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+  }
+
+  .oq-text { color: var(--fg); line-height: 1.5; }
+  .oq-meta { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+
+  .status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid;
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+
+  .status-chip:hover { opacity: 0.8; }
+
+  .chip-OPEN {
+    background: rgba(210,153,34,.1);
+    border-color: rgba(210,153,34,.35);
+    color: #d29922;
+  }
+
+  .chip-IN_DEBATE {
+    background: rgba(192,132,252,.1);
+    border-color: rgba(192,132,252,.35);
+    color: #c084fc;
+  }
+
+  .chip-RESOLVED {
+    background: rgba(63,185,80,.1);
+    border-color: rgba(63,185,80,.35);
+    color: #3fb950;
+  }
+
+  /* Kanban board */
+  .kanban-board {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(180px, 1fr));
+    gap: 12px;
+    align-items: start;
+    overflow-x: auto;
+  }
+
+  .kanban-lane {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    min-height: 200px;
+  }
+
+  .kanban-lane-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lane-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .lane-NOW .lane-title { color: var(--accent); }
+  .lane-NEXT .lane-title { color: var(--accent2); }
+  .lane-LATER .lane-title { color: var(--muted); }
+  .lane-DEBATE .lane-title { color: #d29922; }
+
+  .lane-count {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.1);
+    color: var(--muted);
+    padding: 2px 7px;
+    border-radius: 999px;
+  }
+
+  .kanban-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s;
+    user-select: none;
+  }
+
+  .kanban-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  .kanban-card.done {
+    opacity: 0.5;
+    text-decoration: line-through;
+  }
+
+  .kanban-card .card-title { color: var(--fg); font-weight: 500; }
+  .kanban-card .card-meta { color: var(--muted); font-size: 0.78rem; margin-top: 4px; }
+
+  /* Export section */
+  .export-section {
+    background: var(--surface2);
+    border: 1px solid rgba(125,211,252,.2);
+    border-radius: var(--radius);
+    padding: var(--space-lg);
+    margin-top: var(--space-lg);
+  }
+
+  .export-section h3 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: var(--space-md);
+  }
+
+  .export-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* State persistence indicator */
+  .state-indicator {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .state-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    flex-shrink: 0;
+  }
+
+  .state-dot.unsaved { background: #d29922; }
+
+  @media (max-width: 800px) {
+    .kanban-board { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 500px) {
+    .kanban-board { grid-template-columns: 1fr; }
+    .oq-item { grid-template-columns: 1fr; }
+    .oq-meta { align-items: flex-start; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set pc = capsule.planning_capsule | default({}) %}
+{% set decisions_matrix = pc.decision_matrix | default([]) %}
+{% set open_questions = pc.open_questions | default([]) %}
+{% set board_cards = pc.board | default({}) %}
+
+{# ── Navigation tabs ── #}
+<nav class="pc-nav" aria-label="Planning capsule sections">
+  <button class="pc-tab active" onclick="pcSwitch('overview', this)" aria-selected="true">Overview</button>
+  {% if decisions_matrix %}
+  <button class="pc-tab" onclick="pcSwitch('decisions', this)">Decision Matrix</button>
+  {% endif %}
+  {% if open_questions %}
+  <button class="pc-tab" onclick="pcSwitch('questions', this)">Open Questions <span id="oq-count-badge" style="font-family:var(--font-mono);font-size:0.72em;background:rgba(255,255,255,.08);padding:1px 5px;border-radius:999px;margin-left:4px">{{ open_questions | length }}</span></button>
+  {% endif %}
+  <button class="pc-tab" onclick="pcSwitch('board', this)">Board</button>
+  <button class="pc-tab" onclick="pcSwitch('export', this)">Export</button>
+</nav>
+
+{# ── Overview ── #}
+<div class="pc-view active" id="pc-view-overview">
+  {% if pc.summary %}
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-lg);margin-bottom:var(--space-md)">
+    <p style="margin:0;font-size:1rem;line-height:1.7;color:#c9d1d9">{{ pc.summary }}</p>
+  </div>
+  {% endif %}
+
+  {% if pc.key_takeaways %}
+  <div style="background:var(--surface);border:1px solid rgba(125,211,252,.2);border-radius:var(--radius);padding:var(--space-md);margin-bottom:var(--space-md)">
+    <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:8px">Key Takeaways</div>
+    <ul style="margin:0;padding-left:1.2em;color:var(--fg);font-size:0.9rem">
+      {% for t in pc.key_takeaways %}
+      <li style="margin-bottom:4px">{{ t }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if capsule.source_of_truth %}
+  <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:var(--space-md)">
+    <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Source of Truth</div>
+    {% for key, val in capsule.source_of_truth.items() %}
+    <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.85rem">
+      <span style="font-family:var(--font-mono);font-size:0.76rem;color:var(--muted);min-width:120px">{{ key }}</span>
+      <code style="color:var(--fg);font-size:0.8em">{{ val }}</code>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if not pc.summary and not pc.key_takeaways %}
+  <p style="color:var(--muted)">No overview content provided.</p>
+  {% endif %}
+</div>
+
+{# ── Decision Matrix ── #}
+{% if decisions_matrix %}
+<div class="pc-view" id="pc-view-decisions">
+  <div style="overflow-x:auto">
+    <table class="dm-table" aria-label="Decision matrix">
+      <thead>
+        <tr>
+          <th>Option</th>
+          <th>Description</th>
+          <th>Pros</th>
+          <th>Cons</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in decisions_matrix %}
+        <tr>
+          <td style="font-weight:600;white-space:nowrap">{{ row.option | default('—') }}</td>
+          <td>{{ row.description | default('') }}</td>
+          <td>
+            {% if row.pros %}
+            <ul style="margin:0;padding-left:1.1em;font-size:0.85em">
+              {% if row.pros is string %}
+              <li>{{ row.pros }}</li>
+              {% else %}
+              {% for p in row.pros %}<li>{{ p }}</li>{% endfor %}
+              {% endif %}
+            </ul>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.cons %}
+            <ul style="margin:0;padding-left:1.1em;font-size:0.85em">
+              {% if row.cons is string %}
+              <li>{{ row.cons }}</li>
+              {% else %}
+              {% for c in row.cons %}<li>{{ c }}</li>{% endfor %}
+              {% endif %}
+            </ul>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.score is defined %}
+            <div class="dm-score">
+              <div class="dm-bar"><div class="dm-bar-fill" style="width:{{ [row.score * 10, 100] | min }}%"></div></div>
+              <span>{{ row.score }}</span>
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pc.decision_rationale %}
+  <div style="margin-top:var(--space-lg);padding:var(--space-md);background:rgba(125,211,252,.06);border:1px solid rgba(125,211,252,.2);border-radius:var(--radius);font-size:0.9rem;color:#a8d8f0">
+    <strong style="font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--accent)">Rationale:</strong><br>
+    {{ pc.decision_rationale }}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ── Open Questions ── #}
+{% if open_questions %}
+<div class="pc-view" id="pc-view-questions">
+  <div id="oq-list">
+    {% for q in open_questions %}
+    {% set qid = "oq-" ~ loop.index %}
+    {% set status = q.status | default('OPEN') if q is mapping else 'OPEN' %}
+    <div class="oq-item" id="{{ qid }}">
+      <div class="oq-text">
+        {{ q.question if q is mapping else q }}
+        {% if q is mapping and q.context %}
+        <div style="color:var(--muted);font-size:0.82em;margin-top:4px">{{ q.context }}</div>
+        {% endif %}
+      </div>
+      <div class="oq-meta">
+        <button
+          class="status-chip chip-{{ status }}"
+          onclick="cycleStatus({{ qid | tojson }}, this)"
+          aria-label="Status: {{ status }}. Click to cycle."
+        >{{ status }}</button>
+        {% if q is mapping and q.owner %}
+        <span style="font-size:0.75rem;color:var(--muted)">{{ q.owner }}</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Board ── #}
+<div class="pc-view" id="pc-view-board">
+  <div class="kanban-board" id="kanban-board">
+    {% for lane_name in ['NOW', 'NEXT', 'LATER', 'DEBATE'] %}
+    {% set lane_cards = board_cards[lane_name] | default(board_cards[lane_name | lower] | default([])) %}
+    <div class="kanban-lane lane-{{ lane_name }}" id="lane-{{ lane_name }}">
+      <div class="kanban-lane-header">
+        <span class="lane-title">{{ lane_name }}</span>
+        <span class="lane-count" id="count-{{ lane_name }}">{{ lane_cards | length }}</span>
+      </div>
+      <div id="cards-{{ lane_name }}">
+        {% for card in lane_cards %}
+        {% set cid = "card-" ~ lane_name ~ "-" ~ loop.index %}
+        <div class="kanban-card" id="{{ cid }}" onclick="toggleCard({{ cid | tojson }})">
+          <div class="card-title">{{ card.title if card is mapping else card }}</div>
+          {% if card is mapping and card.notes %}
+          <div class="card-meta">{{ card.notes }}</div>
+          {% endif %}
+          {% if card is mapping and card.owner %}
+          <div class="card-meta">&#9632; {{ card.owner }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <div style="margin-top:var(--space-md);display:flex;align-items:center;gap:8px">
+    <div class="state-indicator">
+      <div class="state-dot" id="state-dot"></div>
+      <span id="state-label">State loaded from localStorage</span>
+    </div>
+  </div>
+</div>
+
+{# ── Export ── #}
+<div class="pc-view" id="pc-view-export">
+  <div class="export-section">
+    <h3>Export Bundle</h3>
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:var(--space-md)">
+      Serialize the current capsule state for writeback to MeatyWiki, CCDash, SkillMeat, or IntentTree.
+    </p>
+    <div class="export-buttons">
+      <button class="btn btn-primary" onclick="exportBundle(event)" aria-label="Export full planning bundle to clipboard">
+        &#10515; Export Full Bundle
+      </button>
+      {% if capsule.writebacks %}
+      {% for target_name in capsule.writebacks %}
+      <button class="btn" onclick="exportWriteback({{ target_name | tojson }})" aria-label="Copy {{ target_name }} writeback">
+        Copy {{ target_name }}
+      </button>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+  <div style="margin-top:var(--space-lg)">
+    <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px">Current State Preview</div>
+    <pre id="state-preview" style="font-size:0.78rem;max-height:300px;overflow-y:auto">Loading…</pre>
+  </div>
+</div>
+{% endblock %}
+
+{% block writeback_actions %}{% endblock %}
+
+{% block scripts %}
+{% autoescape false %}
+<script>
+(function() {
+  'use strict';
+
+  var CAPSULE_ID = {{ capsule_id | tojson }};
+  var STATE_KEY = 'capsule:' + CAPSULE_ID + ':state';
+  var state = {};
+
+  // Load persisted state
+  try {
+    var raw = localStorage.getItem(STATE_KEY);
+    if (raw) state = JSON.parse(raw);
+  } catch(e) {}
+
+  function saveState() {
+    try {
+      localStorage.setItem(STATE_KEY, JSON.stringify(state));
+      setStateDot(true);
+    } catch(e) {}
+  }
+
+  function setStateDot(saved) {
+    var dot = document.getElementById('state-dot');
+    var lbl = document.getElementById('state-label');
+    if (!dot) return;
+    dot.className = 'state-dot' + (saved ? '' : ' unsaved');
+    if (lbl) lbl.textContent = saved ? 'State saved' : 'Unsaved changes';
+  }
+
+  // Tab switching
+  window.pcSwitch = function(viewId, btn) {
+    document.querySelectorAll('.pc-view').forEach(function(el) {
+      el.classList.remove('active');
+    });
+    document.querySelectorAll('.pc-tab').forEach(function(el) {
+      el.classList.remove('active');
+      el.setAttribute('aria-selected', 'false');
+    });
+    var view = document.getElementById('pc-view-' + viewId);
+    if (view) view.classList.add('active');
+    if (btn) { btn.classList.add('active'); btn.setAttribute('aria-selected', 'true'); }
+
+    if (viewId === 'export') updateStatePreview();
+  };
+
+  // OQ status cycle
+  var STATUS_CYCLE = ['OPEN', 'IN_DEBATE', 'RESOLVED'];
+  window.cycleStatus = function(itemId, btn) {
+    var cur = btn.textContent.trim();
+    var idx = STATUS_CYCLE.indexOf(cur);
+    var next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+    btn.textContent = next;
+    btn.className = 'status-chip chip-' + next;
+    if (!state.oq) state.oq = {};
+    state.oq[itemId] = next;
+    setStateDot(false);
+    saveState();
+  };
+
+  // Card toggle (done/undone)
+  window.toggleCard = function(cardId) {
+    var el = document.getElementById(cardId);
+    if (!el) return;
+    el.classList.toggle('done');
+    if (!state.cards) state.cards = {};
+    state.cards[cardId] = el.classList.contains('done');
+    setStateDot(false);
+    saveState();
+  };
+
+  // Restore saved card state
+  function restoreState() {
+    if (state.cards) {
+      Object.keys(state.cards).forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (state.cards[id]) el.classList.add('done');
+        else el.classList.remove('done');
+      });
+    }
+    if (state.oq) {
+      Object.keys(state.oq).forEach(function(id) {
+        var item = document.getElementById(id);
+        if (!item) return;
+        var chip = item.querySelector('.status-chip');
+        if (!chip) return;
+        var status = state.oq[id];
+        chip.textContent = status;
+        chip.className = 'status-chip chip-' + status;
+      });
+    }
+  }
+
+  function updateStatePreview() {
+    var pre = document.getElementById('state-preview');
+    if (!pre) return;
+    pre.textContent = JSON.stringify(state, null, 2);
+  }
+
+  // Bundle export
+  window.exportBundle = function(evt) {
+    var payload = {
+      schema_version: 0.1,
+      capsule_id: CAPSULE_ID,
+      capsule_type: 'planning-capsule',
+      exported_at: new Date().toISOString(),
+      local_state: state,
+      writebacks: {{ capsule.writebacks | default({}) | tojson }}
+    };
+    var json = JSON.stringify(payload, null, 2);
+    var btn = evt && evt.target ? evt.target.closest('button') : null;
+    copyText(json, btn, 'Bundle copied!');
+  };
+
+  window.__capsule_writeback__ = {{ capsule.writebacks | default({}) | tojson }};
+
+  window.exportWriteback = function(target) {
+    var bundle = window.__capsule_writeback__;
+    var payload = target
+      ? { schema_version: 0.1, capsule_id: CAPSULE_ID, generated_at: new Date().toISOString(), target: target, writeback: bundle[target] }
+      : { schema_version: 0.1, capsule_id: CAPSULE_ID, generated_at: new Date().toISOString(), writebacks: bundle };
+    var json = JSON.stringify(payload, null, 2);
+    var btn = window.event && window.event.target ? window.event.target.closest('button') : null;
+    copyText(json, btn, 'Copied!');
+  };
+
+  function copyText(text, btn, msg) {
+    function onSuccess() {
+      showToast(msg || 'Copied to clipboard');
+      if (btn) {
+        var orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = orig; }, 1500);
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onSuccess, function() { fallback(text); onSuccess(); });
+    } else {
+      fallback(text);
+      onSuccess();
+    }
+  }
+
+  function fallback(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;top:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+  }
+
+  function showToast(msg) {
+    var el = document.getElementById('capsule-toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add('visible');
+    setTimeout(function() { el.classList.remove('visible'); }, 2000);
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    restoreState();
+    setStateDot(true);
+  });
+}());
+</script>
+{% endautoescape %}
+{% endblock %}

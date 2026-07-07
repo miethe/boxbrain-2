@@ -1,0 +1,94 @@
+# HTML Capsules — SkillMeat local skill manifest
+# Declares metadata, runtime dependencies, included paths, and the entry point
+# for the html-capsules skill. This is a local/internal skill (not GitHub-sourced).
+
+[tool.skillmeat]
+version = "1.0.0"
+
+# ---------------------------------------------------------------------------
+# Skill identity
+# ---------------------------------------------------------------------------
+[skill]
+name        = "html-capsules"
+version     = "0.1.0"
+type        = "skill"
+scope       = "user"
+description = "HTML Capsule generator — render Markdown/YAML manifests to self-contained interactive HTML capsules (Run Cards, Planning Capsules, SkillCards, etc.)"
+owner       = "Nick Miethe"
+posture     = "implementer"
+
+# Entry point executed by `skillmeat deploy` / `skillmeat run`
+entry_point = "bin/meaty-capsule"
+
+# BOM reference (supply-chain provenance)
+bom_ref = ".claude/plans/html_capsules_agentic_os_bundle/html_capsule_generator.skillbom.yaml"
+
+# ---------------------------------------------------------------------------
+# Python runtime requirements
+# ---------------------------------------------------------------------------
+[skill.python]
+requires_python = ">=3.9"
+
+[skill.python.dependencies]
+jinja2      = ">=3.1.0"
+jsonschema  = ">=4.17.0"
+pyyaml      = ">=6.0.0"
+
+# ---------------------------------------------------------------------------
+# Packaging — what to include / exclude when bundling or deploying
+# ---------------------------------------------------------------------------
+[skill.packaging]
+include = [
+    "schemas/",
+    "templates/",
+    "lib/",
+    "renderer/",
+    "cli/",
+    "bin/",
+    "docs/",
+    "SPEC.md",
+    "SKILL.md",
+]
+
+exclude = [
+    "tests/",
+    "__pycache__/",
+    "*.pyc",
+    "*.pyo",
+    ".pytest_cache/",
+    ".mypy_cache/",
+]
+
+# ---------------------------------------------------------------------------
+# Capsule types produced by this skill
+# ---------------------------------------------------------------------------
+[skill.capsule_types]
+run_card        = { schema = "schemas/capsule-manifest.schema.json", description = "Agentic run summary with evidence and writeback bundle" }
+planning_capsule = { schema = "schemas/capsule-manifest.schema.json", description = "PRD / implementation-plan view with phase breakdown" }
+skill_card      = { schema = "schemas/capsule-manifest.schema.json", description = "Skill capability card with usage examples" }
+decision_card   = { schema = "schemas/capsule-manifest.schema.json", description = "Decision record with rationale and trade-offs" }
+research_capsule = { schema = "schemas/capsule-manifest.schema.json", description = "Research brief with findings and references" }
+
+# ---------------------------------------------------------------------------
+# Validation constraints (mirrors skillbom validation field)
+# ---------------------------------------------------------------------------
+[skill.validation]
+rules = [
+    "no_external_scripts",
+    "canonical_source_preserved",
+    "writeback_bundle_generated",
+    "safe_html_mode",
+    "human_review_required",
+]
+
+# ---------------------------------------------------------------------------
+# Artifact declaration (for SkillMeat catalog registration)
+# ---------------------------------------------------------------------------
+[[artifacts]]
+name        = "html-capsules"
+type        = "skill"
+source      = "local:.claude/skills/html-capsules"
+version     = "0.1.0"
+scope       = "user"
+description = "Self-contained HTML capsule renderer for agentic run artifacts"
+entry_point = "bin/meaty-capsule"

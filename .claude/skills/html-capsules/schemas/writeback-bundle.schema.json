@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skillmeat.local/schemas/html-capsules/writeback-bundle/v0.1",
+  "title": "HTML Capsule Writeback Bundle",
+  "description": "Schema v0.1 for writeback.bundle.json — the export envelope produced by HTML Capsules at L2+ interactivity. Defined in Spec §11 and §17. A writeback bundle collects proposed mutations to external systems (MeatyWiki, CCDash, SkillMeat, IntentTree, Control Plane) for human review and optional application.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "capsule_id",
+    "generated_at",
+    "writebacks"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "description": "Bundle schema version. Must be exactly '0.1' for this schema release.",
+      "type": "number",
+      "const": 0.1
+    },
+    "capsule_id": {
+      "description": "Stable identifier of the HTML Capsule that produced this bundle. Matches capsule_manifest.html_capsule.capsule_id.",
+      "type": "string",
+      "minLength": 1
+    },
+    "bundle_id": {
+      "description": "Optional stable identifier for this specific writeback bundle (e.g. 'wb_2026_05_09_html_capsules'). Useful for idempotent re-application.",
+      "type": "string"
+    },
+    "generated_at": {
+      "description": "ISO 8601 timestamp when the bundle was generated.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "review_status": {
+      "description": "Overall review lifecycle state of the bundle.",
+      "type": "string",
+      "enum": ["proposed", "approved", "applied", "rejected", "deferred"],
+      "default": "proposed"
+    },
+    "source_capsule_version": {
+      "description": "Optional — schema_version of the originating capsule manifest.",
+      "type": "number"
+    },
+    "writebacks": {
+      "description": "Ordered list of proposed writeback operations. Each entry targets one external system with a specific action and payload.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/writeback_entry"
+      }
+    }
+  },
+  "$defs": {
+    "writeback_entry": {
+      "description": "A single proposed writeback operation targeting one external system.",
+      "type": "object",
+      "required": [
+        "target",
+        "action",
+        "payload"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "The external system this writeback targets.",
+          "type": "string",
+          "enum": [
+            "meatywiki",
+            "ccdash",
+            "skillmeat",
+            "intenttree",
+            "control_plane"
+          ]
+        },
+        "action": {
+          "description": "The operation to perform on the target system.",
+          "type": "string",
+          "enum": [
+            "create",
+            "update",
+            "create_or_update",
+            "create_candidate",
+            "delete"
+          ]
+        },
+        "status": {
+          "description": "Review lifecycle state for this individual writeback entry. Defaults to 'proposed' if omitted.",
+          "type": "string",
+          "enum": ["proposed", "approved", "applied", "rejected", "deferred"],
+          "default": "proposed"
+        },
+        "destination": {
+          "description": "Optional destination descriptor within the target system — a page path, node ID, event type, artifact type, or routing note depending on the target.",
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "path": {
+              "description": "Resource path or page path within the target system (e.g. 'projects/meatywiki/patterns/html-capsules.md').",
+              "type": "string"
+            },
+            "node_id": {
+              "description": "Node or entity ID within the target system.",
+              "type": "string"
+            },
+            "event_type": {
+              "description": "Event type for CCDash targets.",
+              "type": "string"
+            },
+            "artifact_type": {
+              "description": "Artifact type for SkillMeat targets (e.g. 'skillbom', 'skill', 'command').",
+              "type": "string"
+            }
+          }
+        },
+        "payload": {
+          "description": "The data to be written to the target system. Structure is target-specific; use the per-target payload sub-schemas below as guidance. Free-form object to accommodate all target systems. anyOf is used intentionally: payload sub-schemas are descriptive (no required fields) and a payload may satisfy multiple shapes simultaneously.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/payload_meatywiki"
+            },
+            {
+              "$ref": "#/$defs/payload_ccdash"
+            },
+            {
+              "$ref": "#/$defs/payload_skillmeat"
+            },
+            {
+              "$ref": "#/$defs/payload_intenttree"
+            },
+            {
+              "$ref": "#/$defs/payload_control_plane"
+            },
+            {
+              "type": "object",
+              "description": "Fallback: any free-form object payload.",
+              "additionalProperties": true
+            }
+          ]
+        },
+        "notes": {
+          "description": "Human-readable rationale or notes for this writeback entry.",
+          "type": "string"
+        },
+        "approved_by": {
+          "description": "Identifier of the person or agent that approved this writeback.",
+          "type": "string"
+        },
+        "applied_at": {
+          "description": "ISO 8601 timestamp when this writeback was applied.",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "payload_meatywiki": {
+      "description": "Payload for MeatyWiki writeback — a Markdown page create or update.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "page_type": {
+          "description": "MeatyWiki page type (e.g. 'pattern', 'decision', 'runbook', 'note').",
+          "type": "string"
+        },
+        "markdown": {
+          "description": "Markdown content to write to the target page.",
+          "type": "string"
+        },
+        "frontmatter": {
+          "description": "Optional YAML frontmatter fields to merge into the page.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "tags": {
+          "description": "Tags to apply to the MeatyWiki page.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "payload_ccdash": {
+      "description": "Payload for CCDash writeback — an execution event or dashboard entry.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "event_type": {
+          "description": "CCDash event type (e.g. 'execution_event', 'phase_completion', 'decision_record').",
+          "type": "string"
+        },
+        "event_data": {
+          "description": "Structured event data to record in CCDash.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "capsule_ref": {
+          "description": "Reference back to the originating capsule.",
+          "type": "string"
+        }
+      }
+    },
+    "payload_skillmeat": {
+      "description": "Payload for SkillMeat writeback — an artifact or SkillBOM candidate.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "artifact_type": {
+          "description": "SkillMeat artifact type (e.g. 'skillbom', 'skill', 'command', 'agent').",
+          "type": "string"
+        },
+        "artifact_spec": {
+          "description": "Artifact specification data to create or update.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "collection_path": {
+          "description": "Target collection path for the artifact.",
+          "type": "string"
+        }
+      }
+    },
+    "payload_intenttree": {
+      "description": "Payload for IntentTree writeback — a tree node create or update.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "node_type": {
+          "description": "IntentTree node type (e.g. 'intent', 'goal', 'task', 'outcome').",
+          "type": "string"
+        },
+        "node_data": {
+          "description": "Node data to write to the IntentTree.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "parent_node_id": {
+          "description": "Parent node ID to attach this node under.",
+          "type": "string"
+        }
+      }
+    },
+    "payload_control_plane": {
+      "description": "Payload for Control Plane writeback — a routing decision or policy signal.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "routing_note": {
+          "description": "Human-readable routing decision or note for the control plane.",
+          "type": "string"
+        },
+        "decision_type": {
+          "description": "Type of control plane decision (e.g. 'routing', 'policy', 'escalation').",
+          "type": "string"
+        },
+        "decision_data": {
+          "description": "Structured decision payload for the control plane.",
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

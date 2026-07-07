@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skillmeat.local/schemas/html-capsules/capsule-manifest/v0.1",
+  "title": "HTML Capsule Manifest",
+  "description": "Schema v0.1 for capsule.manifest.yaml — the canonical metadata envelope for every HTML Capsule. Defined in Spec §10. Template-specific extension fields are allowed via additionalProperties: true at the top level.",
+  "type": "object",
+  "required": [
+    "html_capsule"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "html_capsule": {
+      "type": "object",
+      "description": "Root envelope for all capsule manifest fields.",
+      "required": [
+        "schema_version",
+        "capsule_id",
+        "capsule_type",
+        "status",
+        "source_of_truth",
+        "writebacks"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "schema_version": {
+          "description": "Manifest schema version. Must be exactly '0.1' for this schema release. Renderers MUST reject unknown versions.",
+          "type": "number",
+          "const": 0.1
+        },
+        "capsule_id": {
+          "description": "Stable, unique identifier for this capsule. Recommended format: snake_case descriptive slug.",
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "description": "Human-readable title for the capsule.",
+          "type": "string"
+        },
+        "capsule_type": {
+          "description": "Declares which template family renders this capsule.",
+          "type": "string",
+          "enum": [
+            "run-card",
+            "planning-capsule",
+            "planning_capsule",
+            "skill-card",
+            "decision-card",
+            "research-capsule",
+            "gtm-brief",
+            "phase-progress",
+            "source-note",
+            "code-review",
+            "demo-microsite"
+          ]
+        },
+        "status": {
+          "description": "Lifecycle state of the capsule.",
+          "type": "string",
+          "enum": ["draft", "reviewed", "approved", "archived"]
+        },
+        "created_at": {
+          "description": "ISO 8601 timestamp when the capsule was first created. YAML parsers (PyYAML) auto-deserialize timestamp strings to native datetime objects; the schema accepts any value to remain YAML-loader-agnostic. Renderers should call str() when formatting."
+        },
+        "updated_at": {
+          "description": "ISO 8601 timestamp of the most recent update. Same YAML-loader note as created_at — type constraint omitted intentionally."
+        },
+        "owner": {
+          "description": "Name or identifier of the person or agent that owns this capsule.",
+          "type": "string"
+        },
+        "confidentiality": {
+          "description": "Data sensitivity classification.",
+          "type": "string",
+          "enum": ["personal", "work_sensitive", "client_sensitive", "public"]
+        },
+        "interactivity_level": {
+          "description": "Declares the interaction tier of the rendered capsule. Can be specified as an L-prefix string (from Spec §12) or as a shorthand enum.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": ["static", "interactive", "writeback-capable"]
+            },
+            {
+              "type": "string",
+              "pattern": "^L[0-5](_[a-z_]+)?$",
+              "description": "L-prefix interactivity tier from Spec §12: L0_static, L1_local, L2_exportable, L3_authenticated, L4_reviewed, L5_collaborative."
+            }
+          ]
+        },
+        "safe_html_mode": {
+          "description": "Safe HTML enforcement level. 'strict' applies the full Spec §18 CSP with no external resources. 'relaxed' loosens connect-src for trusted local/private endpoints. Boolean true maps to strict.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": ["strict", "relaxed"]
+            },
+            {
+              "type": "boolean",
+              "description": "Legacy boolean form: true = strict, false = relaxed."
+            }
+          ]
+        },
+        "source_of_truth": {
+          "description": "References to the canonical source artifacts backing this capsule. At least one source must be provided.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": true,
+          "properties": {
+            "markdown": {
+              "description": "Relative path to the canonical Markdown source file.",
+              "type": "string"
+            },
+            "structured_data": {
+              "description": "Relative path to a JSON or YAML data file.",
+              "type": "string"
+            },
+            "manifest": {
+              "description": "Relative path to the manifest file itself (self-reference allowed).",
+              "type": "string"
+            },
+            "design_spec": {
+              "description": "Relative path to a design specification document.",
+              "type": "string"
+            },
+            "human_brief": {
+              "description": "Relative path to a human-authored brief.",
+              "type": "string"
+            },
+            "run_log": {
+              "description": "Relative path to an agent run log.",
+              "type": "string"
+            },
+            "git_ref": {
+              "description": "Git commit SHA or ref that backs this capsule.",
+              "type": "string"
+            },
+            "ccdash_event_id": {
+              "description": "CCDash execution event ID.",
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "rendered_view": {
+          "description": "Metadata about the rendered HTML output.",
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "html": {
+              "description": "Relative path to the rendered HTML file.",
+              "type": "string"
+            },
+            "interactivity_level": {
+              "description": "Interactivity level of the rendered view (see Spec §12).",
+              "type": "string"
+            },
+            "safe_html_mode": {
+              "description": "Safe HTML mode applied during rendering.",
+              "oneOf": [
+                {"type": "string", "enum": ["strict", "relaxed"]},
+                {"type": "boolean"}
+              ]
+            }
+          }
+        },
+        "agentic_context": {
+          "description": "References to the agentic work context that produced this capsule.",
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "intent_id": {
+              "type": ["string", "null"]
+            },
+            "task_node_id": {
+              "type": ["string", "null"]
+            },
+            "posture_chain": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "skillbom_id": {
+              "type": ["string", "null"]
+            }
+          }
+        },
+        "evidence": {
+          "description": "Validation and evidence signals for this capsule.",
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "ccdash_event_id": {
+              "type": ["string", "null"]
+            },
+            "validation": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "List of validation signals, e.g. 'static_file_generated', 'no_external_scripts'."
+            }
+          }
+        },
+        "writebacks": {
+          "description": "Proposed writeback targets and their statuses. At least one target must be declared. Keys are target system names; values are writeback descriptors.",
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": true,
+          "properties": {
+            "meatywiki": {
+              "$ref": "#/$defs/writeback_entry"
+            },
+            "ccdash": {
+              "$ref": "#/$defs/writeback_entry"
+            },
+            "skillmeat": {
+              "$ref": "#/$defs/writeback_entry"
+            },
+            "intenttree": {
+              "$ref": "#/$defs/writeback_entry"
+            },
+            "control_plane": {
+              "$ref": "#/$defs/writeback_entry"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "writeback_entry": {
+      "description": "A single writeback target descriptor. May be a status string or an object with target and status.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": ["proposed", "approved", "applied", "rejected", "deferred"],
+          "description": "Shorthand writeback status."
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "target": {
+              "description": "Destination path, node ID, or endpoint within the target system.",
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["proposed", "approved", "applied", "rejected", "deferred"]
+            },
+            "operation": {
+              "type": "string",
+              "enum": ["create", "update", "create_or_update", "create_candidate", "delete"]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
