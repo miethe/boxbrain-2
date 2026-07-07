@@ -221,7 +221,7 @@ export function SectionCard({
             {editing ? (
               <input value={title} onChange={(event) => setTitle(event.target.value)} className="min-w-0 flex-1 rounded border border-[var(--line)] px-1.5 py-0.5 text-[13px] font-bold" />
             ) : (
-              <b className="min-w-0 flex-1 truncate text-[13px]">{section.title}</b>
+              <h3 className="m-0 min-w-0 flex-1 truncate text-[13px] font-bold">{section.title}</h3>
             )}
             <IconButton label={editing ? "Cancel edit" : "Edit section"} borderless className="h-5 w-5 shrink-0" onClick={() => (editing ? setEditing(false) : setEditing(true))}>
               <Pencil size={10} aria-hidden="true" />

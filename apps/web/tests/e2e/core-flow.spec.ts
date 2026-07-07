@@ -26,7 +26,7 @@ test("exercises API-backed pilot core surfaces without copy-coupled assertions",
   expect(Array.isArray(askPayload.items)).toBe(true);
   expect(askPayload.items.length).toBeGreaterThan(0);
 
-  await page.goto("/ask");
+  await page.goto("/ask", { waitUntil: "networkidle" });
   await expect(page.getByTestId("ask-page")).toBeVisible();
   await page.getByTestId("ask-query-input").fill("cloud roi");
   await page.getByTestId("ask-search-submit").click();
@@ -34,27 +34,29 @@ test("exercises API-backed pilot core surfaces without copy-coupled assertions",
 
   const contentFamilies = await getJson<{ items: Array<{ id: string }> }>(request, "/api/content-units/families");
   expect(contentFamilies.items.length).toBeGreaterThan(0);
-  await page.goto("/library");
+  await page.goto("/library", { waitUntil: "networkidle" });
   await expect(page.getByTestId("library-page")).toBeVisible();
   await expect(page.getByTestId("library-family-card").first()).toBeVisible();
-  await expect(page.getByTestId("library-work-products")).toBeVisible();
+  await page.getByRole("tab", { name: "Work Products" }).click();
+  await expect(page.getByTestId("library-catalog-view")).toBeVisible();
+  await expect(page.getByTestId("library-catalog-card").first()).toBeVisible();
 
   const ingestionJobs = await getJson<Array<unknown> | { items?: Array<unknown>; jobs?: Array<unknown> }>(request, "/api/ingestion-jobs");
   const visibleJobs = Array.isArray(ingestionJobs) ? ingestionJobs : ingestionJobs.items ?? ingestionJobs.jobs ?? [];
   expect(visibleJobs.length).toBeGreaterThanOrEqual(0);
-  await page.goto("/ingestion");
+  await page.goto("/ingestion", { waitUntil: "networkidle" });
   await expect(page.getByTestId("ingestion-page")).toBeVisible();
   await expect(page.getByTestId("ingestion-status-metrics")).toBeVisible();
   await expect(page.getByTestId("ingestion-job-list")).toBeVisible();
 
   const reviewQueues = await getJson<Array<{ queueType: string }>>(request, "/api/reviews/queues");
   expect(Array.isArray(reviewQueues)).toBe(true);
-  await page.goto("/reviews");
+  await page.goto("/reviews", { waitUntil: "networkidle" });
   await expect(page.getByTestId("reviews-page")).toBeVisible();
   await expect(page.getByTestId("reviews-queue-list")).toBeVisible();
   await expect(page.getByTestId("reviews-item-list")).toBeVisible();
 
-  await page.goto("/admin");
+  await page.goto("/admin", { waitUntil: "networkidle" });
   await expect(page.getByTestId("admin-page")).toBeVisible();
   await expect(page.getByTestId("admin-health-metrics")).toBeVisible();
   await expect(page.getByTestId("admin-readiness-checks")).toBeVisible();
@@ -62,12 +64,12 @@ test("exercises API-backed pilot core surfaces without copy-coupled assertions",
 
   const contentBlocks = await getJson<{ items: Array<{ id: string }> }>(request, "/api/content-blocks");
   expect(contentBlocks.items.length).toBeGreaterThan(0);
-  await page.goto(`/content-blocks/${contentBlocks.items[0].id}`);
+  await page.goto(`/content-blocks/${contentBlocks.items[0].id}`, { waitUntil: "networkidle" });
   await expect(page.getByTestId("content-block-page")).toBeVisible();
 
   const storyboards = await getJson<{ items: Array<{ id: string }> }>(request, "/api/storyboards");
   expect(storyboards.items.length).toBeGreaterThan(0);
-  await page.goto(`/storyboards/${storyboards.items[0].id}`);
+  await page.goto(`/storyboards/${storyboards.items[0].id}`, { waitUntil: "networkidle" });
   await expect(page.getByTestId("storyboard-page")).toBeVisible();
 });
 

@@ -23,7 +23,7 @@ export default defineConfig({
       timeout: 30_000
     },
     {
-      command: `NEXT_PUBLIC_API_BASE_URL=${apiBaseUrl} next start --hostname 127.0.0.1 --port ${webPort}`,
+      command: `BOXBRAIN_API_PROXY_TARGET=${apiBaseUrl} NEXT_PUBLIC_API_BASE_URL=${apiBaseUrl} next start --hostname 127.0.0.1 --port ${webPort}`,
       url: webBaseUrl,
       reuseExistingServer: false,
       timeout: 30_000

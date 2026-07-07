@@ -1,5 +1,8 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-const SERVER_API_BASE_URL = process.env.BOXBRAIN_SERVER_API_BASE_URL ?? API_BASE_URL;
+const PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+// In the browser, all API/asset URLs are same-origin and proxied to the backend by the
+// rewrite in next.config.mjs — never the build-time-baked NEXT_PUBLIC value.
+export const API_BASE_URL = typeof window === "undefined" ? PUBLIC_API_BASE_URL : "";
+const SERVER_API_BASE_URL = process.env.BOXBRAIN_SERVER_API_BASE_URL ?? PUBLIC_API_BASE_URL;
 
 export type IngestionJobStatus = "queued" | "running" | "failed" | "complete";
 
@@ -595,7 +598,9 @@ export class ApiError extends Error {
 }
 
 function apiUrl(path: string) {
-  const baseUrl = typeof window === "undefined" ? SERVER_API_BASE_URL : API_BASE_URL;
+  // Browser: same-origin; next.config.mjs rewrites /api/* to the backend at server runtime.
+  // Server: absolute URL from runtime env (rewrites don't apply to server-side fetch).
+  const baseUrl = typeof window === "undefined" ? SERVER_API_BASE_URL : "";
   return `${baseUrl}${path}`;
 }
 

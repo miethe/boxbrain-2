@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("loads the app shell and navigates primary MVP routes", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "networkidle" });
 
   await expect(page.getByTestId("nav-ask")).toBeVisible();
 

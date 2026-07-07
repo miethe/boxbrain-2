@@ -9,7 +9,7 @@ test.describe.configure({ mode: "serial" });
 
 test("composes a ContentBlock into a Storyboard slot and reloads an immutable snapshot", async ({ page, request }) => {
   const missingBlockId = crypto.randomUUID();
-  await page.goto(`/content-blocks/${missingBlockId}`);
+  await page.goto(`/content-blocks/${missingBlockId}`, { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { name: "ContentBlock not found" })).toBeVisible();
   await page.getByPlaceholder("Block title").fill("Milestone 5 validation block");
@@ -27,7 +27,7 @@ test("composes a ContentBlock into a Storyboard slot and reloads an immutable sn
   expect(blockId).toBeTruthy();
 
   const missingStoryboardId = crypto.randomUUID();
-  await page.goto(`/storyboards/${missingStoryboardId}`);
+  await page.goto(`/storyboards/${missingStoryboardId}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Storyboard not found" })).toBeVisible();
   await page.getByPlaceholder("Storyboard title").fill("Milestone 5 validation storyboard");
   await page.getByRole("button", { name: "Create" }).click();
@@ -59,7 +59,7 @@ test("composes a ContentBlock into a Storyboard slot and reloads an immutable sn
   });
   expect(slotResponse.status()).toBe(201);
 
-  await page.goto(`/storyboards/${storyboardId}`);
+  await page.goto(`/storyboards/${storyboardId}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Validation narrative" })).toBeVisible();
   await expect(page.getByText("Reusable block slot", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("content_block", { exact: true })).toBeVisible();
@@ -75,7 +75,7 @@ test("composes a ContentBlock into a Storyboard slot and reloads an immutable sn
   expect(snapshotResponse.status()).toBe(200);
   const snapshot = await snapshotResponse.json();
 
-  await page.goto(`/storyboards/${storyboardId}?snapshotId=${snapshot.id}`);
+  await page.goto(`/storyboards/${storyboardId}?snapshotId=${snapshot.id}`, { waitUntil: "networkidle" });
   await expect(page.getByText("Snapshot detail")).toBeVisible();
   await expect(page.getByText("milestone-5-v1").first()).toBeVisible();
   await expect(page.getByText("1 frozen sections · 1 frozen slots")).toBeVisible();
@@ -156,11 +156,11 @@ test("does not expose restricted compositions to viewer-scoped API reads", async
 });
 
 test("renders practical app-shell error states for malformed composition identifiers", async ({ page }) => {
-  await page.goto("/content-blocks/not-a-uuid");
+  await page.goto("/content-blocks/not-a-uuid", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "ContentBlock request failed" })).toBeVisible();
   await expect(page.getByText("API error")).toBeVisible();
 
-  await page.goto("/storyboards/not-a-uuid");
+  await page.goto("/storyboards/not-a-uuid", { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: "Storyboard request failed" })).toBeVisible();
   await expect(page.getByText("API error")).toBeVisible();
 });
