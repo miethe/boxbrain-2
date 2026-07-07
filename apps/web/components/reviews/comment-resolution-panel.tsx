@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MessageSquare } from "lucide-react";
-import { Card, EmptyState, Tag } from "@/components/ui";
+import { Badge, Card, EmptyState, Tag } from "@/components/ui";
 import { boxbrainApi, type Comment } from "@/lib/api";
 import { formatDateTime, formatRelative } from "@/features/reviews/format";
 import type { LoadState, VersionCacheEntry } from "@/features/reviews/types";
@@ -10,11 +10,14 @@ import { ErrorState, LoadingCard, RestrictedCopy } from "./shared";
 
 type ThreadGroup = {
   key: string;
+  kind: ThreadKind;
   targetType: string;
   targetId: string;
   comments: Comment[];
   latestAt: string;
 };
+
+type ThreadKind = "review_comment" | "persistent_comment";
 
 /**
  * "Comment Resolution" has no dedicated review-queue type or resolve action in the API
@@ -38,13 +41,14 @@ export function CommentResolutionPanel({
   const groups = useMemo<ThreadGroup[]>(() => {
     const map = new Map<string, ThreadGroup>();
     for (const comment of comments) {
-      const key = `${comment.targetType}:${comment.targetId}`;
+      if (!isThreadKind(comment.kind)) continue;
+      const key = `${comment.kind}:${comment.targetType}:${comment.targetId}`;
       const existing = map.get(key);
       if (existing) {
         existing.comments.push(comment);
         if (comment.createdAt && comment.createdAt > existing.latestAt) existing.latestAt = comment.createdAt;
       } else {
-        map.set(key, { key, targetType: comment.targetType, targetId: comment.targetId, comments: [comment], latestAt: comment.createdAt ?? "" });
+        map.set(key, { key, kind: comment.kind, targetType: comment.targetType, targetId: comment.targetId, comments: [comment], latestAt: comment.createdAt ?? "" });
       }
     }
     return Array.from(map.values()).sort((a, b) => (b.latestAt ?? "").localeCompare(a.latestAt ?? ""));
@@ -71,13 +75,14 @@ export function CommentResolutionPanel({
   if (state === "empty" || groups.length === 0) return <EmptyState title="No open comments" body="There are no open comments across the catalog right now." />;
 
   const selected = groups.find((group) => group.key === selectedKey) ?? groups[0];
+  const threadCommentCount = groups.reduce((total, group) => total + group.comments.length, 0);
 
   return (
     <div className="two-col" data-testid="reviews-comment-resolution">
       <Card className="overflow-hidden p-0">
         <div className="border-b border-slate-100 px-3.5 py-2.5">
           <b className="text-[13px]">
-            {groups.length} comment thread{groups.length === 1 ? "" : "s"} · {comments.length} open comment{comments.length === 1 ? "" : "s"}
+            {groups.length} comment thread{groups.length === 1 ? "" : "s"} · {threadCommentCount} open comment{threadCommentCount === 1 ? "" : "s"}
           </b>
         </div>
         <div className="max-h-[620px] overflow-auto">
@@ -92,6 +97,7 @@ export function CommentResolutionPanel({
                 <span className="min-w-0 flex-1">
                   <span className="mb-0.5 flex items-center gap-2">
                     <span className="truncate text-[13px] font-semibold text-slate-900">{title}</span>
+                    <KindBadge kind={group.kind} />
                     <span className="muted ml-auto shrink-0 text-[10px]">{formatRelative(group.latestAt)}</span>
                   </span>
                   <span className="block truncate text-[11px] text-slate-500">
@@ -118,6 +124,14 @@ function groupTitle(group: ThreadGroup, versionCache: Record<string, VersionCach
   return `${group.targetType.replaceAll("_", " ")} ${group.targetId.slice(0, 8)}`;
 }
 
+function isThreadKind(kind: string): kind is ThreadKind {
+  return kind === "review_comment" || kind === "persistent_comment";
+}
+
+function KindBadge({ kind }: { kind: ThreadKind }) {
+  return <Badge kind={kind === "review_comment" ? "ai" : "neutral"}>{kind === "review_comment" ? "Review" : "Comment"}</Badge>;
+}
+
 function ThreadDetail({ group, title }: { group: ThreadGroup; title: string }) {
   const [body, setBody] = useState("");
   const [comments, setComments] = useState(group.comments);
@@ -135,7 +149,7 @@ function ThreadDetail({ group, title }: { group: ThreadGroup; title: string }) {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const created = await boxbrainApi.createComment({ kind: "review_comment", targetType: group.targetType, targetId: group.targetId, body: body.trim() });
+      const created = await boxbrainApi.createComment({ kind: group.kind, targetType: group.targetType, targetId: group.targetId, body: body.trim() });
       setComments((previous) => [...previous, created]);
       setBody("");
     } catch (error) {
@@ -149,7 +163,10 @@ function ThreadDetail({ group, title }: { group: ThreadGroup; title: string }) {
     <Card className="p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <b className="text-sm font-bold">{title}</b>
-        <Tag tone="neutral">{group.targetType.replaceAll("_", " ")}</Tag>
+        <span className="flex items-center gap-2">
+          <KindBadge kind={group.kind} />
+          <Tag tone="neutral">{group.targetType.replaceAll("_", " ")}</Tag>
+        </span>
       </div>
       <div className="mb-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2.5 text-xs text-slate-500">
         There is no &ldquo;mark resolved&rdquo; action in the API yet for comments — this thread stays open until that governance action is added.

@@ -11,6 +11,7 @@ export type TrayItem = {
   score?: number;
   statusChips?: StatusChips;
   createdAt?: string;
+  disabledReason?: string;
 };
 
 export type PendingTarget =

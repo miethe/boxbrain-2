@@ -101,7 +101,7 @@ async function loadFilmstripAncillary(workProduct: WorkProductVersionDetail) {
 
 async function safeListWorkProductFamilies() {
   try {
-    return (await boxbrainApi.listWorkProductFamilies()).items ?? [];
+    return await boxbrainApi.listAllWorkProductFamilies();
   } catch {
     return [];
   }

@@ -1052,8 +1052,7 @@ function ImageWithFallback({ uri, title, className, fallback }: { uri?: string |
 }
 
 async function loadExplorer(params: ExplorerParams): Promise<ExplorerState> {
-  const familyEnvelope = await boxbrainApi.listContentUnitFamilies({});
-  const families = familyEnvelope.items;
+  const families = await boxbrainApi.listAllContentUnitFamilies({});
   if (families.length === 0) return { status: "empty" };
 
   if (params.version) {

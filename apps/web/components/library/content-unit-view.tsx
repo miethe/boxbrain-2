@@ -37,7 +37,7 @@ export function ContentUnitLibraryView({
 }: {
   families: ContentUnitFamilyCard[];
   onToggleSelect: (item: SelectionItem, versionId: string | null | undefined) => void;
-  onIsSelected: (variantId: string) => boolean;
+  onIsSelected: (selectionId: string) => boolean;
   onBasisChange: (basis: { title: string; subtitle?: string; versionId?: string | null }) => void;
 }) {
   const [familyMode, setFamilyMode] = useState<FamilyMode>("families");
@@ -242,7 +242,7 @@ export function ContentUnitLibraryView({
                   family={family}
                   variant={variant}
                   view={view}
-                  selected={onIsSelected(variant.id)}
+                  selected={variant.latestVersionId ? onIsSelected(variant.latestVersionId) : false}
                   onToggleSelect={onToggleSelect}
                   onBasisChange={onBasisChange}
                 />
@@ -339,7 +339,7 @@ function FamilyRow({
   variantsState?: FamilyVariantsState;
   onExpand: () => void;
   onToggleSelect: (item: SelectionItem, versionId: string | null | undefined) => void;
-  onIsSelected: (variantId: string) => boolean;
+  onIsSelected: (selectionId: string) => boolean;
   onBasisChange: (basis: { title: string; subtitle?: string; versionId?: string | null }) => void;
 }) {
   const tags = taxonomyTags(family.taxonomy, 3);
@@ -429,7 +429,7 @@ function FamilyRow({
                   const audienceValue = variant.variantDimensions?.audience;
                   const audience = typeof audienceValue === "string" ? audienceValue : variant.variantType ?? "—";
                   const versionId = variant.latestVersionId;
-                  const selected = onIsSelected(variant.id);
+                  const selected = versionId ? onIsSelected(versionId) : false;
                   return (
                     <tr key={variant.id}>
                       <td>
@@ -480,7 +480,7 @@ function FamilyRow({
                               if (!versionId) return;
                               onToggleSelect(
                                 {
-                                  id: variant.id,
+                                  id: versionId,
                                   type: "contentunit",
                                   title: `${family.familyTitle} — ${variant.variantLabel}`,
                                   subtitle: variant.latestVersion?.versionNumber ?? undefined,
@@ -557,13 +557,16 @@ function VariantCard({
   onToggleSelect: (item: SelectionItem, versionId: string | null | undefined) => void;
   onBasisChange: (basis: { title: string; subtitle?: string; versionId?: string | null }) => void;
 }) {
-  const selectionItem: SelectionItem = {
-    id: variant.id,
-    type: "contentunit",
-    title: `${family.familyTitle} — ${variant.variantLabel}`,
-    subtitle: variant.latestVersion?.versionNumber ?? undefined,
-    thumb: assetUrl(variant.latestVersion?.thumbnailUri)
-  };
+  const versionId = variant.latestVersionId;
+  const selectionItem: SelectionItem | null = versionId
+    ? {
+        id: versionId,
+        type: "contentunit",
+        title: `${family.familyTitle} — ${variant.variantLabel}`,
+        subtitle: variant.latestVersion?.versionNumber ?? undefined,
+        thumb: assetUrl(variant.latestVersion?.thumbnailUri)
+      }
+    : null;
   if (view === "list") {
     return (
       <ListRow
@@ -583,7 +586,7 @@ function VariantCard({
             >
               Similar
             </button>
-            <button type="button" className="btn btn-xs" disabled={!variant.latestVersionId} onClick={() => onToggleSelect(selectionItem, variant.latestVersionId)}>
+            <button type="button" className="btn btn-xs" disabled={!selectionItem} onClick={() => selectionItem && onToggleSelect(selectionItem, versionId)}>
               {selected ? "Selected" : "Add"}
             </button>
           </span>
@@ -599,7 +602,7 @@ function VariantCard({
         <div className="text-xs text-[var(--ink-3)]">{variant.variantLabel}</div>
         <div className="mt-2 flex items-center justify-between">
           {variant.isCanonical ? <span className="badge info">Canonical</span> : <span />}
-          <button type="button" className="btn btn-xs" disabled={!variant.latestVersionId} onClick={() => onToggleSelect(selectionItem, variant.latestVersionId)}>
+          <button type="button" className="btn btn-xs" disabled={!selectionItem} onClick={() => selectionItem && onToggleSelect(selectionItem, versionId)}>
             {selected ? "Selected" : "Add"}
           </button>
         </div>

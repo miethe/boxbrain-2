@@ -36,12 +36,9 @@ export function useLibraryCatalog(): LibraryCatalog {
     let cancelled = false;
     setState("loading");
     setErrorMessage(null);
-    Promise.all([boxbrainApi.listContentUnitFamilies(), boxbrainApi.listWorkProductFamilies(), boxbrainApi.listContentBlocks()])
-      .then(([familyEnvelope, workProductEnvelope, contentBlockEnvelope]) => {
+    Promise.all([boxbrainApi.listAllContentUnitFamilies(), boxbrainApi.listAllWorkProductFamilies(), boxbrainApi.listAllContentBlocks()])
+      .then(([nextFamilies, nextWorkProducts, nextBlocks]) => {
         if (cancelled) return;
-        const nextFamilies = familyEnvelope.items ?? [];
-        const nextWorkProducts = workProductEnvelope.items ?? [];
-        const nextBlocks = contentBlockEnvelope.items ?? [];
         setFamilies(nextFamilies);
         setWorkProducts(nextWorkProducts);
         setContentBlocks(nextBlocks);

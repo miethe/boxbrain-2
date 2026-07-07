@@ -25,10 +25,9 @@ export function LibraryScreen() {
   const [activeTab, setActiveTab] = useState<LibraryTabId>("contentUnits");
   const [searchInput, setSearchInput] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
-  // Sidecar map (variantId -> resolvable content_unit_version id), in-memory only for this page
-  // session. The shared My Selection store only persists {id, type, title, subtitle, thumb} to
-  // localStorage, so a version id captured this session is required to build real storyboard slots.
-  const [versionByVariant, setVersionByVariant] = useState<Record<string, string | null | undefined>>({});
+  // Sidecar map keyed by the shared SelectionItem id. For ContentUnits, new selections store the
+  // latest content_unit_version id directly as item.id; this keeps older in-session entries resolvable.
+  const [versionBySelection, setVersionBySelection] = useState<Record<string, string | null | undefined>>({});
   const [compareOpen, setCompareOpen] = useState(false);
   const [basis, setBasis] = useState<Basis>({ title: "" });
   const [storyboardBusy, setStoryboardBusy] = useState(false);
@@ -39,12 +38,12 @@ export function LibraryScreen() {
   const contentUnitSelections = mySelection.items.filter((item) => item.type === "contentunit");
 
   function toggleSelect(item: SelectionItem, versionId: string | null | undefined) {
-    setVersionByVariant((prev) => ({ ...prev, [item.id]: versionId }));
+    setVersionBySelection((prev) => ({ ...prev, [item.id]: versionId }));
     mySelection.toggle(item);
   }
 
-  function isSelected(variantId: string) {
-    return mySelection.has(variantId);
+  function isSelected(selectionId: string) {
+    return mySelection.has(selectionId);
   }
 
   function clearContentUnitSelections() {
@@ -52,7 +51,7 @@ export function LibraryScreen() {
   }
 
   async function handleAddToStoryboard() {
-    const withVersions = contentUnitSelections.filter((item) => Boolean(versionByVariant[item.id]));
+    const withVersions = contentUnitSelections.filter((item) => Boolean(versionBySelection[item.id] ?? item.id));
     if (withVersions.length === 0) {
       setStoryboardError(
         contentUnitSelections.length === 0
@@ -68,7 +67,7 @@ export function LibraryScreen() {
       const section = await boxbrainApi.createStoryboardSection(storyboard.id, { title: "From Library", orderIndex: 0 });
       let orderIndex = 0;
       for (const item of withVersions) {
-        const versionId = versionByVariant[item.id];
+        const versionId = versionBySelection[item.id] ?? item.id;
         if (!versionId) continue;
         await boxbrainApi.createStoryboardSlot(section.id, {
           slotType: "content_unit",

@@ -32,7 +32,7 @@ export function ProvenanceGrid({
       <div className="muted">Created</div>
       <div className="text-[var(--ink)]">{formatDate(provenance?.createdAt ?? version?.createdAt)}</div>
 
-      <div className="muted">Last modified</div>
+      <div className="muted">Created</div>
       <div className="text-[var(--ink)]">{formatDate(version?.createdAt)}</div>
 
       {provenance && (

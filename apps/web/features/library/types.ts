@@ -35,7 +35,7 @@ export type UnifiedCatalogItem = {
 };
 
 /**
- * Sidecar metadata kept alongside a shared `SelectionItem` (id === ContentUnitVariant id) so the
+ * Sidecar metadata kept alongside a shared `SelectionItem` (id === latest ContentUnitVersion id) so the
  * "Add to Storyboard" write action can resolve a real content_unit_version id. This is in-memory
  * only (not persisted like the shared My Selection store), so items re-hydrated from localStorage
  * on a fresh page load may be missing an entry until the family is re-expanded in this session.

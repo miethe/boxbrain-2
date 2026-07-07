@@ -10,6 +10,8 @@ import type { PendingTarget, TrayItem, TrayObjectType } from "./types";
 
 type LibraryTab = "recommended" | "recent" | "library";
 type TypeFilter = "all" | "content_unit_version" | "content_block_version" | "work_product_version";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CUSTOM_ITEM_DISABLED_TITLE = "Custom items can't be placed in storyboards yet";
 
 export function LibraryTray({
   open,
@@ -319,24 +321,35 @@ export function LibraryTray({
 }
 
 function TrayChip({ item, draggable, onClick, compact }: { item: TrayItem; draggable?: boolean; onClick: () => void; compact?: boolean }) {
+  const disabled = Boolean(item.disabledReason);
   return (
     <div
       role="button"
-      tabIndex={0}
-      draggable={draggable}
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled || undefined}
+      draggable={draggable && !disabled}
       onDragStart={(event) => {
+        if (disabled) {
+          event.preventDefault();
+          return;
+        }
         event.dataTransfer.setData("application/x-boxbrain-library-item", JSON.stringify(item));
         event.dataTransfer.effectAllowed = "copy";
       }}
-      onClick={onClick}
+      onClick={() => {
+        if (!disabled) onClick();
+      }}
       onKeyDown={(event) => {
+        if (disabled) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onClick();
         }
       }}
-      className="card cursor-pointer border border-[var(--line)] p-1.5 text-left transition hover:border-[var(--primary-border)]"
-      title={item.summary ?? item.title}
+      className={`card border border-[var(--line)] p-1.5 text-left transition ${
+        disabled ? "cursor-not-allowed opacity-55" : "cursor-pointer hover:border-[var(--primary-border)]"
+      }`}
+      title={item.disabledReason ?? item.summary ?? item.title}
     >
       <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold text-[var(--ink-2)]">
         <ObjectTypeIcon type={item.selectedObjectType} size={10} color="var(--primary)" />
@@ -378,16 +391,28 @@ function toTrayItems(items: Array<{ objectType: string; objectId: string; title:
 }
 
 function usableSelectionItems(items: Array<{ id: string; type: string; title: string; subtitle?: string }>): TrayItem[] {
-  return items
-    .map((item) => {
-      if (item.type === "workproduct") return { key: `work_product_version:${item.id}`, selectedObjectType: "work_product_version" as const, selectedObjectId: item.id, title: item.title };
-      if (item.type === "asset") return { key: `content_block_version:${item.id}`, selectedObjectType: "content_block_version" as const, selectedObjectId: item.id, title: item.title };
-      if (item.type === "contentunit" && item.subtitle?.toLowerCase().includes("version")) {
-        return { key: `content_unit_version:${item.id}`, selectedObjectType: "content_unit_version" as const, selectedObjectId: item.id, title: item.title };
-      }
-      return null;
-    })
-    .filter((item): item is TrayItem => item !== null);
+  const trayItems: TrayItem[] = [];
+  for (const item of items) {
+    const selectedObjectType = selectedObjectTypeForSelection(item.type);
+    if (!selectedObjectType) continue;
+    const isPlaceable = UUID_RE.test(item.id);
+    trayItems.push({
+      key: `${selectedObjectType}:${item.id}`,
+      selectedObjectType,
+      selectedObjectId: item.id,
+      title: item.title,
+      summary: item.subtitle,
+      disabledReason: isPlaceable ? undefined : CUSTOM_ITEM_DISABLED_TITLE
+    });
+  }
+  return trayItems;
+}
+
+function selectedObjectTypeForSelection(type: string): TrayObjectType | null {
+  if (type === "workproduct") return "work_product_version";
+  if (type === "asset") return "content_block_version";
+  if (type === "contentunit") return "content_unit_version";
+  return null;
 }
 
 function dateValue(value?: string) {

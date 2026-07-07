@@ -214,7 +214,7 @@ async function loadOneObjectDetail(ref: ObjectRef, blocksById: Map<string, Conte
 
 async function safeListStoryboards() {
   try {
-    return await boxbrainApi.listStoryboards();
+    return { items: await boxbrainApi.listAllStoryboards(), nextCursor: null };
   } catch {
     return { items: [], nextCursor: null };
   }
@@ -278,7 +278,7 @@ async function safeListWhereUsed(versionId: string) {
 
 async function safeListContentBlocks() {
   try {
-    return await boxbrainApi.listContentBlocks();
+    return { items: await boxbrainApi.listAllContentBlocks(), nextCursor: null };
   } catch {
     return { items: [], nextCursor: null };
   }

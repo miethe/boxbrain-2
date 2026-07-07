@@ -264,7 +264,7 @@ async function safeListNotes(versionId: string) {
 
 async function safeListStoryboards() {
   try {
-    return await boxbrainApi.listStoryboards();
+    return { items: await boxbrainApi.listAllStoryboards(), nextCursor: null };
   } catch {
     return { items: [], nextCursor: null };
   }
@@ -428,10 +428,13 @@ function ContentUnitDetailView({
   activePanel: OverviewPanelKey;
 }) {
   const carouselCards = buildCarouselCards(model);
-  const versionsHref = `/content-units/${model.pageId}?tab=versions`;
-  const similarHref = `/content-units/${model.pageId}?tab=similar`;
-  const commentsHref = `/content-units/${model.pageId}?tab=comments`;
-  const notesHref = `/content-units/${model.pageId}?tab=notes`;
+  // Preserve the selected version so "See all" links keep showing the version the
+  // user was inspecting instead of silently re-resolving to the canonical/latest one.
+  const versionSuffix = model.version?.id ? `&version=${model.version.id}` : "";
+  const versionsHref = `/content-units/${model.pageId}?tab=versions${versionSuffix}`;
+  const similarHref = `/content-units/${model.pageId}?tab=similar${versionSuffix}`;
+  const commentsHref = `/content-units/${model.pageId}?tab=comments${versionSuffix}`;
+  const notesHref = `/content-units/${model.pageId}?tab=notes${versionSuffix}`;
 
   return (
     <div className="route-body" data-testid="content-unit-page">

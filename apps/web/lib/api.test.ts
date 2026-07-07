@@ -195,6 +195,31 @@ describe("content unit graph api", () => {
     );
   });
 
+  it("walks all ContentUnit family pages with the returned cursor", async () => {
+    const family1 = {
+      id: "family-1",
+      familyTitle: "Cloud ROI",
+      unitType: "slide"
+    };
+    const family2 = {
+      id: "family-2",
+      familyTitle: "Platform overview",
+      unitType: "slide"
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [family1], nextCursor: "cursor-page-2" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [family2], nextCursor: null }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(boxbrainApi.listAllContentUnitFamilies({ mode: "families" })).resolves.toEqual([family1, family2]);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/content-units/families?limit=100&mode=families",
+      "http://localhost:8000/api/content-units/families?cursor=cursor-page-2&limit=100&mode=families"
+    ]);
+  });
+
   it("fetches family, variant versions, and version detail endpoints", async () => {
     const family = {
       id: "family-1",

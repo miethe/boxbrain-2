@@ -129,7 +129,7 @@ async function loadMembers(block: ContentBlockVersionDetail): Promise<MemberMode
 
 async function safeListStoryboards(): Promise<Storyboard[]> {
   try {
-    return (await boxbrainApi.listStoryboards()).items ?? [];
+    return await boxbrainApi.listAllStoryboards();
   } catch {
     return [];
   }

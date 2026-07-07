@@ -7,8 +7,10 @@ Verifies:
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import uuid4
 
+from app.application.pagination import paginate
 from app.domain.models import StoredObject, now_utc
 from app.infrastructure.in_memory_repository import SEED_IDS
 
@@ -23,6 +25,16 @@ from .conftest import role_headers
 def _items_and_cursor(resp) -> tuple[list, str | None]:
     body = resp.json()
     return body["items"], body.get("nextCursor")
+
+
+@dataclass(frozen=True)
+class _PageItem:
+    id: str
+    title: str
+
+
+def _sort_page_items(items: list[_PageItem]) -> list[_PageItem]:
+    return sorted(items, key=lambda item: item.title)
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +189,26 @@ def test_last_page_has_null_next_cursor(client) -> None:
     )
     _, cursor = _items_and_cursor(r_big)
     assert cursor is None
+
+
+def test_paginate_cursor_resumes_after_seen_item_when_collection_mutates() -> None:
+    original_items = [
+        _PageItem(id="seen", title="Beta"),
+        _PageItem(id="surviving", title="Charlie"),
+    ]
+    page1, cursor = paginate(_sort_page_items(original_items), cursor=None, limit=1)
+    assert [item.id for item in page1] == ["seen"]
+    assert cursor is not None
+
+    mutated_items = [
+        _PageItem(id="inserted", title="Alpha"),
+        *original_items,
+    ]
+    page2, _ = paginate(_sort_page_items(mutated_items), cursor=cursor, limit=1)
+
+    walked_ids = [item.id for item in [*page1, *page2]]
+    assert len(walked_ids) == len(set(walked_ids))
+    assert {item.id for item in original_items}.issubset(walked_ids)
 
 
 # ---------------------------------------------------------------------------

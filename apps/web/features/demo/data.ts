@@ -90,7 +90,7 @@ export const navItems: NavItem[] = [
   { href: "/plays", label: "Plays", icon: BookOpen, preview: true },
   { href: "/opportunities", label: "Opportunities", icon: Target, preview: true },
   { href: "/library", label: "Library", icon: Library },
-  { href: "/storyboards/sb-cloud-modernization", label: "Storyboards", icon: LayoutGrid },
+  { href: "/storyboards", label: "Storyboards", icon: LayoutGrid },
   { href: "/reviews", label: "Reviews", icon: ShieldCheck, count: "12" },
   { href: "/admin", label: "Admin", icon: Settings }
 ];

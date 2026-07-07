@@ -40,8 +40,8 @@ async function loadReviews(): Promise<SourceState<{ queues: ReviewQueueSummary[]
 
 async function loadFamilies(): Promise<SourceState<ContentUnitFamilyCard[]>> {
   try {
-    const page = await boxbrainApi.listContentUnitFamilies({ limit: 200, mode: "families" });
-    return { status: "ok", data: page.items };
+    const families = await boxbrainApi.listAllContentUnitFamilies({ mode: "families" });
+    return { status: "ok", data: families };
   } catch (error) {
     if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return { status: "restricted" };
     return { status: "error", message: error instanceof Error ? error.message : "Content families could not be loaded." };

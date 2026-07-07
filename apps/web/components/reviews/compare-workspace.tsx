@@ -33,25 +33,23 @@ export function CompareWorkspace({
   onToggleManualOverride: () => void;
   onOpenDrawer: () => void;
 }) {
-  const [order, setOrder] = useState<number[]>([0, 1]);
   const [activeTab, setActiveTab] = useState<CompareTabId>("content");
   const [aiDetailsOpen, setAiDetailsOpen] = useState(false);
 
   useEffect(() => {
-    setOrder(enrichedTargets.map((_, index) => index));
     setActiveTab("content");
     setAiDetailsOpen(false);
-    // Intentionally reset only when the selected review or target count changes, not on every
-    // enrichment cache update (which would otherwise clobber in-progress swap/tab state).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail?.id, enrichedTargets.length]);
+  }, [detail?.id]);
 
   if (state === "loading") return <LoadingCard title="Loading compare panel" body="Fetching review item detail and compare targets." />;
   if (state === "restricted") return <RestrictedCopy />;
   if (state === "error") return <ErrorState message={errorMessage ?? "Review item detail failed to load."} />;
   if (state === "empty" || !detail) return <EmptyState title="No review selected" body="Select an open review item to compare targets and record a decision." />;
 
-  const targets = order.map((index) => enrichedTargets[index]).filter((target): target is EnrichedTarget => Boolean(target));
+  // Display order MUST mirror the review item's own target order: governance actions
+  // (set-canonical, merge-versions) are applied server-side to target_refs[0]/[1], so any
+  // client-side reorder would misrepresent which object receives the decision.
+  const targets = enrichedTargets;
   const isPairCompare = targets.length >= 2;
   const confidence = confidencePercent(detail.confidence);
 
@@ -102,16 +100,8 @@ export function CompareWorkspace({
           <Fragment key={target.index}>
             <DeckCard target={target} label={index === 0 ? "Left" : "Right"} />
             {index === 0 && targets.length >= 2 && (
-              <div className="flex items-center justify-center px-2">
-                <button
-                  type="button"
-                  className="icon-btn"
-                  style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--paper)" }}
-                  aria-label="Swap left and right compare targets"
-                  onClick={() => setOrder((current) => [current[1] ?? 1, current[0] ?? 0])}
-                >
-                  <ArrowLeftRight size={13} />
-                </button>
+              <div className="flex items-center justify-center px-2 text-slate-300" aria-hidden="true">
+                <ArrowLeftRight size={13} />
               </div>
             )}
           </Fragment>
@@ -207,9 +197,13 @@ function CommentsTab({ targets }: { targets: EnrichedTarget[] }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Re-key the reply target only when the set of target version ids actually changes —
+  // `targets` gets a fresh identity whenever any background version prefetch resolves, and
+  // resetting on that would silently redirect an in-progress comment to the wrong version.
+  const targetIdsKey = targets.map((target) => target.versionId ?? "").join("|");
   useEffect(() => {
-    setReplyTo(targets[0]?.versionId);
-  }, [targets]);
+    setReplyTo((current) => (current && targetIdsKey.split("|").includes(current) ? current : targetIdsKey.split("|").find(Boolean)));
+  }, [targetIdsKey]);
 
   useEffect(() => {
     for (const target of targets) {

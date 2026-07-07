@@ -83,7 +83,7 @@ export function ContentUnitHeaderBlock({
             {lastModified && (
               <>
                 <span>·</span>
-                <span>Last modified {formatDate(lastModified)}</span>
+                <span>Created {formatDate(lastModified)}</span>
               </>
             )}
           </div>
