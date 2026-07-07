@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+import os
+import sys
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -27,6 +30,66 @@ from app.domain.errors import ConflictError, DomainError, NotFoundError, Permiss
 from app.infrastructure.in_memory_repository import InMemoryBoxBrainRepository
 from app.infrastructure.queue import IngestionQueue
 from app.infrastructure.storage import ObjectStorage
+
+
+logger = logging.getLogger("boxbrain.api")
+
+# Env vars a process manager sets to run more than one worker. The SQLAlchemy
+# repository is a per-process in-memory read cache with no cross-process
+# invalidation (see docs/deployment/containerized-quick-start.md), so database
+# mode must run a single worker until read paths move to direct SQL.
+_WORKER_COUNT_ENV_VARS = (
+    "WEB_CONCURRENCY",
+    "UVICORN_WORKERS",
+    "GUNICORN_WORKERS",
+    "BOXBRAIN_API_WORKERS",
+)
+
+
+def _worker_count_from_argv() -> int | None:
+    """Worker count from a `uvicorn --workers N` / `gunicorn -w N` CLI flag, if present.
+    The CLI flag is authoritative: uvicorn only falls back to WEB_CONCURRENCY when
+    `--workers` is not passed, so a CLI value overrides the env vars below.
+    """
+    argv = sys.argv
+    for index, arg in enumerate(argv):
+        if arg in {"--workers", "-w"}:
+            candidate = argv[index + 1] if index + 1 < len(argv) else ""
+            if candidate.isdigit():
+                return int(candidate)
+        elif arg.startswith("--workers="):
+            candidate = arg.split("=", 1)[1]
+            if candidate.isdigit():
+                return int(candidate)
+    return None
+
+
+def _detected_worker_count() -> int:
+    from_argv = _worker_count_from_argv()
+    if from_argv is not None and from_argv > 0:
+        return from_argv
+    for var in _WORKER_COUNT_ENV_VARS:
+        raw = (os.getenv(var) or "").strip()
+        if raw.isdigit():
+            count = int(raw)
+            if count > 0:
+                return count
+    return 1
+
+
+def _warn_if_unsafe_worker_config() -> None:
+    from app.config import get_settings
+
+    settings = get_settings()
+    workers = _detected_worker_count()
+    if settings.repository_mode == "database" and workers > 1:
+        logger.warning(
+            "BoxBrain API started with %d workers in database mode. The repository is a "
+            "per-process in-memory cache with no cross-process invalidation, so multiple "
+            "workers will serve divergent/stale reads. Pin the API to a single worker until "
+            "direct-SQL read paths land (see docs/deployment/containerized-quick-start.md).",
+            workers,
+        )
 
 
 def create_app(
@@ -78,6 +141,7 @@ def create_app(
     register_middleware(app)
     register_exception_handlers(app)
     register_routes(app)
+    _warn_if_unsafe_worker_config()
     return app
 
 

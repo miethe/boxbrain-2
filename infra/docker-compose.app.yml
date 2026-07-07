@@ -99,6 +99,11 @@ services:
       dockerfile: services/api/Dockerfile
     environment:
       <<: *app-env
+    # Single worker is mandatory in database mode: the repository is a per-process
+    # in-memory cache with no cross-process invalidation. See
+    # docs/deployment/containerized-quick-start.md.
+    command:
+      ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:

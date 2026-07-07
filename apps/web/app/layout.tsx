@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { DevRoleSwitcher } from "@/components/dev/dev-role-switcher";
 
 const instrumentSans = Instrument_Sans({
   subsets: ["latin"],
@@ -22,7 +23,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${instrumentSans.variable} ${jetBrainsMono.variable}`}>{children}</body>
+      <body className={`${instrumentSans.variable} ${jetBrainsMono.variable}`}>
+        {children}
+        <DevRoleSwitcher />
+      </body>
     </html>
   );
 }

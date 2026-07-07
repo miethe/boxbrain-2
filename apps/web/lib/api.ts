@@ -1,3 +1,5 @@
+import { devActorHeaders } from "./dev-actor";
+
 const PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 // In the browser, all API/asset URLs are same-origin and proxied to the backend by the
 // rewrite in next.config.mjs — never the build-time-baked NEXT_PUBLIC value.
@@ -624,7 +626,18 @@ function queryString(params: Record<string, string | number | undefined>) {
 
 function defaultHeaders(initHeaders?: HeadersInit, hasJsonBody = false) {
   const headers = new Headers(initHeaders);
-  headers.set("x-boxbrain-user", headers.get("x-boxbrain-user") ?? "admin");
+  // Respect an explicitly-set actor; otherwise apply the dev-selected actor when
+  // one exists (lets testers exercise restricted paths), falling back to the
+  // historical "admin" default so server-side and non-switcher calls are unchanged.
+  const callerSetActor = headers.has("x-boxbrain-user") || headers.has("x-boxbrain-role");
+  if (!callerSetActor) {
+    const devHeaders = devActorHeaders();
+    if (Object.keys(devHeaders).length > 0) {
+      for (const [key, value] of Object.entries(devHeaders)) headers.set(key, value);
+    } else {
+      headers.set("x-boxbrain-user", "admin");
+    }
+  }
   if (hasJsonBody && !headers.has("content-type")) headers.set("content-type", "application/json");
   return headers;
 }

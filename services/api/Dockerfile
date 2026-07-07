@@ -26,4 +26,7 @@ COPY infra /app/infra
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Pinned to a single worker: in database mode the repository is a per-process
+# in-memory cache with no cross-process invalidation, so >1 worker serves stale
+# reads. See docs/deployment/containerized-quick-start.md.
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

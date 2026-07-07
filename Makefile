@@ -19,7 +19,7 @@ endif
 
 REDIS_URL ?= redis://localhost:6379/0
 
-.PHONY: help install infra-up infra-down infra-logs infra-ps app-build app-up app-down app-logs app-ps app-migrate db-migrate api-db worker-ingest openapi-check verify
+.PHONY: help install infra-up infra-down infra-logs infra-ps app-build app-up app-down app-logs app-ps app-migrate db-migrate seed-db api-db worker-ingest openapi-check verify
 
 help:
 	@printf "BoxBrain v2 development targets:\n"
@@ -34,6 +34,7 @@ help:
 	@printf "  make app-ps         Show full-stack app containers\n"
 	@printf "  make app-migrate    Run full-stack app migrations\n"
 	@printf "  make db-migrate     Apply backend Alembic migrations\n"
+	@printf "  make seed-db        Seed Postgres with the demo fixture graph (database mode)\n"
 	@printf "  make api-db         Run FastAPI in PostgreSQL/S3/RQ integration mode\n"
 	@printf "  make worker-ingest  Run the RQ ingestion worker\n"
 	@printf "  make openapi-check  Run the root OpenAPI contract check\n"
@@ -74,6 +75,9 @@ app-migrate:
 
 db-migrate:
 	cd services/api && uv run alembic upgrade head
+
+seed-db:
+	cd services/api && BOXBRAIN_REPOSITORY=database uv run python -m app.infrastructure.seed_database
 
 api-db:
 	cd services/api && BOXBRAIN_REPOSITORY=database BOXBRAIN_STORAGE=s3 BOXBRAIN_ENQUEUE_INGESTION=true uv run uvicorn app.main:app --reload
