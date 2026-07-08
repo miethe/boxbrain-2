@@ -237,4 +237,7 @@ def test_hybrid_search_sql_includes_content_blocks_and_restricted_filtering() ->
     assert "ts_rank_cd(" in sql
     assert "cbv.search_vector" in sql
     assert "embeddings.target_type = 'content_block_version'" in sql
-    assert "NOT content_block.version_restricted" in sql
+    # Filter on the join alias, not the CTE's own name — a CTE cannot reference itself
+    # in its own body (Postgres "missing FROM-clause entry"); see the DB-mode 500 fix.
+    assert "NOT cbv.restricted" in sql
+    assert "content_block.version_restricted" not in sql

@@ -102,17 +102,20 @@ def build_hybrid_search_sql(
     include_restricted: bool,
     include_content_blocks: bool = False,
 ) -> str:
+    # A CTE cannot reference its own name inside its own body — family_restricted/
+    # version_restricted are output aliases of the SELECT, not in-scope columns, so
+    # qualifying them with the CTE name (content_unit./work_product./content_block.)
+    # raises "missing FROM-clause entry" in Postgres. Filter on the underlying join
+    # aliases instead (cuf/cuv, wpf/wpv, cbv).
     restricted_content_unit_filter = (
-        "TRUE" if include_restricted else "NOT (content_unit.family_restricted OR content_unit.version_restricted)"
+        "TRUE" if include_restricted else "NOT (cuf.restricted OR cuv.restricted)"
     )
     restricted_work_product_filter = (
-        "TRUE"
-        if include_restricted
-        else "NOT (work_product.family_restricted OR work_product.version_restricted)"
+        "TRUE" if include_restricted else "NOT (wpf.restricted OR wpv.restricted)"
     )
     content_unit_enabled = "TRUE" if include_content_units else "FALSE"
     work_product_enabled = "TRUE" if include_work_products else "FALSE"
-    restricted_content_block_filter = "TRUE" if include_restricted else "NOT content_block.version_restricted"
+    restricted_content_block_filter = "TRUE" if include_restricted else "NOT cbv.restricted"
     content_block_enabled = "TRUE" if include_content_blocks else "FALSE"
     return f"""
 WITH query_input AS (

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.domain.ingestion_search import SearchDocument
@@ -119,8 +122,43 @@ def test_hybrid_search_sql_uses_fts_pgvector_and_pre_rank_restricted_filter() ->
     assert "websearch_to_tsquery('english', :query_text)" in sql
     assert "ts_rank_cd(cuv.search_vector, query_input.ts_query, 32)" in sql
     assert "embeddings.embedding <=> query_input.query_embedding" in sql
-    assert "NOT (content_unit.family_restricted OR content_unit.version_restricted)" in sql
-    assert "NOT (work_product.family_restricted OR work_product.version_restricted)" in sql
+    # The restricted filter must qualify the underlying join aliases, NOT the CTE's own
+    # name — a CTE cannot reference itself in its own body (Postgres raises "missing
+    # FROM-clause entry"). Guard against the regression that broke DB-mode search.
+    assert "NOT (cuf.restricted OR cuv.restricted)" in sql
+    assert "NOT (wpf.restricted OR wpv.restricted)" in sql
+    assert "content_unit.family_restricted" not in sql
+    assert "work_product.family_restricted" not in sql
+    assert "content_block.version_restricted" not in sql
+
+
+@pytest.mark.skipif(
+    os.getenv("BOXBRAIN_RUN_LIVE_TESTS") != "1",
+    reason="Set BOXBRAIN_RUN_LIVE_TESTS=1 with a migrated Postgres/pgvector at DATABASE_URL.",
+)
+@pytest.mark.parametrize("include_restricted", [False, True])
+def test_hybrid_search_sql_executes_against_postgres(include_restricted: bool) -> None:
+    """Execute the generated hybrid-search SQL against a real Postgres.
+
+    The in-memory stub in ``test_database_search_method_is_used_when_repository_exposes_it``
+    replaces ``hybrid_search_documents`` wholesale, so the real SQL was never run in CI —
+    which let a CTE self-reference bug (``NOT (content_unit.family_restricted OR ...)``,
+    invalid because a CTE cannot reference its own name) ship undetected and 500 every
+    non-privileged search/ask and the admin search-eval in database mode. This exercises
+    the SQL end-to-end; an empty catalog is fine — the point is that it parses and runs,
+    especially the ``include_restricted=False`` filter branch.
+    """
+    from app.infrastructure.database import SessionLocal
+    from app.infrastructure.sqlalchemy_repository import SqlAlchemyBoxBrainRepository
+
+    repository = SqlAlchemyBoxBrainRepository(SessionLocal, seed=False)
+    results = repository.hybrid_search_documents(
+        SearchQuery(text="operating margin payback"),
+        object_types=set(),
+        include_restricted=include_restricted,
+        limit=10,
+    )
+    assert isinstance(results, list)
 
 
 def test_pgvector_type_binds_and_reads_real_vectors() -> None:
