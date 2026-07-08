@@ -154,12 +154,17 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:${API_PORT:-8000}}
+        # Baked into the standalone rewrite manifest at build time (see Dockerfile); server-side
+        # proxy targets the in-network API, independent of the host-facing NEXT_PUBLIC port.
+        BOXBRAIN_API_PROXY_TARGET: ${BOXBRAIN_API_PROXY_TARGET:-http://api:8000}
     environment:
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: 0.0.0.0
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:${API_PORT:-8000}}
       BOXBRAIN_SERVER_API_BASE_URL: http://api:8000
+      # Next.js /api/* rewrite proxy runs server-side; target the in-network API, not localhost.
+      BOXBRAIN_API_PROXY_TARGET: http://api:8000
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:

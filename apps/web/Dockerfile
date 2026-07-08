@@ -18,6 +18,12 @@ FROM deps AS builder
 
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+# The Next.js /api/* rewrite is baked into the standalone routes manifest at build time
+# (output: "standalone" ignores runtime env for rewrites — only `next start` re-evaluates).
+# The proxy runs server-side, so bake the in-network API host, not the browser-facing localhost.
+# Default matches the compose service name; override with --build-arg for other topologies.
+ARG BOXBRAIN_API_PROXY_TARGET=http://api:8000
+ENV BOXBRAIN_API_PROXY_TARGET=$BOXBRAIN_API_PROXY_TARGET
 ENV NODE_ENV=production
 
 COPY . .
