@@ -75,3 +75,14 @@ pnpm verify
 - Store AI outputs with model/pipeline/prompt/confidence metadata.
 - Use explicit command endpoints for high-impact actions.
 
+
+## AOS operating doctrine (look-first / save-after)
+
+The launchpad's shared, token-tight doctrine index —
+[`../agentic_meta_dev/.claude/rules/aos-operating-rules.md`](../agentic_meta_dev/.claude/rules/aos-operating-rules.md)
+(sibling-repo relative path) — splits each AOS subsystem's **look-first** instruction from its
+**save-after** gate (or "advisory only"). Consult it before reaching for a subsystem.
+**Fallback:** if this repo is relocated or cloned standalone (the launchpad is not a sibling
+directory), re-vendor the file locally at `.claude/rules/aos-operating-rules.md`.
+
+> Installed via the `aos-native-by-default` initiative (IntentTree node `node_01KXKEH3QWGK404JBMHW1RWCTQ`).
