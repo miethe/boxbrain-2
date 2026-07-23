@@ -533,8 +533,8 @@ function matchRegistryModels(registry, model) {
   // 2. class match (e.g. 'haiku' → every model whose class === 'haiku').
   const byClass = keys.filter(k => (models[k].class || '').toLowerCase() === lower);
 
-  // 3. provider model_id exact/prefix match (e.g. 'gpt-5.3-codex', 'bob-local',
-  //    'gemini-3-flash').
+  // 3. provider model_id exact/prefix match (e.g. 'gpt-5.6-terra', 'bob-local',
+  //    'gemini-3.5-flash').
   const byModelId = keys.filter(k =>
     (models[k].providers || []).some(p => {
       const id = (p.model_id || '').toLowerCase();
@@ -542,7 +542,7 @@ function matchRegistryModels(registry, model) {
     })
   );
 
-  // 4. model-key prefix match (e.g. 'gemini-3' → 'gemini-3-flash').
+  // 4. model-key prefix match (e.g. 'gemini-3' → 'gemini-3.5-flash').
   const byKeyPrefix = keys.filter(k => k.toLowerCase().startsWith(lower));
 
   // Merge preserving order of specificity, de-duped.
