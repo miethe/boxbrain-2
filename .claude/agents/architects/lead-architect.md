@@ -7,6 +7,7 @@ color: purple
 model: opus
 skills:
   - planning
+  - artifact-tracking
 ---
 # Lead Architect Orchestrator
 
