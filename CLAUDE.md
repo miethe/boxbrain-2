@@ -1,6 +1,29 @@
 # CLAUDE.md — BoxBrain v2 Claude Code Instructions
 
-## Mission
+## ⏸️ STATUS: PAUSED 2026-08-05 (HAR-006) — read before starting any roadmap work
+
+**Roadmap and pilot-readiness work is stopped.** No named pilot user exists, so feature work here has
+no signal attached. If you were dispatched to advance the roadmap, close pilot-readiness gaps, or pick
+up a phase from `docs/project_plans/`: **stop and report back** — that task is based on superseded
+state.
+
+**Still in scope while paused** (all narrow, none of it roadmap work):
+
+- **Security fixes** — never gated on this pause. The `assets.py` restricted-content leak is already
+  fixed (`d1dec83`); if you find another, fix it.
+- **Harvest** — extracting the family/variant/version/composition governance model as spec input for
+  SkillMeat artifact dedup and MeatyWiki supersession.
+- Keeping the tree buildable (dependency/security bumps), not extending it.
+
+**Reversal condition — exactly one:** a *named* external pilot user. Then the pause lifts and the
+Mission below applies again as written.
+
+Decision record: `agentic_meta_dev/docs/portfolio-intelligence/artifacts/08-decision-queue.md`
+§ HAR-006.
+
+---
+
+## Mission *(applies when the pause above is lifted)*
 
 Help build BoxBrain v2: a governed enterprise slide/content graph and Storyboard platform. Focus on durable, typed, testable implementation. The initial Claude Design HTML is a visual reference only; reimplement production UI using real components and API-backed state.
 

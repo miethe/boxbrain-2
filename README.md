@@ -1,4 +1,28 @@
-# BoxBrain v2
+# BoxBrain v2 — PAUSED
+
+> ## ⏸️ Paused 2026-08-05 · no named pilot user
+>
+> **Decision HAR-006: pause + harvest.** Roadmap work is stopped — not because the build is bad (the
+> engineering core is real and well-governed) but because **no named pilot user exists**, and a
+> pilot-readiness push with nobody to pilot for is effort with no signal attached.
+>
+> **Reversal condition — exactly one:** a *named* external pilot user. At that point this banner comes
+> off and the roadmap resumes. "Someone might be interested" does not qualify; that ambiguity is what
+> the pause exists to force.
+>
+> **What was harvested rather than shelved:** the family / variant / version / composition
+> content-governance model — the genuinely novel part of this repo — is filed as spec input for
+> **SkillMeat artifact dedup** and **MeatyWiki supersession**, where the same problem (many
+> near-identical artifacts, which one supersedes which) is live and has users today.
+>
+> **Security work was never gated on this pause,** and is done: the `assets.py` restricted-content
+> leak (campaign action S1) was fixed in `d1dec83` (2026-07-07) — the route now calls `get_actor` and
+> gates on `can_view_restricted` + `is_asset_restricted`. ⚠️ Note the campaign's own report asserted
+> a month later that this was *still* unfixed ("still 21 lines, still not calling `get_actor`"); that
+> was wrong. Re-verified 2026-08-06.
+>
+> Decision record: `agentic_meta_dev/docs/portfolio-intelligence/artifacts/08-decision-queue.md`
+> § HAR-006.
 
 BoxBrain v2 is a governed enterprise slide and content catalog for decomposing business artifacts into atomic ContentUnits, organizing them by family, variant, and version, and composing reusable Storyboards with provenance, review, and search controls.
 
