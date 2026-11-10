@@ -1,0 +1,6 @@
+---
+const {vm}=Astro.props;
+const {kind,p,o,redirect,title,items,list,related,relatedPlays,ordered,links,lookup,url,slots}=vm;
+---
+<h1>{title}</h1>
+<p>{o.summary}</p><div set:html={o.html}/><section><h2>Outcomes</h2><ul>{o.outcomes.map(x=><li>{x}</li>)}</ul><h2>Good fit</h2><ul>{o.good_fit.map(x=><li>{x}</li>)}</ul><h2>Not a fit</h2><ul>{o.not_fit.map(x=><li>{x}</li>)}</ul></section>{slots.howToSell && <section><h2>How to sell it</h2><div set:html={slots.howToSell.html.replace(/<(\/?)(h[2-5])(?=[ >])/g, (_, slash, heading) => `<${slash}h${Number(heading[1])+1}`)}/></section>}{slots.evidence.length>0 && <section><h2>Evidence and resources</h2><ul>{links(slots.evidence).map(x=><li><a href={x.url}>{x.title}</a></li>)}</ul></section>}{relatedPlays.length>0 && <section><h2>Related plays</h2><ul>{links(relatedPlays).map(x=><li><a href={x.url}>{x.title}</a></li>)}</ul></section>}

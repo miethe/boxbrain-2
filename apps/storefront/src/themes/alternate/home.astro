@@ -1,0 +1,6 @@
+---
+const {vm}=Astro.props;
+const {kind,p,o,redirect,title,items,list,related,relatedPlays,ordered,links,lookup,url,slots}=vm;
+---
+<h1>{title}</h1>
+<p>{p.tagline}</p><p>{p.summary}</p><div set:html={p.html}/>{slots.doorway.length>0 && <section><h2>Explore by situation</h2><ul>{slots.doorway.map(s=><li><a href={url(lookup(s.offering_id))}>{s.label}</a></li>)}</ul></section>}{p.play_ids.length>0 && <section><h2>Plays</h2><ul>{links(ordered(p.play_ids)).map(x=><li><a href={x.url}>{x.title}</a></li>)}</ul></section>}<section><h2>Offerings</h2><ul>{links(ordered(p.offering_ids)).map(x=><li><a href={x.url}>{x.title}</a></li>)}</ul></section>{slots.evidence.length>0 && <section><h2>Evidence</h2><ul>{links(slots.evidence).map(x=><li><a href={x.url}>{x.title}</a></li>)}</ul></section>}<section><h2>Search this practice</h2><label>Search <input id="site-search" type="search" /></label><p id="search-status" aria-live="polite"></p><ul id="search-results"></ul><noscript>Search requires JavaScript; browse using the links above.</noscript></section>

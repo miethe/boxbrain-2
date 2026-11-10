@@ -1,0 +1,6 @@
+---
+const {vm}=Astro.props;
+const {kind,p,o,redirect,title,items,list,related,relatedPlays,ordered,links,lookup,url,slots}=vm;
+---
+<h1>{title}</h1>
+{kind==='library' && <><form id="filters"><label>Search <input name="q" type="search" /></label><fieldset><legend>Kind</legend>{[...new Set(list.map(x=>x.kind))].map(x=><label><input type="checkbox" name="kind" value={x}/>{x}</label>)}</fieldset><fieldset><legend>Offering</legend>{ordered(p.offering_ids).map(x=><label><input type="checkbox" name="offering" value={x.id}/>{x.title}</label>)}</fieldset>{list.some(x=>x.tags.length>0) && <fieldset><legend>Tag</legend>{[...new Set(list.flatMap(x=>x.tags))].map(x=><label><input type="checkbox" name="tag" value={x}/>{x}</label>)}</fieldset>}<button type="reset">Clear filters</button></form><p id="filter-status" aria-live="polite"></p></>}<ul id="browse-list">{list.map(x=><li data-item data-kind={x.kind} data-offerings={JSON.stringify(x.offering_ids)} data-tags={JSON.stringify(x.tags)} data-text={`${x.title} ${x.summary} ${x.body}`.toLowerCase()}><a href={url(x)}>{x.title}</a> — {x.summary} {x.kind && `(${x.kind}, ${x.format}; reviewed ${x.reviewed_on})`}</li>)}</ul>{list.length===0 && <p>No published resources yet.</p>}

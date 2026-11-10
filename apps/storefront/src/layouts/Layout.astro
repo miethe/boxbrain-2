@@ -1,6 +1,5 @@
 ---
-import '../themes/neutral.css';
-import '../themes/alternate.css';
+import '@theme/tokens.css';
 const {title, practice, plays=false, edition}=Astro.props;
 const theme = edition === 'seller' ? (process.env.STOREFRONT_SELLER_THEME || 'neutral') : (process.env.STOREFRONT_ORG_THEME || 'neutral');
 ---
