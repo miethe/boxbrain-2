@@ -1,0 +1,3 @@
+# Applying a visual direction
+
+The files in `src/themes/` and the shared `src/layouts/Layout.astro` are the presentation layer. `neutral` is the default; `alternate` is a deliberately small proof of theme selection. Set `STOREFRONT_SELLER_THEME=alternate` and/or `STOREFRONT_ORG_THEME=alternate` at build time. Add tokens, typography, responsive layout rules and theme-specific layout components there when a direction is chosen. Keep semantic content in the page templates and keep their data contract (`items`, projected relationships and `url`) unchanged. Do not move audience filtering, asset selection or validation into CSS or the browser. Build and check both editions after any theme change, including keyboard focus and narrow viewports.

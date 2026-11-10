@@ -1,0 +1,17 @@
+{
+  "name": "@boxbrain/storefront",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "pnpm run build && node --test tests/*.test.mjs && python3 -m unittest discover -s tests -p 'test_*.py' -v"
+  },
+  "dependencies": {
+    "astro": "5.16.6",
+    "marked": "15.0.12",
+    "yaml": "2.8.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {"pagefind": "1.4.0"}
+}
