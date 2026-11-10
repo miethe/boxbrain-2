@@ -1,25 +1,19 @@
 # M1 validation
 
-Run from the repository root on Node 20.19.3 and pnpm 10.14.0:
+Run from the repository root with Node 20.19.3 and pnpm 10.14.0:
 
-- `pnpm --filter @boxbrain/storefront test` — passed: both builds (22 seller pages, 17 org-wide pages), org-wide leak scan, 14 Node tests and 3 ingest tests. The tests include an injected canary in a copy of the actual org-wide output, invalid records, a mounted temporary content root, a generated rename redirect, and combined filter logic.
-- `STOREFRONT_EDITION=org-wide STOREFRONT_ORG_THEME=alternate pnpm --filter @boxbrain/storefront build` and `rg -o 'data-theme="alternate"' apps/storefront/dist/org-wide/index.html` — passed; alternate theme selected. The subsequent test command restored both default builds.
-- `cd apps/storefront && node scripts/smoke.mjs seller && node scripts/smoke.mjs org-wide` — both local static servers started and stopped. Practice home, Service Blueprint, and library each returned HTTP 200 with their expected text in both editions. Pagefind queries for “Service Blueprint” returned 10 seller / 7 org-wide results; “handoffs” returned 9 / 5. The seller-only Handoff workshop page appeared in seller search and did not appear in org-wide search.
+- `pnpm install --frozen-lockfile` — passed.
+- `STOREFRONT_SELLER_THEME=alternate STOREFRONT_ORG_THEME=neutral pnpm --filter @boxbrain/storefront test` — passed: both edition builds (22 seller and 17 org-wide pages), org-wide leak scan, 17 Node tests and 3 Python tests.
+- `cd apps/storefront && node scripts/smoke.mjs seller && node scripts/smoke.mjs org-wide` — six HTTP fetches returned 200 with expected text. Pagefind found the seller-only workshop in seller results and omitted it in org-wide results.
 - `git diff --check` — passed.
 
-Acceptance evidence:
+Evidence for the six gap-closing items:
 
-1. Workspace and build: `package.json`, `scripts/build.mjs`, `README.md`.
-2. Typed schema and graph checks: `src/lib/content.mjs`, `tests/content.test.mjs`. Relative catalog links are resolved and governance triples require a supplied mapping registry.
-3. Projection and leak scan: `src/lib/content.mjs`, `scripts/leak-scan.mjs`, canary test.
-4. Templates and themes: `src/pages/`, `src/layouts/`, `src/themes/`, alternate-theme command above.
-5. Slots: `src/pages/[...path].astro`, `README.md`.
-6. Second practice: `content/meadow-learning/`, built-output test.
-7. Private mount: `README.md`, `STOREFRONT_CONTENT_ROOT`, temporary-root redirect test.
-8. Draft ingest: `INGEST.md`, `scripts/ingest.py`, `tests/test_ingest.py`.
-9. Separate Pagefind indexes and filters: `scripts/smoke.mjs`, `src/lib/filters.mjs`, `tests/content.test.mjs`.
-10. Stable IDs and aliases: `src/lib/content.mjs`, generated redirect test.
-11. Theme handoff: `THEMING.md`.
-12. Commands and HTTP checks: above.
+1. Theme architecture: `src/themes/`, `src/lib/view-models.mjs`, `src/lib/view-models.d.ts` and the theme test in `tests/content.test.mjs`. The test builds both layouts against identical seller content, checks their home and offering order and content, and checks selected and absent CSS markers in the edition outputs.
+2. Leak scan: `scripts/leak-scan.mjs` and `scripts/build.mjs` scan excluded IDs, titles, unique source/asset filenames and content, including gzip fragments and encoded bundle strings. The test plants gzip and base64 controls and verifies a clean scan.
+3. Filters and headings: `src/components/Interactions.astro` restores and writes URL parameters; theme library components expose labeled checkbox facets, omit empty tags and retain no-script lists. Offering components nest seller-guide headings under the panel. Tests cover facet matching, generated controls and heading levels.
+4. Theme instructions: `THEMING.md`. The theme test follows its copy, register and build procedure in an isolated scratch copy with a fixture theme and verifies its marker; no edits outside that directory and one config entry are used.
+5. Hygiene: `.gitignore`, `docs/project_plans/revival/storefront-m0/PLAN.md`; root `PR-BODY.md` removed and PR text retained under `.leg/`.
+6. Revalidation: commands and counts above; `tests/content.test.mjs` and `scripts/smoke.mjs` provide executable evidence.
 
-Browser rendering and keyboard interaction were not checked: this clone sandbox cannot launch Chromium. The smoke test exercises generated Pagefind indexes directly and checks served HTML, but does not substitute for browser verification. The scaffold targets a host-root deployment; host authorization and private-instance release receipts remain instance responsibilities.
+Browser rendering, keyboard interaction and URL restoration in a browser were not rechecked: this clone sandbox cannot launch Chromium. Static output and shared filter logic were checked; visual and interactive verification remains for a browser-capable lane. Host authorization and private-instance release remain instance responsibilities.

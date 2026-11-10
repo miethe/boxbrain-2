@@ -42,3 +42,6 @@ tmp/
 
 # Astro generated files
 apps/storefront/.astro/
+
+# Local leg handoff metadata
+.leg/

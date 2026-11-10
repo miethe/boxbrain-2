@@ -1,10 +1,10 @@
 # From selected direction to first usable storefront
 
-Entry condition: Nick selects a pair in OPTIONS.md, or approves one revised hybrid pair. This plan authorizes no build in M0. Each row is one future whole-node leg: its owner finishes implementation, relevant tests, hooks, commit and reviewable PR before returning. No partial handoff between a writer and a separate fixer. One integration owner sequences merges and rechecks dependent work. Default execution lane is ICA; no additional agents are dispatched by this design package.
+Entry condition: Nick selects a pair in OPTIONS.md, or approves one revised hybrid pair. This plan authorizes no build in M0. Each row is one future whole-node leg: its owner finishes implementation, relevant tests, hooks, commit and reviewable PR before returning. No partial handoff between a writer and a separate fixer. One integration owner sequences merges and rechecks dependent work. Default execution lane is default delegated lane; no additional agents are dispatched by this design package.
 
 ## Leg 1 — Content loader and release boundary
 
-**Lane:** ICA. **Depends on:** direction decision and this schema. **Return:** one PR with an isolated `apps/storefront` package, pinned static stack, schema loader and fixture tests.
+**Lane:** default delegated lane. **Depends on:** direction decision and this schema. **Return:** one PR with an isolated `apps/storefront` package, pinned static stack, schema loader and fixture tests.
 
 Acceptance criteria:
 
@@ -16,7 +16,7 @@ Acceptance criteria:
 
 ## Leg 2 — Complete browse journeys in the selected direction
 
-**Lane:** ICA, with browser verification on an ICA/Claude-Code-native host. **Depends on:** merged leg 1. **Return:** one PR and screenshot evidence for desktop/mobile.
+**Lane:** default delegated lane, with browser verification on an a browser-capable host. **Depends on:** merged leg 1. **Return:** one PR and screenshot evidence for desktop/mobile.
 
 Acceptance criteria:
 
@@ -28,7 +28,7 @@ Acceptance criteria:
 
 ## Leg 3 — Search and library completion
 
-**Lane:** ICA. **Depends on:** merged leg 2. **Return:** one PR with edition-specific Pagefind indexing, usable filters and tests.
+**Lane:** default delegated lane. **Depends on:** merged leg 2. **Return:** one PR with edition-specific Pagefind indexing, usable filters and tests.
 
 Acceptance criteria:
 
@@ -39,7 +39,7 @@ Acceptance criteria:
 
 ## Leg 4 — Private instance content rehearsal
 
-**Lane:** ICA in an employer-authorized private execution environment; credentials and source access remain with its operator. If ICA is not approved for that material, the operator chooses an approved local lane before any source is read. **Depends on:** merged leg 3 and content-owner authorization. **Return:** private instance PR plus source reconciliation and correction receipts, never copied here.
+**Lane:** the default delegated lane in an approved private execution environment; credentials and source access remain with its operator. **Depends on:** merged leg 3 and content-owner authorization. **Return:** private instance PR plus source reconciliation and correction receipts, never copied here.
 
 Acceptance criteria:
 
@@ -50,7 +50,7 @@ Acceptance criteria:
 
 ## Leg 5 — Host rehearsal and first usable release
 
-**Lane:** ICA for the packaging/documentation PR; **authorized internal platform operator** for identity-group configuration and publication because those require private platform access and organizational authority. This is the only planned non-ICA action; no identity server is written. **Depends on:** accepted private content and leg 4 receipts. **Return:** tool/instance deployment runbook PR and private operator verification receipt.
+**Lane:** default delegated lane for the packaging/documentation PR; **authorized internal platform operator** for identity-group configuration and publication because those require private platform access and organizational authority. This is the only planned separate action; no identity server is written. **Depends on:** accepted private content and leg 4 receipts. **Return:** tool/instance deployment runbook PR and private operator verification receipt.
 
 Acceptance criteria:
 
