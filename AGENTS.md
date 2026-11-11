@@ -1,12 +1,8 @@
 # AGENTS.md — BoxBrain v2 Repository Instructions
 
-> ## ⏸️ PAUSED 2026-08-05 (HAR-006) — no named pilot user
->
-> Roadmap and pilot-readiness work is **stopped**. If your task is to advance the roadmap or close
-> pilot-readiness gaps, **stop and report back** — it is based on superseded state. Still in scope:
-> security fixes (never gated on the pause), harvesting the family/variant/version/composition
-> governance model, and keeping the tree buildable. Reversal condition is exactly one: a *named*
-> external pilot user. Detail: `CLAUDE.md` § STATUS.
+## STATUS: REVIVED 2026-11-10 (Nick; supersedes the HAR-006 pause).
+
+Pilot: a consulting practice at Nick's employer, its sellers first; the practice's name is deliberately kept out of this repository. Active scope: the files-first storefront front door (docs/project_plans/revival/). The security-fix and harvest notes below remain valid.
 
 ## Project summary
 
