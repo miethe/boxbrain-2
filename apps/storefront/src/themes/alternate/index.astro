@@ -1,0 +1,6 @@
+---
+const {vm}=Astro.props;
+const {kind,p,o,redirect,title,items,list,related,relatedPlays,ordered,links,lookup,url,slots}=vm;
+---
+<h1>{title}</h1>
+<ul>{items.filter(x=>x.type==='practice').map(x=><li><a href={url(x)}>{x.title}</a> — {x.summary} ({x.offering_ids.length} offerings)</li>)}</ul>

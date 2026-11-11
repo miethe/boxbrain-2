@@ -1,0 +1,6 @@
+---
+const {vm}=Astro.props;
+const {kind,p,o,redirect,title,items,list,related,relatedPlays,ordered,links,lookup,url,slots}=vm;
+---
+<h1>{title}</h1>
+<p>{o.summary}</p><div set:html={o.html}/><p>{o.kind} · {o.format} · Reviewed {o.reviewed_on} by {o.reviewed_by}</p><p>{o.external_url?<a href={o.external_url} target="_blank" rel="noopener noreferrer">Open external link</a>:<a href={`/assets/${p.slug}/${o.asset_path.split('/').pop()}`}>Download {o.format==='markdown'?'Markdown source':o.format.toUpperCase()}</a>}</p><h2>Related offerings</h2><ul>{links(ordered(o.offering_ids)).map(x=><li><a href={x.url}>{x.title}</a></li>)}</ul>

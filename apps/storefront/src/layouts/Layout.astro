@@ -1,0 +1,6 @@
+---
+import '@theme/tokens.css';
+const {title, practice, plays=false, edition}=Astro.props;
+const theme = edition === 'seller' ? (process.env.STOREFRONT_SELLER_THEME || 'neutral') : (process.env.STOREFRONT_ORG_THEME || 'neutral');
+---
+<!doctype html><html lang="en" data-theme={theme}><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width"/><title>{title}</title></head><body><header><nav aria-label="Main"><a href="/">Practices</a>{practice && <><a href={`/practices/${practice.slug}/`}>{practice.title}</a><a href={`/practices/${practice.slug}/offerings/`}>Offerings</a>{plays && <a href={`/practices/${practice.slug}/plays/`}>Plays</a>}<a href={`/practices/${practice.slug}/library/`}>Library</a></>}<span>{edition}</span></nav></header><main data-pagefind-body><slot /></main><footer>Fictional sample content</footer></body></html>

@@ -1,0 +1,21 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Interactions from '../components/Interactions.astro';
+import {items, url, edition} from '../lib/site.mjs';
+import {viewModel} from '../lib/view-models.mjs';
+import {pages} from '@theme/index.mjs';
+export function getStaticPaths() {
+ const routes=[{params:{path:undefined},props:{kind:'index'}}];
+ for(const p of items.filter(x=>x.type==='practice')) {
+  routes.push({params:{path:`practices/${p.slug}`},props:{kind:'home',p}});
+  for(const kind of ['offerings','plays','library']) if(kind!=='plays'||p.play_ids.length) routes.push({params:{path:`practices/${p.slug}/${kind}`},props:{kind,p}});
+  for(const o of items.filter(x=>x.practice_id===p.id)) { const canonical=url(o).slice(1,-1); routes.push({params:{path:canonical},props:{kind:o.type,p,o}}); for(const practiceSlug of [p.slug,...p.aliases]) for(const itemSlug of [o.slug,...o.aliases]) {const oldPath=canonical.replace(`practices/${p.slug}/`,`practices/${practiceSlug}/`).replace(/[^/]+$/,itemSlug); if(oldPath!==canonical) routes.push({params:{path:oldPath},props:{kind:'redirect',p,o}}); } }
+  for(const alias of p.aliases) { routes.push({params:{path:`practices/${alias}`},props:{kind:'redirect',p,o:p}}); for(const section of ['offerings','plays','library']) if(section!=='plays'||p.play_ids.length) routes.push({params:{path:`practices/${alias}/${section}`},props:{kind:'redirect',p,redirect:`/practices/${p.slug}/${section}/`}}); }
+ }
+ return routes;
+}
+const vm=viewModel(Astro.props.kind, Astro.props.p, Astro.props.o, Astro.props.redirect);
+const Page=pages[vm.kind];
+---
+<Layout title={vm.title} practice={vm.p} plays={!!vm.p?.play_ids.length} {edition}><Page {vm}/></Layout>
+<Interactions />
