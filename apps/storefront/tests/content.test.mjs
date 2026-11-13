@@ -34,6 +34,7 @@ test('orphan assets fail validation',()=>fixture(root=>{
 
 test('library facets combine query with OR within each facet and AND across facets',()=>{const item={text:'Service design exercise',kind:'deck',offerings:['one','two'],tags:['planning']};assert.equal(matches(item,{q:'design',kinds:['case-study','deck'],offerings:['two'],tags:['planning']}),true);assert.equal(matches(item,{q:'design',kinds:['deck'],offerings:['other']}),false);assert.equal(matches(item,{q:'missing'}),false);assert.equal(matches(item,{}),true);});
 
+test('alternate theme typography and background are not overridden by root tokens',()=>{const css=fs.readFileSync(path.resolve('src/themes/alternate/tokens.css'),'utf8');assert.doesNotMatch(css.match(/:root\s*\{[^}]*\}/)[0],/font-family|background/);assert.match(css,/html\s*\{[^}]*Georgia[^}]*#f4f4f4/);});
 test('unknown keys fail',()=>fixture(root=>{edit(root,'meadow-learning/practice.md',s=>s.replace('"title": "Meadow Learning"','"unknown_field": true,\n  "title": "Meadow Learning"'));assert.throws(()=>loadContent(root,'seller'),/Unrecognized key/);}));
 test('relative links resolve to published routes and reject restricted targets',()=>fixture(root=>{
  edit(root,'meadow-learning/offerings/learning-lab.md',s=>s.replace('A fictional learning workshop.','A [sample](../collateral/exercise.md).'));
