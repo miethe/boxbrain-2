@@ -1,0 +1,18 @@
+---
+import Icon from './Icon.astro';
+const {vm}=Astro.props;
+const seller=process.env.STOREFRONT_EDITION==='seller';
+const base=vm.p?`/practices/${vm.p.slug}/`:'/';
+const active=vm.kind==='offering'?'offerings':vm.kind==='collateral'?'library':vm.kind==='play'?'plays':vm.kind;
+const nav=[{key:'index',label:'Practices',href:'/',icon:'box'},...(vm.p?[{key:'home',label:'Practice home',href:base,icon:'home'},{key:'offerings',label:'Offerings',href:base+'offerings/',icon:'offering'},...(seller&&vm.p.play_ids.length?[{key:'plays',label:'Plays',href:base+'plays/',icon:'play'}]:[]),{key:'library',label:'Library',href:base+'library/',icon:'library'}]:[])];
+---
+<div class="v2-shell">
+<aside class="sidebar" data-pagefind-ignore>
+<a class="brand" href="/"><span class="brand-mark"><Icon name="box"/></span><span>BoxBrain</span></a>
+<div class="workspace">{vm.p?.title||'Practice catalog'}</div>
+<p class="nav-label">Explore</p><nav class="side-nav" aria-label="Practice navigation">{nav.map(n=><a href={n.href} aria-current={active===n.key?'page':undefined}><Icon name={n.icon}/><span>{n.label}</span></a>)}</nav>
+<div class="edition"><span class="edition-dot"></span>{seller?'Seller edition':'Org-wide edition'}<small>Fictional sample content</small></div>
+</aside>
+<div class="workspace-main"><header class="topbar" data-pagefind-ignore><div class="page-context"><span>{vm.p?.title||'Practice catalog'}</span><strong>{vm.title}</strong></div>{vm.p&&<form class="header-search" action={base+'library/'} method="get" role="search"><Icon name="search"/><label class="sr-only" for={vm.kind==='home'?'site-search':'header-query'}>Search this practice</label><input id={vm.kind==='home'?'site-search':'header-query'} name="q" type="search" placeholder="Search this practice…"/><button type="submit">Browse library</button></form>}</header>
+{vm.kind==='home'&&vm.p&&<div class="search-feedback"><p id="search-status" aria-live="polite"></p><ul id="search-results"></ul><noscript><p>Browse or submit your search to the library. Interactive search and filters require JavaScript.</p></noscript></div>}
+<div class="page-body"><slot/></div></div></div>

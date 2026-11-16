@@ -90,3 +90,11 @@ test('edition outputs contain only their configured theme and usable library con
   const offering=fs.readFileSync(path.join(root,'practices/northstar-operations/offerings/service-blueprint/index.html'),'utf8');if(edition==='seller')assert.match(offering,/<h2>How to sell it<\/h2>\s*<div[^>]*><h3/);
  }
 });
+
+
+test('org output has no Plays href and Editorial has no Plays templates',()=>{
+ const root=path.resolve('dist/org-wide');
+ for(const file of fs.readdirSync(root,{recursive:true}).filter(x=>x.endsWith('.html')))
+  assert.doesNotMatch(fs.readFileSync(path.join(root,file),'utf8'),/href=["'][^"']*\/plays(?:\/|["'])/);
+ for(const file of ['play.astro','plays.astro']) assert.ok(!fs.existsSync(path.resolve('src/themes/editorial',file)));
+});
