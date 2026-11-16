@@ -1,4 +1,8 @@
 ---
+import Shell from '../v2/Shell.astro';
 const {vm}=Astro.props; const {o,title,links,slots}=vm;
 ---
+<Shell {vm}>
 <p class="eyebrow">Our offerings</p><h1>{title}</h1><p class="lede">{o.summary}</p><section><div set:html={o.html}/></section><section><h2>Outcomes</h2><ul>{o.outcomes.map(x=><li>{x}</li>)}</ul><h2>Good fit</h2><ul>{o.good_fit.map(x=><li>{x}</li>)}</ul><h2>Not a fit</h2><ul>{o.not_fit.map(x=><li>{x}</li>)}</ul></section>{slots.evidence.length>0 && <section class="evidence"><p class="eyebrow">Evidence and related reading</p><h2>Explore the work</h2><ul>{links(slots.evidence).map(x=><li><a href={x.url}>{x.title} →</a></li>)}</ul></section>}
+
+</Shell>

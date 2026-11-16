@@ -1,10 +1,14 @@
 ---
+import Shell from '../v2/Shell.astro';
 const {vm}=Astro.props;
 const {p,title,ordered,links,lookup,url,slots}=vm;
 ---
+<Shell {vm}>
 <p class="eyebrow">Seller field guide / {p.title}</p><h1>{title}</h1><p class="lede">{p.tagline} {p.summary}</p>
-<section class="search"><h2>Search this practice</h2><label>Search <input id="site-search" type="search" placeholder="Find a play or resource" /></label><p id="search-status" aria-live="polite"></p><ul id="search-results"></ul><noscript>Search requires JavaScript; browse using the links below.</noscript></section>
+
 {p.play_ids.length>0 && <section><p class="eyebrow">Start a conversation</p><h2>Plays</h2><ol class="play-flow">{ordered(p.play_ids).map((x,i)=><li><span class="step-number">{i+1}</span><div><span class="chip">Play</span><h3><a href={url(x)}>{x.title}</a></h3><p>{x.summary}</p></div></li>)}</ol></section>}
 {slots.evidence.length>0 && <section><p class="eyebrow">For your next conversation</p><h2>Ready to use</h2><ul class="link-list">{slots.evidence.map(x=><li><span class="chip">{x.kind}</span><h3><a href={url(x)}>{x.title}</a></h3><p>{x.summary}</p><small>{x.format}</small></li>)}</ul><a href={`/practices/${p.slug}/library/`}>Browse the library →</a></section>}
 {slots.doorway.length>0 && <section class="doorway"><p class="eyebrow">Find a starting point</p><h2>What is your client trying to fix?</h2><ul class="link-list">{slots.doorway.map(s=><li><a href={url(lookup(s.offering_id))}>{s.label} <span aria-hidden="true">→</span></a></li>)}</ul></section>}
 <section><h2>Offerings</h2><ul class="link-list">{links(ordered(p.offering_ids)).map(x=><li><a href={x.url}>{x.title} <span aria-hidden="true">→</span></a></li>)}</ul></section><section><div set:html={p.html}/></section>
+
+</Shell>
