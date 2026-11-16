@@ -1,2 +1,2 @@
 // One entry per theme; paths are relative to this file.
-export default { neutral: './neutral', alternate: './alternate' };
+export default { neutral: './neutral', alternate: './alternate', 'field-guide': './field-guide', editorial: './editorial' };

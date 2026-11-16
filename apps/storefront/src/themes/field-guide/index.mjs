@@ -1,0 +1,10 @@
+import Index from './index.astro';
+import Home from './home.astro';
+import Offerings from './offerings.astro';
+import Plays from './plays.astro';
+import Library from './library.astro';
+import Offering from './offering.astro';
+import Play from './play.astro';
+import Collateral from './collateral.astro';
+import Redirect from './redirect.astro';
+export const pages = {index: Index, home: Home, offerings: Offerings, plays: Plays, library: Library, offering: Offering, play: Play, collateral: Collateral, redirect: Redirect};
