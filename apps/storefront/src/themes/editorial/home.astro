@@ -1,12 +1,15 @@
 ---
 import Shell from '../v2/Shell.astro';
-const {vm}=Astro.props; const {p,title,ordered,links,slots}=vm;
+import Card from '../v2/Card.astro';
+import Icon from '../v2/Icon.astro';
+const {vm}=Astro.props; const {p,title,ordered,url,slots}=vm;
+const base=`/practices/${p.slug}/`;
+const entries=[{title:'Offerings',summary:'Explore approaches to better operations.',href:base+'offerings/',icon:'offering',type:'Practice'},{title:'Library',summary:'Browse practical resources for your work.',href:base+'library/',icon:'library',type:'Resources'},...(slots.evidence.length?[{title:'Fictional case and evidence',summary:'See an illustrative example of the work.',href:url(slots.evidence[0]),icon:'document',type:'Evidence'}]:[]),{title:'Related reading',summary:'Continue exploring the practice.',href:base+'library/',icon:'target',type:'Discover'}];
 ---
 <Shell {vm}>
-<p class="eyebrow">A practice for better operations</p><h1>{p.tagline}</h1><p class="lede">{p.summary}</p><p>{title}</p>
-<section><p class="eyebrow">Explore {p.title}</p><h2>Find your way in</h2><ul class="link-list entryways"><li><span class="chip">01</span><h3><a href={`/practices/${p.slug}/offerings/`}>Offerings</a></h3><p>Explore approaches to better operations.</p></li><li><span class="chip">02</span><h3><a href={`/practices/${p.slug}/library/`}>Library</a></h3><p>Browse practical resources.</p></li>{slots.evidence.length>0 && <li><span class="chip">03</span><h3><a href={links(slots.evidence)[0].url}>Fictional case and evidence</a></h3><p>See an illustrative example.</p></li>}<li><span class="chip">04</span><h3><a href={`/practices/${p.slug}/library/`}>Related reading</a></h3><p>Continue exploring the practice.</p></li></ul></section>
-<section><p class="eyebrow">Our work / 01—03</p><h2>Explore our offerings</h2><ol class="offerings">{links(ordered(p.offering_ids)).map(x=><li><a href={x.url}>{x.title} <span aria-hidden="true">↗</span></a></li>)}</ol></section>
-{slots.evidence.length>0 && <section class="evidence"><p class="eyebrow">Evidence / fictional example</p><h2>What clearer work can look like</h2><p>Explore a fictional example from the practice.</p><ul>{links(slots.evidence).map(x=><li><a href={x.url}>{x.title} →</a></li>)}</ul></section>}
-<section><div set:html={p.html}/></section><section><h2>Related reading</h2><a href={`/practices/${p.slug}/library/`}>Explore the library →</a></section>
-
+<div class="editorial-intro"><p class="eyebrow">A practice for better operations</p><h1>{p.tagline}</h1><p class="lede">{p.summary}</p><p class="practice-caption">{title}</p></div>
+<section class="entry-section"><p class="eyebrow">Explore {p.title}</p><h2>Find your way in</h2><ul class="link-list entryways">{entries.map(x=><li><a class="entry-card" href={x.href}><span class="entry-icon"><Icon name={x.icon}/></span><span class="chip">{x.type}</span><h3>{x.title}</h3><p>{x.summary}</p><span class="entry-action">Explore <Icon name="arrow"/></span></a></li>)}</ul></section>
+<section><p class="eyebrow">Our work</p><h2>Explore our offerings</h2><ol class="offerings">{ordered(p.offering_ids).map((x,i)=><li><Card item={x} href={url(x)} type="offering" number={i+1}/></li>)}</ol></section>
+{slots.evidence.length>0 && <section class="evidence"><p class="eyebrow">Evidence / fictional example</p><h2>What clearer work can look like</h2><p>Explore a fictional example from the practice.</p><ul class="link-list">{slots.evidence.map(x=><li><Card item={x} href={url(x)} tile/></li>)}</ul></section>}
+<section><div set:html={p.html}/></section><section><h2>Related reading</h2><a href={base+'library/'}>Explore the library →</a></section>
 </Shell>

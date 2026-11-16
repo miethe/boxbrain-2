@@ -20,4 +20,4 @@ For a selected direction:
 
 The automated third-theme test follows these copy/register/build steps in a temporary scratch copy and removes it afterwards.
 
-The selected `field-guide` and `editorial` themes share `src/themes/v2/tokens.css`; their theme-local token files import that layer. The loader and shared layout remain unchanged.
+The selected `field-guide` and `editorial` themes share `src/themes/v2/tokens.css`; their theme-local token files import that layer. Their theme pages compose `v2/Shell.astro`, `Card.astro` and `Icon.astro`; their index files share `v2/Browse.astro` for listing pages. Editorial intentionally omits the seller-only `plays` and `play` page keys: the org-wide projection produces neither route. The loader and shared layout remain unchanged.
