@@ -1,0 +1,6 @@
+---
+const {vm}=Astro.props;
+const {kind,p,o,redirect,title,items,list,related,relatedPlays,ordered,links,lookup,url,slots}=vm;
+---
+<h1>{title}</h1>
+<p>{o.summary}</p><div set:html={o.html}/><p>{o.trigger}</p><h2>Offerings</h2><ul>{links(ordered(o.offering_ids)).map(x=><li><a href={x.url}>{x.title}</a></li>)}</ul><h2>Stages</h2><ol>{o.stages.map(s=><li><h3>{s.title}</h3><p>{s.action}</p><p>{s.exit_criterion}</p><ul>{links(ordered(s.collateral_ids)).map(x=><li><a href={x.url}>{x.title}</a></li>)}</ul></li>)}</ol>

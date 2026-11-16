@@ -1,0 +1,7 @@
+---
+const {vm}=Astro.props; const {p,title,ordered,links,slots}=vm;
+---
+<p class="eyebrow">A practice for better operations</p><h1>{p.tagline}</h1><p class="lede">{p.summary}</p><p>{title}</p>
+<section><p class="eyebrow">Our work / 01—03</p><h2>Explore our offerings</h2><ol class="offerings">{links(ordered(p.offering_ids)).map(x=><li><a href={x.url}>{x.title} <span aria-hidden="true">↗</span></a></li>)}</ol></section>
+{slots.evidence.length>0 && <section class="evidence"><p class="eyebrow">Evidence / fictional example</p><h2>What clearer work can look like</h2><p>Explore a fictional example from the practice.</p><ul>{links(slots.evidence).map(x=><li><a href={x.url}>{x.title} →</a></li>)}</ul></section>}
+<section><div set:html={p.html}/></section><section><h2>Related reading</h2><a href={`/practices/${p.slug}/library/`}>Explore the library →</a></section><section><h2>Search this practice</h2><label>Search <input id="site-search" type="search" /></label><p id="search-status" aria-live="polite"></p><ul id="search-results"></ul><noscript>Search requires JavaScript; browse using the links above.</noscript></section>
