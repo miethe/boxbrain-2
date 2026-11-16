@@ -1,0 +1,6 @@
+---
+const {vm}=Astro.props;
+const {kind,p,o,redirect,title,items,list,related,relatedPlays,ordered,links,lookup,url,slots}=vm;
+---
+<h1>{title}</h1>
+<meta http-equiv="refresh" content={`0; url=${redirect || url(o)}`} /><p>Moved to <a href={redirect || url(o)}>{o?.title || "the new page"}</a>.</p>

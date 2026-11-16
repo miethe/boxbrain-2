@@ -19,3 +19,5 @@ For a selected direction:
 - Confirm that only the chosen theme ships in each edition and that seller-only content remains absent from org-wide output.
 
 The automated third-theme test follows these copy/register/build steps in a temporary scratch copy and removes it afterwards.
+
+The selected `field-guide` and `editorial` themes share `src/themes/v2/tokens.css`; their theme-local token files import that layer. The loader and shared layout remain unchanged.
