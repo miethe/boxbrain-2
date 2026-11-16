@@ -1,11 +1,12 @@
 ---
 import Shell from '../v2/Shell.astro';
+import Card from '../v2/Card.astro';
 const {vm}=Astro.props; const {o,title,links,relatedPlays,slots}=vm;
 ---
 <Shell {vm}>
 <p class="eyebrow">Seller field guide / Offering</p><h1>{title}</h1><p class="lede">{o.summary}</p>
 {slots.howToSell && <section class="guide"><p class="eyebrow">Conversation guide</p><h2>How to sell it</h2><div set:html={slots.howToSell.html.replace(/<(\/?)(h[2-5])(?=[ >])/g, (_, slash, heading) => `<${slash}h${Number(heading[1])+1}`)}/></section>}
-{slots.evidence.length>0 && <section><h2>Ready to use</h2><ul class="link-list">{links(slots.evidence).map(x=><li><a href={x.url}>{x.title} →</a></li>)}</ul></section>}
+{slots.evidence.length>0 && <section><h2>Ready to use</h2><ul class="link-list">{slots.evidence.map(x=><li><Card item={x} href={vm.url(x)} tile/></li>)}</ul></section>}
 <section><div set:html={o.html}/></section><section><h2>Outcomes</h2><ul>{o.outcomes.map(x=><li>{x}</li>)}</ul><h2>Good fit</h2><ul>{o.good_fit.map(x=><li>{x}</li>)}</ul><h2>Not a fit</h2><ul>{o.not_fit.map(x=><li>{x}</li>)}</ul></section>{relatedPlays.length>0 && <section><h2>Related plays</h2><ul>{links(relatedPlays).map(x=><li><a href={x.url}>{x.title}</a></li>)}</ul></section>}
 
 </Shell>

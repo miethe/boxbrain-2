@@ -1,0 +1,9 @@
+---
+import Icon from './Icon.astro';
+const {item,href,tile=false,type=item.kind||item.type||'Resource',number}=Astro.props;
+const icon=type==='play'?'play':type==='offering'?'offering':type==='practice'?'home':'document';
+---
+<a class:list={['resource-card',{'has-tile':tile}]} href={href}>
+{tile&&<div class:list={['type-tile',{'type-violet':type==='case-study'||type==='play'}]}><span class="tile-icon"><Icon name={icon}/></span><span>{type.replaceAll('-',' ')}</span></div>}
+<div class="card-body">{number&&<span class="card-number">{String(number).padStart(2,'0')}</span>}<span class="chip">{type.replaceAll('-',' ')}</span><h3>{item.title}</h3>{item.summary&&<p>{item.summary}</p>}<div class="card-meta"><span>{item.format||'Explore offering'}</span>{item.reviewed_on&&<span>Reviewed {item.reviewed_on}</span>}<Icon name="arrow"/></div></div>
+</a>
